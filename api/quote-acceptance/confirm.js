@@ -449,14 +449,10 @@ export default async function handler(req, res) {
       return;
     }
 
-    if (!alreadyAccepted) {
-      if (!verificationToken) {
-        sendJson(res, 400, {
-          success: false,
-          error: "Debes verificar el correo de contacto antes de aceptar la cotizacion.",
-        });
-        return;
-      }
+    // Política Lalo 24-jul: el OTP ya NO es requisito para aceptar. Si el
+    // front (una pestaña vieja) igual manda un verificationToken, se valida
+    // como siempre; si no viene, la aceptación sigue sin verificación.
+    if (!alreadyAccepted && verificationToken) {
       let verificationPayload = null;
       try {
         verificationPayload = verifyVerificationToken(verificationToken, "quote_email_verified");

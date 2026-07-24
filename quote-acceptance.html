@@ -1147,7 +1147,7 @@
           </div>
           <div id="stepVerify" class="step">
             <div class="step-line"><span class="step-num">2</span><span class="step-title">Facturación y verificación</span></div>
-            <div class="step-sub">Datos de facturación + OTP al correo de contacto.</div>
+            <div class="step-sub">Datos de facturación.</div>
           </div>
         </div>
         <div id="journeyHint" class="journey-hint">Cargando cotización...</div>
@@ -2281,12 +2281,12 @@
       }
 
       function isEmailVerifiedForCurrentInput() {
-        const currentEmail = normalizeEmail(fields.contactEmail.value);
-        return Boolean(
-          verificationState.verificationToken &&
-            verificationState.verifiedEmail &&
-            verificationState.verifiedEmail === currentEmail
-        );
+        // Política Lalo 24-jul: la validación OTP se ELIMINÓ del flujo de
+        // aceptación — no es necesaria para avanzar. Siempre "verificado":
+        // el modal de código nunca se abre y la aceptación fluye directa.
+        // (Los endpoints send/verify-email-code quedan vivos por si se
+        // reactiva; el backend acepta confirmaciones sin verificationToken.)
+        return true;
       }
 
       function validateRequired(options) {
