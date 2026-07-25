@@ -54,6 +54,22 @@ try {
   waitUntil = (p) => { p.catch(() => {}); };
 }
 
+// País firmado en el token de la URL de aceptación (espejo de backfill-pdf):
+// create-from-vicky-co firma pais:"co" y create-from-vicky-mx pais:"mx"; sin
+// campo pais, la cotización es chilena. Solo se decodifica (no se verifica
+// firma): se usa únicamente para NO tocar cotizaciones CO/MX con lógica CL.
+function paisEnToken(acceptanceUrl) {
+  try {
+    const m = String(acceptanceUrl || "").match(/[?&]token=([^&]+)/);
+    if (!m) return "";
+    const body = decodeURIComponent(m[1]).split(".")[0];
+    const json = Buffer.from(body.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+    return String(JSON.parse(json)?.pais || "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 function sendJson(res, status, payload) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -119,6 +135,18 @@ module.exports = async function handler(req, res) {
         ok: false,
         error: `COTIZACION_CERRADA: estado '${estado}'. Los cambios post-aceptación los gestiona un ejecutivo.`,
         estado,
+      });
+    }
+
+    // ── Guard de país (mismo criterio que backfill-pdf): este endpoint asume
+    // Chile de punta a punta (items en UF, buildProposalHtml chileno). Una
+    // cotización CO/MX regenerada acá saldría con montos UF y textos de
+    // Chile — mejor fallar claro que emitir un PDF basura.
+    const paisQuote = paisEnToken(toText(quote?.[config.quoteAcceptanceUrlField]));
+    if (paisQuote === "co" || paisQuote === "mx") {
+      return sendJson(res, 422, {
+        ok: false,
+        error: `COTIZACION_${paisQuote.toUpperCase()}: actualizar-cotizacion solo soporta Chile por ahora; la actualización CO/MX es fase 2.`,
       });
     }
 

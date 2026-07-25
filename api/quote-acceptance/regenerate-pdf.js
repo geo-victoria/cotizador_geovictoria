@@ -56,6 +56,21 @@ function quoteIdFromToken(token) {
   }
 }
 
+// País firmado en el token de la URL de aceptación (espejo de backfill-pdf):
+// sin campo pais, la cotización es chilena. Solo se decodifica (no se
+// verifica firma): se usa únicamente para NO regenerar CO/MX con el builder CL.
+function paisEnToken(acceptanceUrl) {
+  try {
+    const m = String(acceptanceUrl || "").match(/[?&]token=([^&]+)/);
+    if (!m) return "";
+    const body = decodeURIComponent(m[1]).split(".")[0];
+    const json = Buffer.from(body.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+    return String(JSON.parse(json)?.pais || "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 // Espejo de buildClienteParaHtml en aplicar-siguiente-descuento.js.
 async function buildClienteParaHtml(quote, config) {
   const accountId = toText(quote?.Cuenta_Asociada?.id);
@@ -152,6 +167,17 @@ module.exports = async function handler(req, res) {
     const quote = await getRecord(config.quoteModule, quoteId);
     if (!quote) {
       return sendJson(res, 404, { ok: false, error: "Cotizacion no encontrada." });
+    }
+
+    // Guard de país: este endpoint renderiza con el builder CHILENO (UF).
+    // Una cotización CO/MX regenerada acá saldría con montos y textos de
+    // Chile — mejor fallar claro que sobreescribir el PDF con basura.
+    const paisQuote = paisEnToken(toText(quote?.[config.quoteAcceptanceUrlField]));
+    if (paisQuote === "co" || paisQuote === "mx") {
+      return sendJson(res, 422, {
+        ok: false,
+        error: `COTIZACION_${paisQuote.toUpperCase()}: regenerate-pdf solo soporta Chile por ahora; la regeneración CO/MX es fase 2.`,
+      });
     }
 
     // Descuentos COMITEADOS actuales (no se tocan; solo se reflejan en el PDF).
