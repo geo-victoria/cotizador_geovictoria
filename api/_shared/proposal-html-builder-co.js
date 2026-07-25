@@ -126,13 +126,25 @@ const DESC_CAPACITACION_CO =
 // Resuelve la descripción de una fila: la del item si viene, si no una por
 // tipo/id. Clasifica envío/instalación por id o nombre porque el agente CO
 // los manda como tipo "servicio" genérico.
+// La Activación NO se tabula como producto (diseño chileno, pedido de Lalo
+// 24-jul): repetía el monto del plan como segunda fila y el Subtotal la
+// sumaba, pareciendo un doble cobro que luego "se restaba" en los recuadros.
+// Sigue cobrándose igual — vive solo en la caja "Pago inicial — al aceptar",
+// cuya nota explica que equivale al primer mes por adelantado.
+function esItemActivacion(item) {
+  const tipo = String(item.tipo || "").toLowerCase();
+  const id = String(item.id || "").toLowerCase();
+  const nombre = String(item.nombre || "").toLowerCase();
+  return tipo === "activacion" || /activaci/.test(id) || /activaci/.test(nombre);
+}
+
 function descripcionItemCO(item) {
   const manual = String(item.descripcion || "").trim();
   if (manual) return manual;
   const tipo = String(item.tipo || "").toLowerCase();
   const id = String(item.id || "").toLowerCase();
   const nombre = String(item.nombre || "").toLowerCase();
-  if (tipo === "activacion" || /activaci/.test(id) || /activaci/.test(nombre)) return DESC_ACTIVACION_CO;
+  if (esItemActivacion(item)) return DESC_ACTIVACION_CO;
   if (tipo === "hardware") return DESC_EQUIPO_CO;
   if (/envio|env[íi]o|despacho/.test(id) || /env[íi]o|despacho/.test(nombre)) return DESC_ENVIO_CO;
   if (/instalacion|instalaci/.test(id) || /instalaci/.test(nombre)) return DESC_INSTALACION_CO;
@@ -182,6 +194,7 @@ function buildProposalHtmlCO({
       afectoIva,
       recurrente: item.esRecurrente === true,
       descLineaPct: 0,
+      esActivacion: esItemActivacion(item),
     };
   });
 
@@ -241,10 +254,13 @@ function buildProposalHtmlCO({
       `</tr>`
     );
   };
-  const rowsHtml = filas.map(rowItem).join("");
+  // La Activación no se tabula (ver esItemActivacion) pero SÍ queda contada
+  // en uniNeto: la caja "Pago inicial" la cobra igual, como en Chile.
+  const filasVisibles = filas.filter((f) => !f.esActivacion);
+  const rowsHtml = filasVisibles.map(rowItem).join("");
   // La fila "Subtotal" de la tabla suma los netos visibles; el IVA del
   // hardware se desglosa en la caja de totales.
-  const totalTabla = uniNeto + recNeto;
+  const totalTabla = filasVisibles.reduce((acc, f) => acc + f.subtotal, 0);
 
   // ── Caja de totales ──
   // El IVA aparece SOLO si hay hardware (única familia afecta).
