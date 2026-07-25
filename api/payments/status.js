@@ -1,4 +1,4 @@
-const { toText, getUserById } = require("../_shared/zoho-crm");
+const { toText } = require("../_shared/zoho-crm");
 const { resolvePaymentSession } = require("../_shared/payment-session");
 const {
   searchPaymentsByExternalReference,
@@ -21,20 +21,18 @@ function normalizeWhatsappPhone(value) {
 }
 
 // Datos para el CTA de transferencia en pago.html (best-effort: nunca rompe el
-// estado de pago). El ejecutivo y el N° de cotizacion permiten al cliente
-// enviar el comprobante por WhatsApp, igual que en la pagina de aceptacion.
+// estado de pago). Decisión Lalo 25-jul: TODO comprobante va a Vicky — el
+// único canal que lo registra automáticamente (tool → nota Zoho → aviso a
+// finanzas). Antes apuntaba al teléfono del Owner de la cotización en Zoho,
+// pero el usuario "Vicky GeoVictoria" no tiene teléfono, así que el botón de
+// WhatsApp jamás aparecía y el cliente quedaba con un texto vago.
+const VICKY_WHATSAPP_PHONE = toText(process.env.VICKY_WHATSAPP_PHONE || "56967308227");
 async function buildTransferInfo(quote) {
-  try {
-    const ownerId = toText(quote?.Owner?.id);
-    const owner = ownerId ? await getUserById(ownerId).catch(() => null) : null;
-    return {
-      executiveName: toText(owner?.full_name || owner?.name || quote?.Owner?.name),
-      whatsappPhone: normalizeWhatsappPhone(owner?.phone || owner?.mobile),
-      quoteNumber: toText(quote?.Numero_Cotizacion),
-    };
-  } catch (_error) {
-    return { executiveName: "", whatsappPhone: "", quoteNumber: "" };
-  }
+  return {
+    executiveName: "Vicky",
+    whatsappPhone: normalizeWhatsappPhone(VICKY_WHATSAPP_PHONE),
+    quoteNumber: toText(quote?.Numero_Cotizacion),
+  };
 }
 
 export default async function handler(req, res) {

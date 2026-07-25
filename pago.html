@@ -372,7 +372,7 @@
               '<button class="btn" id="payCardBtn">Pagar con tarjeta ' + fmtMonto(a.oneShotClp) + "</button>" +
               '<button class="btn secondary" id="payTransferBtn">Pagar por transferencia</button>' +
               '<p class="pay-note">El pago con tarjeta es inmediato y seguro. ' +
-              "Por transferencia, te mostramos los datos y coordinas el comprobante con tu ejecutivo.</p>" +
+              "Por transferencia, te mostramos los datos y le envías el comprobante a Vicky por WhatsApp.</p>" +
               "</div>" +
               transferPanelHtml(state);
           contentEl.innerHTML =
@@ -419,8 +419,8 @@
           var waBtn = waLink
             ? '<a class="btn" id="transferWaBtn" href="' + waLink +
               '" target="_blank" rel="noopener noreferrer">Enviar comprobante por WhatsApp</a>'
-            : '<p class="transfer-help">Envia el comprobante a tu ejecutivo comercial ' +
-              "(o al correo del titular) para procesar tu pedido.</p>";
+            : '<p class="transfer-help">Env&iacute;ale el comprobante a Vicky por WhatsApp ' +
+              "(+56 9 6730 8227) para procesar tu pedido.</p>";
           return (
             '<div id="transferPanel" class="transfer-panel hidden">' +
             '<div class="transfer-title">Datos para transferencia</div>' +
@@ -433,9 +433,9 @@
             "<li><span>Email</span><strong>vicky@geovictoria.com</strong></li>" +
             "</ul>" +
             '<p class="transfer-help">Transfiere el pago inicial de tu cotización e indica el número de ' +
-            "cotización. Luego envía el comprobante a tu ejecutivo por WhatsApp para procesar tu pedido. " +
-            "La verificación de la transferencia toma máximo 24 horas hábiles; confirmado el pago, te " +
-            "escribimos por WhatsApp para comenzar la configuración de tu cuenta.</p>" +
+            "cotización. Luego envíale el comprobante a Vicky por WhatsApp para procesar tu pedido. " +
+            "La verificación de la transferencia toma máximo 24 horas hábiles; confirmado el pago, Vicky te " +
+            "escribe por WhatsApp para comenzar la configuración de tu cuenta.</p>" +
             waBtn +
             '<button class="btn secondary" id="transferBackBtn">Volver a opciones de pago</button>' +
             "</div>"
