@@ -42,11 +42,15 @@ const VICKY_EXPANSION_REGIONAL = toText(process.env.VICKY_EXPANSION_REGIONAL) ||
 // (emujica@geovictoria.com, usuario activo id 3525045000000211283, verificado
 // contra Zoho). Lo ya asignado a Anderson Díaz (3525045000426432190) queda a
 // su nombre — cero cambios retroactivos.
-const EJEC_NOMBRE = "Vicky - Equipo Comercial GeoVictoria";
-const EJEC_CARGO = "Ejecutivo Comercial";
-const EJEC_EMAIL = "vicky@geovictoria.com";
-const EJEC_TELEFONO = "+56 9 6730 8227";
-const EJEC_WHATSAPP = "56967308227";
+// Identidad HUMANA (Rodrigo 27-jul: el PDF y el correo deben mostrar siempre
+// el nombre y los datos del ejecutivo humano, no la identidad genérica).
+// Las cotizaciones nuevas son de Eddyluz; las regeneraciones de cotizaciones
+// existentes resuelven su Owner real en api/_shared/ejecutivo-cl.js.
+const EJEC_NOMBRE = "Eddyluz Mujica";
+const EJEC_CARGO = "Ejecutiva Comercial";
+const EJEC_EMAIL = "emujica@geovictoria.com";
+const EJEC_TELEFONO = "+56 9 3932 1687";
+const EJEC_WHATSAPP = "56939321687";
 const EJEC_OWNER_ID = "3525045000000211283";
 const EJEC_OWNER = { id: EJEC_OWNER_ID };
 

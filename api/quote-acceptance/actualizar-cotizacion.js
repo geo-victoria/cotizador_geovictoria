@@ -36,15 +36,19 @@ const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
+const { ejecutivoPorOwner } = require("../_shared/ejecutivo-cl");
 const crypto = require("crypto");
 
 const createFromVicky = require("./create-from-vicky.js");
 const { buildSubformItems, sendQuoteEmailViaZoho, buildEmailHtml } = createFromVicky;
 
 // Identidad del ejecutivo (misma que el flujo de creación).
-const EJEC_NOMBRE = process.env.VICKY_EJECUTIVO_NOMBRE || "Vicky - Equipo Comercial GeoVictoria";
-const EJEC_EMAIL = process.env.VICKY_EJECUTIVO_EMAIL || "vicky@geovictoria.com";
-const EJEC_TELEFONO = process.env.VICKY_EJECUTIVO_TELEFONO || "+56 9 6730 8227";
+// Identidad del ejecutivo: el HUMANO dueño de la cotización (Rodrigo 27-jul).
+// Se resuelve por Owner en el handler; estos defaults solo cubren el arranque.
+const { EJECUTIVO_CL_DEFAULT } = require("../_shared/ejecutivo-cl");
+const EJEC_NOMBRE = process.env.VICKY_EJECUTIVO_NOMBRE || EJECUTIVO_CL_DEFAULT.nombre;
+const EJEC_EMAIL = process.env.VICKY_EJECUTIVO_EMAIL || EJECUTIVO_CL_DEFAULT.email;
+const EJEC_TELEFONO = process.env.VICKY_EJECUTIVO_TELEFONO || EJECUTIVO_CL_DEFAULT.telefono;
 const VICKY_FROM_EMAIL = process.env.VICKY_FROM_EMAIL || "vicky@geovictoria.com";
 
 let waitUntil;
@@ -211,9 +215,9 @@ module.exports = async function handler(req, res) {
             contacto: contactoNombre,
             contactoEmail,
             rutEmpresa: toText(quote?.[config.companyRutField]),
-            ejecutivo: EJEC_NOMBRE,
-            ejecutivoEmail: EJEC_EMAIL,
-            ejecutivoTelefono: EJEC_TELEFONO,
+            ejecutivo: ejecutivoPorOwner(quote?.Owner?.id).nombre,
+            ejecutivoEmail: ejecutivoPorOwner(quote?.Owner?.id).email,
+            ejecutivoTelefono: ejecutivoPorOwner(quote?.Owner?.id).telefono,
           },
           cotizacion: { items, ufActual },
           acceptanceUrl,
@@ -234,8 +238,8 @@ module.exports = async function handler(req, res) {
             quoteModule: config.quoteModule,
             quoteId,
             fromEmail: VICKY_FROM_EMAIL,
-            replyToEmail: EJEC_EMAIL,
-            ccEmail: EJEC_EMAIL,
+            replyToEmail: ejecutivoPorOwner(quote?.Owner?.id).email,
+            ccEmail: ejecutivoPorOwner(quote?.Owner?.id).email,
             ccEmails: [],
             toEmail: contactoEmail,
             toName: contactoNombre,

@@ -73,7 +73,7 @@ const EJEC_MX = {
   nombre: (process.env.VICKY_EJECUTIVO_NOMBRE_MX || "Yahel Segura").trim(),
   cargo: (process.env.VICKY_EJECUTIVO_CARGO_MX || "Ejecutivo Comercial").trim(),
   email: (process.env.VICKY_EJECUTIVO_EMAIL_MX || "ysegura@geovictoria.com").trim(),
-  telefono: (process.env.VICKY_EJECUTIVO_TELEFONO_MX || "").trim(),
+  telefono: (process.env.VICKY_EJECUTIVO_TELEFONO_MX || "+52 55 3763 6604").trim(),
 };
 
 // ───────────────────────────────────────────────────────────────────────────

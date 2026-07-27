@@ -26,6 +26,7 @@ const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
+const { ejecutivoPorOwner } = require("../_shared/ejecutivo-cl");
 const { getUFActualSafe } = require("../_shared/uf-actual");
 
 function sendJson(res, status, payload) {
@@ -89,9 +90,11 @@ async function buildClienteParaHtml(quote, config) {
     contacto: contactoFullName || "",
     contactoEmail: toText(quote?.[config.contactEmailField]),
     rutEmpresa: toText(quote?.[config.companyRutField]) || toText(account?.RUT_Empresa),
-    ejecutivo: "Vicky - Equipo Comercial GeoVictoria",
-    ejecutivoEmail: "vicky@geovictoria.com",
-    ejecutivoTelefono: "+56 9 6730 8227",
+    // El ejecutivo del PDF es el HUMANO dueño de la cotización (Rodrigo
+    // 27-jul): Eddyluz en las nuevas, Anderson en las anteriores al relevo.
+    ejecutivo: ejecutivoPorOwner(quote?.Owner?.id).nombre,
+    ejecutivoEmail: ejecutivoPorOwner(quote?.Owner?.id).email,
+    ejecutivoTelefono: ejecutivoPorOwner(quote?.Owner?.id).telefono,
   };
 }
 
