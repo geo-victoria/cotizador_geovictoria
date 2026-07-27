@@ -36,14 +36,18 @@ const VICKY_EXPANSION_REGIONAL = toText(process.env.VICKY_EXPANSION_REGIONAL) ||
 
 // ── Ejecutivo comercial asignado a las cotizaciones de Vicky ──
 // Aparece en el correo y en el PDF, es el reply-to/CC del correo, y queda como
-// Owner de los registros (Account/Contact/Deal/Quote) en Zoho. Verificado:
-// usuario activo id 3525045000426432190.
+// Owner de los registros (Account/Contact/Deal/Quote) en Zoho.
+//
+// RELEVO 27-jul (Lalo): todo lo NUEVO va a Eddyluz Mujica
+// (emujica@geovictoria.com, usuario activo id 3525045000000211283, verificado
+// contra Zoho). Lo ya asignado a Anderson Díaz (3525045000426432190) queda a
+// su nombre — cero cambios retroactivos.
 const EJEC_NOMBRE = "Vicky - Equipo Comercial GeoVictoria";
 const EJEC_CARGO = "Ejecutivo Comercial";
 const EJEC_EMAIL = "vicky@geovictoria.com";
 const EJEC_TELEFONO = "+56 9 6730 8227";
 const EJEC_WHATSAPP = "56967308227";
-const EJEC_OWNER_ID = "3525045000426432190";
+const EJEC_OWNER_ID = "3525045000000211283";
 const EJEC_OWNER = { id: EJEC_OWNER_ID };
 
 // Cuentas internas de GeoVictoria que NUNCA deben reusarse al deduplicar por RUT.

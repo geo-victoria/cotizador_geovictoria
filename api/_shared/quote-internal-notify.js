@@ -22,7 +22,7 @@ const {
 const NOTIFY_FROM = toText(process.env.VICKY_FROM_EMAIL) || "vicky@geovictoria.com";
 const NOTIFY_RECIPIENTS = (
   process.env.QUOTE_NOTIFY_RECIPIENTS ||
-  "egomez@geovictoria.com,adiazg@geovictoria.com,rlewit@geovictoria.com"
+  "egomez@geovictoria.com,emujica@geovictoria.com,adiazg@geovictoria.com,rlewit@geovictoria.com"
 )
   .split(",")
   .map((s) => s.trim())
