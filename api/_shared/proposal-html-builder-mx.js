@@ -61,6 +61,8 @@ const TRANSFERENCIA_MX = {
   cuenta: "1161438886",
   clabe: "072180011614388864",
   titular: "CHECADOR, S.A. de C.V.",
+  rfc: "CEC2005286R4",
+  swift: "MENOMXMTXXX",
 };
 
 // Ejecutivo comercial MX (meta y pie del PDF). Yahel Segura toma los deals y
@@ -271,7 +273,7 @@ function buildProposalHtmlMX({
     "Sin cláusula de permanencia: puedes terminar el servicio avisando con 30 días de anticipación.",
     "Incluye sin costo: soporte de lunes a viernes, actualizaciones, app móvil y portal del colaborador.",
     "Plataforma en la nube con uptime garantizado de 99,5 %.",
-    `Pago por transferencia bancaria a ${TRANSFERENCIA_MX.titular} — ${TRANSFERENCIA_MX.banco}, Cuenta MXN ${TRANSFERENCIA_MX.cuenta}, CLABE ${TRANSFERENCIA_MX.clabe}.`,
+    `Pago por transferencia bancaria en pesos mexicanos (MXN) a ${TRANSFERENCIA_MX.titular} (RFC ${TRANSFERENCIA_MX.rfc}) — ${TRANSFERENCIA_MX.banco}, Cuenta ${TRANSFERENCIA_MX.cuenta}, CLABE ${TRANSFERENCIA_MX.clabe}, SWIFT ${TRANSFERENCIA_MX.swift}.`,
     `Cotización válida por ${VALIDEZ_DIAS_MX} días desde su emisión.`,
   ];
   const tycHtml = TYC_MX.map((t) => `<li>${escapeHtml(t)}</li>`).join("");

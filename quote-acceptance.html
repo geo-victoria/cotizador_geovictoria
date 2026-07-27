@@ -2063,7 +2063,7 @@
             "Sin cláusula de permanencia: puedes terminar el servicio avisando con 30 días de anticipación.",
             "Incluye sin costo: soporte de lunes a viernes, actualizaciones, app móvil y portal del colaborador.",
             "Plataforma en la nube con uptime garantizado de 99,5 %.",
-            "Pago por transferencia bancaria a CHECADOR, S.A. de C.V. — BANORTE, CLABE 072180011614388864. La verificación del pago toma máximo 24 horas hábiles.",
+            "Pago por transferencia bancaria en pesos mexicanos (MXN) a CHECADOR, S.A. de C.V. (RFC CEC2005286R4) — BANORTE, Cuenta 1161438886, CLABE 072180011614388864, SWIFT MENOMXMTXXX. La verificación del pago toma máximo 24 horas hábiles.",
             "Cotización válida por 30 días desde su emisión.",
           ]
             .map(function (t) { return "<li>" + t + "</li>"; })
@@ -3002,6 +3002,7 @@
                 (dt.banco || "BANORTE") +
                 ", cuenta " + (dt.cuenta || "1161438886") +
                 ", CLABE " + (dt.clabe || "072180011614388864") +
+                ", SWIFT " + (dt.swift || "MENOMXMTXXX") + ", en pesos mexicanos (MXN)" +
                 ". Cuando transfieras, manda el comprobante por el mismo chat de WhatsApp " +
                 "donde recibiste esta cotización: ahí mismo te habilitamos la configuración de tu cuenta.",
               "ok"

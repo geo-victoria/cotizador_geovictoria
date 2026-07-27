@@ -312,11 +312,13 @@ export default async function handler(req, res) {
       banco: "BANORTE",
       cuenta: "1161438886",
       clabe: "072180011614388864",
+      swift: "MENOMXMTXXX",
+      moneda: "MXN",
     };
     const MX_TRANSFER_MESSAGE =
       "Cotización aceptada. El pago inicial es por transferencia bancaria a " +
       "CHECADOR, S.A. de C.V. (RFC CEC2005286R4) — BANORTE, cuenta 1161438886, " +
-      "CLABE 072180011614388864. Cuando transfieras, manda el comprobante por el " +
+      "CLABE 072180011614388864, SWIFT MENOMXMTXXX, en pesos mexicanos (MXN). Cuando transfieras, manda el comprobante por el " +
       "mismo chat de WhatsApp donde recibiste esta cotización: ahí mismo te " +
       "habilitamos la configuración de tu cuenta.";
     const quote = await getRecord(config.quoteModule, payload.quoteId);
