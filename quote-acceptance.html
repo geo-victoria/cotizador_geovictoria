@@ -2988,6 +2988,27 @@
             return;
           }
 
+          // MÉXICO v1: sin pasarela en línea. La aceptación quedó registrada y
+          // el paso siguiente es la transferencia + comprobante por WhatsApp.
+          // Sin redirect: el cliente lee los datos bancarios y vuelve al chat.
+          if (data.mxTransfer) {
+            flowState.acceptedLocked = true;
+            flowState.acceptedAt = data.acceptedAt || flowState.acceptedAt;
+            const dt = data.datosTransferencia || {};
+            setMessage(
+              "Cotización aceptada 🎉 El pago inicial es por transferencia bancaria: " +
+                (dt.beneficiario || "CHECADOR, S.A. de C.V.") +
+                " (RFC " + (dt.rfc || "CEC2005286R4") + ") — " +
+                (dt.banco || "BANORTE") +
+                ", cuenta " + (dt.cuenta || "1161438886") +
+                ", CLABE " + (dt.clabe || "072180011614388864") +
+                ". Cuando transfieras, manda el comprobante por el mismo chat de WhatsApp " +
+                "donde recibiste esta cotización: ahí mismo te habilitamos la configuración de tu cuenta.",
+              "ok"
+            );
+            return;
+          }
+
           if (data.alreadyAccepted) {
             flowState.acceptedLocked = true;
             flowState.onboardingUrl = data.onboardingUrl || flowState.onboardingUrl;

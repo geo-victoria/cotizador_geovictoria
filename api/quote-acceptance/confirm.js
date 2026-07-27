@@ -298,6 +298,27 @@ export default async function handler(req, res) {
     const config = getAcceptanceConfig(req);
     const mpConfig = getMercadoPagoConfig(req);
     const payload = verifyAcceptanceToken(token);
+    // MÉXICO v1: sin pago en línea. La pasarela MercadoPago de este proyecto es
+    // CHILENA (cuenta CL, moneda CLP; el token de sesión de pago ni siquiera
+    // propaga pais "mx") — un mexicano NO puede pasar por ahí. Su camino es:
+    // aceptar acá → transferir a BANORTE → mandar el comprobante por WhatsApp
+    // (registrar_comprobante_transferencia le entrega el onboarding). Por lo
+    // mismo, la aceptación MX TAMPOCO dispara el handoff directo: la puerta del
+    // onboarding es el comprobante (decisión de dos puertas, 26-jul).
+    const esMx = toText(payload.pais).toLowerCase() === "mx";
+    const DATOS_TRANSFERENCIA_MX = {
+      beneficiario: "CHECADOR, S.A. de C.V.",
+      rfc: "CEC2005286R4",
+      banco: "BANORTE",
+      cuenta: "1161438886",
+      clabe: "072180011614388864",
+    };
+    const MX_TRANSFER_MESSAGE =
+      "Cotización aceptada. El pago inicial es por transferencia bancaria a " +
+      "CHECADOR, S.A. de C.V. (RFC CEC2005286R4) — BANORTE, cuenta 1161438886, " +
+      "CLABE 072180011614388864. Cuando transfieras, manda el comprobante por el " +
+      "mismo chat de WhatsApp donde recibiste esta cotización: ahí mismo te " +
+      "habilitamos la configuración de tu cuenta.";
     const quote = await getRecord(config.quoteModule, payload.quoteId);
     // Bypass de pago para la empresa de prueba (HuelleroCompany): en vez de ir a
     // MercadoPago, se trata la cotización como pagada y se finaliza directo
@@ -355,6 +376,21 @@ export default async function handler(req, res) {
       return;
     }
     if (alreadyAccepted) {
+      // MX ya aceptada: se repiten las instrucciones de transferencia. Nunca
+      // se reanuda el "journey de pago" chileno ni se entrega onboarding.
+      if (esMx && !bypassPayment) {
+        sendJson(res, 200, {
+          success: true,
+          alreadyAccepted: true,
+          requiresPayment: false,
+          mxTransfer: true,
+          datosTransferencia: DATOS_TRANSFERENCIA_MX,
+          quoteId: payload.quoteId,
+          acceptedAt: acceptedAtIso,
+          message: "Esta cotizacion ya fue aceptada. " + MX_TRANSFER_MESSAGE,
+        });
+        return;
+      }
       // Con pagos habilitados, una cotizacion aceptada sin onboarding implica
       // que el pago/suscripcion aun esta pendiente: reanudamos el journey de pago.
       // Excepción: empresa de prueba (bypassPayment) → recupera onboarding/COT sin pago.
@@ -537,6 +573,38 @@ export default async function handler(req, res) {
           (noteErr && noteErr.message) || noteErr
         );
       }
+    }
+
+    // MÉXICO: aceptada, con nota, y el cliente vuelve al chat con los datos de
+    // la transferencia. Ni MercadoPago (pasarela chilena) ni handoff (la puerta
+    // del onboarding es el comprobante por WhatsApp).
+    if (esMx && !bypassPayment) {
+      try {
+        await createRecord(
+          "Notes",
+          {
+            Note_Title: "Aceptada (MX) — pago por transferencia pendiente",
+            Note_Content:
+              "El cliente acepto la cotizacion desde la pagina. Pago inicial por transferencia BANORTE; queda pendiente el comprobante por WhatsApp (registrar_comprobante_transferencia lo habilita).",
+            Parent_Id: payload.quoteId,
+            se_module: config.quoteModule,
+          },
+          false
+        );
+      } catch (noteErr) {
+        console.warn("[confirm] nota MX no creada:", (noteErr && noteErr.message) || noteErr);
+      }
+      sendJson(res, 200, {
+        success: true,
+        requiresPayment: false,
+        mxTransfer: true,
+        datosTransferencia: DATOS_TRANSFERENCIA_MX,
+        quoteId: payload.quoteId,
+        dealId: payload.dealId,
+        acceptedAt: acceptedAtIso,
+        message: MX_TRANSFER_MESSAGE,
+      });
+      return;
     }
 
     // Pagos habilitados: se difiere el handoff a onboarding hasta que el pago
