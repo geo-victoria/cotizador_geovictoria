@@ -47,9 +47,16 @@ function emailValido(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(email || "").trim());
 }
 
-function buildShareEmailHtml({ destinatario, solicitante, empresa, numero, pdfUrl }) {
+function buildShareEmailHtml({ destinatario, solicitante, empresa, numero, pdfUrl, notaIncidencia }) {
   const saludo = destinatario ? `Hola ${destinatario},` : "Hola,";
   const quien = solicitante ? `<b>${solicitante}</b>` : "Tu equipo";
+  // Reenvío por INCIDENCIA (27-jul: 10 días de correos de cotización que
+  // nunca salieron por un CC rechazado). La intro cambia: honesta y corta,
+  // sin la narrativa de "me pidieron compartirte" — nadie pidió nada, fuimos
+  // nosotros los que no lo enviamos.
+  const intro = notaIncidencia
+    ? `Soy Vicky, de GeoVictoria. Te reenvío tu cotización <b>${numero}</b> de Control de Asistencia para <b>${empresa}</b>: detectamos un problema técnico de nuestro lado por el que el correo original pudo no haberte llegado — ya está resuelto. El documento y su link de aceptación siguen 100% vigentes; disculpa las molestias.`
+    : `Soy Vicky, ejecutiva comercial de GeoVictoria. ${quien} me pidió compartirte la cotización <b>${numero}</b> de Control de Asistencia para <b>${empresa}</b>, para que puedas revisarla directamente.`;
   return `<!doctype html><html><body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:28px 12px;"><tr><td align="center">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">
@@ -58,7 +65,7 @@ function buildShareEmailHtml({ destinatario, solicitante, empresa, numero, pdfUr
   </td></tr>
   <tr><td style="padding:28px 30px 8px;">
     <p style="margin:0 0 12px;font-size:16px;color:#2d3748;">${saludo}</p>
-    <p style="margin:0;font-size:15px;line-height:1.6;color:#4a5568;">Soy Vicky, ejecutiva comercial de GeoVictoria. ${quien} me pidió compartirte la cotización <b>${numero}</b> de Control de Asistencia para <b>${empresa}</b>, para que puedas revisarla directamente.</p>
+    <p style="margin:0;font-size:15px;line-height:1.6;color:#4a5568;">${intro}</p>
   </td></tr>
   <tr><td align="center" style="padding:22px 30px;">
     <a href="${pdfUrl}" style="display:inline-block;background:#1a73e8;color:#ffffff;padding:14px 30px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;">📄 Ver la cotización (PDF)</a>
@@ -94,6 +101,7 @@ module.exports = async function handler(req, res) {
     const destinatarioNombre = toText(body.destinatarioNombre).trim();
     const solicitanteNombreIn = toText(body.solicitanteNombre).trim();
     const ccSolicitante = toText(body.ccSolicitante).trim();
+    const notaIncidencia = body.notaIncidencia === true;
 
     if (!quoteId) return sendJson(res, 400, { ok: false, error: "quoteId requerido." });
     if (!emailValido(destinatarioEmail)) {
@@ -133,13 +141,16 @@ module.exports = async function handler(req, res) {
       // Transparencia: el solicitante va en copia (sabe que su cotización se
       // compartió y con quién).
       ccEmails: [ccSolicitante, toText(quote[config.contactEmailField])].filter(Boolean),
-      subject: `Cotización GeoVictoria ${numero} — ${empresa}`,
+      subject: notaIncidencia
+        ? `Reenvío de tu cotización GeoVictoria ${numero} — ${empresa}`
+        : `Cotización GeoVictoria ${numero} — ${empresa}`,
       htmlBody: buildShareEmailHtml({
         destinatario: destinatarioNombre,
         solicitante,
         empresa,
         numero,
         pdfUrl,
+        notaIncidencia,
       }),
     });
 
