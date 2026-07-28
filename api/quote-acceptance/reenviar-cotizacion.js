@@ -24,11 +24,9 @@
 const { getRecordWithFields, createRecord, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { sendQuoteEmailViaZoho } = require("./create-from-vicky");
+const { ejecutivoPorOwner } = require("../_shared/ejecutivo-cl");
 
 const VICKY_FROM_EMAIL = toText(process.env.VICKY_FROM_EMAIL) || "vicky@geovictoria.com";
-// Reply-to a un buzón REAL: vicky@ no existe en M365 y las respuestas de los
-// clientes rebotarían (mismo buzón fantasma que rompió los CC el 17-jul).
-const EJEC_EMAIL = "emujica@geovictoria.com";
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -129,6 +127,7 @@ module.exports = async function handler(req, res) {
       "Cuenta_Asociada",
       "Contacto_Asociado",
       config.contactEmailField,
+      "Owner",
     ]);
     if (!quote) return sendJson(res, 404, { ok: false, error: "Cotización no encontrada." });
 
@@ -143,12 +142,16 @@ module.exports = async function handler(req, res) {
     const numero = toText(quote.Numero_Cotizacion) || quoteId;
     const empresa = toText(quote.Cuenta_Asociada?.name) || "tu empresa";
     const solicitante = solicitanteNombreIn || toText(quote.Contacto_Asociado?.name);
+    // Reply-to al ejecutivo HUMANO dueño de la cotización (relevo 27-jul: lo
+    // de Anderson responde Anderson, lo de Eddyluz responde Eddyluz). Nunca
+    // vicky@ — ese buzón no existe en M365 y las respuestas rebotarían.
+    const ejecutivo = ejecutivoPorOwner(quote.Owner?.id);
 
     await sendQuoteEmailViaZoho({
       quoteModule: config.quoteModule,
       quoteId,
       fromEmail: VICKY_FROM_EMAIL,
-      replyToEmail: EJEC_EMAIL,
+      replyToEmail: ejecutivo.email,
       toEmail: destinatarioEmail,
       toName: destinatarioNombre || destinatarioEmail,
       // Transparencia: el solicitante va en copia (sabe que su cotización se
