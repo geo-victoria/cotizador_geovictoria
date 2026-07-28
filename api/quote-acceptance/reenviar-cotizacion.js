@@ -26,7 +26,9 @@ const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { sendQuoteEmailViaZoho } = require("./create-from-vicky");
 
 const VICKY_FROM_EMAIL = toText(process.env.VICKY_FROM_EMAIL) || "vicky@geovictoria.com";
-const EJEC_EMAIL = "vicky@geovictoria.com";
+// Reply-to a un buzón REAL: vicky@ no existe en M365 y las respuestas de los
+// clientes rebotarían (mismo buzón fantasma que rompió los CC el 17-jul).
+const EJEC_EMAIL = "emujica@geovictoria.com";
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
