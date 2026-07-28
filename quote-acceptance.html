@@ -1697,6 +1697,90 @@
         verifyMessageEl.style.display = "none";
       }
 
+      // ===== MÉXICO v1: pop-up de datos de transferencia =====
+      // Mientras no haya Mercado Pago MX, la aceptación termina en
+      // transferencia bancaria. Los datos van en un modal centrado, ordenados
+      // y con instructivo paso a paso (pedido Lalo 28-jul) — el párrafo plano
+      // de abajo se perdía. Cuando MP MX exista, este flujo vuelve a ser el
+      // redirect de pago igual que el resto de los países.
+      function mostrarTransferenciaMX(dt) {
+        var datos = [
+          { label: "Banco", valor: (dt && dt.banco) || "BANORTE" },
+          { label: "Beneficiario", valor: (dt && dt.beneficiario) || "CHECADOR, S.A. de C.V." },
+          { label: "RFC", valor: (dt && dt.rfc) || "CEC2005286R4", copiable: true },
+          { label: "N° de cuenta", valor: (dt && dt.cuenta) || "1161438886", copiable: true },
+          { label: "CLABE", valor: (dt && dt.clabe) || "072180011614388864", copiable: true },
+          { label: "SWIFT", valor: (dt && dt.swift) || "MENOMXMTXXX", copiable: true },
+          { label: "Moneda", valor: (dt && dt.moneda) || "Pesos mexicanos (MXN)" },
+        ];
+        var modal = document.getElementById("mxTransferModal");
+        if (!modal) {
+          var style = document.createElement("style");
+          style.textContent =
+            "#mxTransferModal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}" +
+            "#mxTransferModal .mxt-card{background:#fff;border-radius:16px;max-width:540px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}" +
+            "#mxTransferModal .mxt-head{background:#1a73e8;color:#fff;padding:22px 26px;border-radius:16px 16px 0 0}" +
+            "#mxTransferModal .mxt-head h3{margin:0;font-size:20px}" +
+            "#mxTransferModal .mxt-head p{margin:6px 0 0;font-size:14px;opacity:.92}" +
+            "#mxTransferModal .mxt-body{padding:20px 26px 24px}" +
+            "#mxTransferModal .mxt-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid #eef1f5}" +
+            "#mxTransferModal .mxt-row .l{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.4px}" +
+            "#mxTransferModal .mxt-row .v{font-size:15px;font-weight:600;color:#0f172a;text-align:right;word-break:break-all}" +
+            "#mxTransferModal .mxt-copy{border:1px solid #cbd5e1;background:#f8fafc;border-radius:6px;font-size:11px;padding:3px 8px;cursor:pointer;color:#334155;white-space:nowrap}" +
+            "#mxTransferModal .mxt-copy:hover{background:#eef2ff}" +
+            "#mxTransferModal .mxt-steps{margin:18px 0 0;padding:0;list-style:none}" +
+            "#mxTransferModal .mxt-steps li{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;font-size:14px;color:#334155;line-height:1.5}" +
+            "#mxTransferModal .mxt-steps .n{flex:none;width:24px;height:24px;border-radius:50%;background:#1a73e8;color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}" +
+            "#mxTransferModal .mxt-cta{display:block;width:100%;margin-top:18px;background:#1a73e8;color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;cursor:pointer}" +
+            "#mxTransferModal .mxt-copyall{display:block;width:100%;margin-top:8px;background:#fff;color:#1a73e8;border:1px solid #1a73e8;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer}";
+          document.head.appendChild(style);
+
+          modal = document.createElement("div");
+          modal.id = "mxTransferModal";
+          var filas = datos
+            .map(function (d) {
+              return (
+                '<div class="mxt-row"><span class="l">' + d.label + '</span>' +
+                '<span style="display:flex;align-items:center;gap:8px"><span class="v">' + d.valor + "</span>" +
+                (d.copiable ? '<button type="button" class="mxt-copy" data-valor="' + d.valor + '">Copiar</button>' : "") +
+                "</span></div>"
+              );
+            })
+            .join("");
+          modal.innerHTML =
+            '<div class="mxt-card" role="dialog" aria-modal="true">' +
+            '<div class="mxt-head"><h3>¡Cotización aceptada! 🎉</h3>' +
+            "<p>El pago inicial es por transferencia bancaria. Estos son los datos:</p></div>" +
+            '<div class="mxt-body">' + filas +
+            '<ul class="mxt-steps">' +
+            '<li><span class="n">1</span><span>Realiza la <b>transferencia del pago inicial</b> a la cuenta indicada (el monto está en tu cotización).</span></li>' +
+            '<li><span class="n">2</span><span>Envía el <b>comprobante por el mismo chat de WhatsApp</b> donde recibiste esta cotización.</span></li>' +
+            '<li><span class="n">3</span><span>Ahí mismo te habilitamos la <b>configuración de tu cuenta</b> — queda activa dentro de 24 horas hábiles.</span></li>' +
+            "</ul>" +
+            '<button type="button" class="mxt-copyall">Copiar todos los datos</button>' +
+            '<button type="button" class="mxt-cta">Entendido, voy a transferir</button>' +
+            "</div></div>";
+          document.body.appendChild(modal);
+
+          modal.addEventListener("click", function (ev) {
+            var t = ev.target;
+            if (t.classList.contains("mxt-copy")) {
+              navigator.clipboard && navigator.clipboard.writeText(t.getAttribute("data-valor") || "");
+              t.textContent = "Copiado ✓";
+              setTimeout(function () { t.textContent = "Copiar"; }, 1800);
+            } else if (t.classList.contains("mxt-copyall")) {
+              var todo = datos.map(function (d) { return d.label + ": " + d.valor; }).join("\n");
+              navigator.clipboard && navigator.clipboard.writeText(todo);
+              t.textContent = "Copiado ✓";
+              setTimeout(function () { t.textContent = "Copiar todos los datos"; }, 1800);
+            } else if (t.classList.contains("mxt-cta") || t === modal) {
+              modal.style.display = "none";
+            }
+          });
+        }
+        modal.style.display = "flex";
+      }
+
       function setVerifyCountdown(text, level) {
         verifyCountdownEl.textContent = text || "";
         verifyCountdownEl.className = "message" + (level ? " " + level : "");
@@ -2995,18 +3079,23 @@
             flowState.acceptedLocked = true;
             flowState.acceptedAt = data.acceptedAt || flowState.acceptedAt;
             const dt = data.datosTransferencia || {};
+            mostrarTransferenciaMX(dt);
             setMessage(
-              "Cotización aceptada 🎉 El pago inicial es por transferencia bancaria: " +
-                (dt.beneficiario || "CHECADOR, S.A. de C.V.") +
-                " (RFC " + (dt.rfc || "CEC2005286R4") + ") — " +
-                (dt.banco || "BANORTE") +
-                ", cuenta " + (dt.cuenta || "1161438886") +
-                ", CLABE " + (dt.clabe || "072180011614388864") +
-                ", SWIFT " + (dt.swift || "MENOMXMTXXX") + ", en pesos mexicanos (MXN)" +
-                ". Cuando transfieras, manda el comprobante por el mismo chat de WhatsApp " +
-                "donde recibiste esta cotización: ahí mismo te habilitamos la configuración de tu cuenta.",
+              "Cotización aceptada 🎉 Transfiere el pago inicial y manda el comprobante por el chat de WhatsApp donde recibiste esta cotización.",
               "ok"
             );
+            // Botón persistente para reabrir el pop-up con los datos, por si
+            // el cliente lo cierra antes de anotar la CLABE.
+            if (!document.getElementById("mxVerDatosBtn")) {
+              var verDatos = document.createElement("button");
+              verDatos.id = "mxVerDatosBtn";
+              verDatos.type = "button";
+              verDatos.textContent = "Ver datos de transferencia";
+              verDatos.style.cssText =
+                "margin-top:10px;background:#fff;color:#1a73e8;border:1px solid #1a73e8;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer";
+              verDatos.addEventListener("click", function () { mostrarTransferenciaMX(dt); });
+              messageEl.insertAdjacentElement("afterend", verDatos);
+            }
             return;
           }
 
