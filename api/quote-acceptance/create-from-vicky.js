@@ -252,17 +252,38 @@ async function sendQuoteEmailViaZoho({
   if (ccList.length) {
     dataPayload.cc = ccList.map((email) => ({ email }));
   }
-  const body = { data: [dataPayload] };
-  const response = await zohoApiFetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`Zoho send_mail failed (${response.status}): ${text.slice(0, 200)}`);
+  const enviar = async (payload) => {
+    const response = await zohoApiFetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: [payload] }),
+    });
+    const text = await response.text();
+    return { ok: response.ok, status: response.status, text };
+  };
+
+  let r = await enviar(dataPayload);
+  // Un destinatario en COPIA rechazado no puede matar el correo del CLIENTE.
+  //
+  // CASO REAL (27-jul, descubierto por Lalo con 6 clientes reclamando): el CC
+  // institucional apuntaba a un buzón @geovictoria.com que Microsoft 365
+  // rechaza ("5.4.1 Recipient address rejected: Access denied"), Zoho aborta
+  // el envío COMPLETO con 400 NOT_ALLOWED, y el cliente se queda sin su
+  // cotización — en silencio, porque esto corre en segundo plano. El correo
+  // al cliente ES el envío; la copia interna es cortesía: si la copia rompe,
+  // se reintenta UNA vez sin CC y se deja el grito en el log.
+  if (!r.ok && dataPayload.cc && /NOT_ALLOWED|Recipient address rejected|5\.4\.1/i.test(r.text)) {
+    console.error(
+      `[send_mail] CC rechazado por el servidor de correo (${r.text.slice(0, 160)}). Reintentando SIN copia para no dejar al cliente sin su cotización.`,
+    );
+    const sinCc = { ...dataPayload };
+    delete sinCc.cc;
+    r = await enviar(sinCc);
   }
-  return text;
+  if (!r.ok) {
+    throw new Error(`Zoho send_mail failed (${r.status}): ${r.text.slice(0, 200)}`);
+  }
+  return r.text;
 }
 
 // Número de cotización a mostrar en el PDF: el correlativo de Zoho
