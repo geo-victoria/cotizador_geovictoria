@@ -28,6 +28,15 @@ const EJECUTIVOS_CL_POR_ID = {
     telefono: "+56 9 3937 2058",
     whatsapp: "56939372058",
   },
+  // Alejandro Gordillo — ejecutivo Colombia (las cotizaciones CO que pasan
+  // por los endpoints compartidos, p.ej. el reenvío, le responden a él).
+  "3525045000203758005": {
+    nombre: "Alejandro Gordillo",
+    cargo: "Ejecutivo Comercial",
+    email: "agordillo@geovictoria.com",
+    telefono: "+57 314 267 7765",
+    whatsapp: "573142677765",
+  },
 };
 
 const EJECUTIVO_CL_DEFAULT = EJECUTIVOS_CL_POR_ID["3525045000000211283"];
