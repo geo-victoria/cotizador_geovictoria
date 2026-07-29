@@ -73,24 +73,29 @@ function resolverDescuentos(quote, config) {
 }
 
 /**
- * Factor total de descuento de una línea. Espejo de computePaymentAmounts:
- * el de instalación va por zona, el recurrente NO toca el arriendo de hardware.
+ * Descuento, en %, que corresponde a una línea. Espejo de computePaymentAmounts:
+ * el de instalación va por zona, y el recurrente NO toca el arriendo de hardware
+ * (regla comercial: el descuento negociado es del plan de software).
  */
-function factorDescuentoLinea(row, descuentos) {
-  let factor = 1;
-
+function descuentoPctLinea(row, descuentos) {
   if (isInstalacionItem(row)) {
     const zona = getZonaTarifa(row);
-    if (zona === "RM") factor *= 1 - descuentos.instalacionRMPct / 100;
-    else if (zona === "regiones") factor *= 1 - descuentos.instalacionRegionPct / 100;
+    if (zona === "RM") return descuentos.instalacionRMPct;
+    if (zona === "regiones") return descuentos.instalacionRegionPct;
+    return 0;
   }
 
   if (isRecurrentModalidad(row?.modalidad)) {
     const esArriendoHardware = normalizar(row?.modalidad).includes("arriendo");
-    if (!esArriendoHardware) factor *= 1 - descuentos.recurrentePct / 100;
+    return esArriendoHardware ? 0 : descuentos.recurrentePct;
   }
 
-  return factor;
+  return 0;
+}
+
+/** El mismo descuento expresado como factor multiplicativo. */
+function factorDescuentoLinea(row, descuentos) {
+  return 1 - descuentoPctLinea(row, descuentos) / 100;
 }
 
 /**
@@ -237,33 +242,43 @@ function buildChargeTables({
     const servicios = typeof resolveServicios === "function" ? resolveServicios(rawRows[index]) : [];
     const servicio = servicios.find(Boolean);
     if (!servicio) {
-      // Hardware en arriendo, instalación, envío y ventas no son "Servicio
-      // Recurrente" de Creator: no tienen tabla propia donde colgarse.
+      // Instalación, envío y venta de equipos van al Formulario_de_Equipos, que
+      // es otro bloque de la NDV: no tienen tabla de cobro donde colgarse.
       if (nombre) lineasSinServicio.push(nombre);
       return;
     }
 
-    const factor = factorDescuentoLinea(row, descuentos);
-    const subtotal = montos.subtotal * factor;
-    const unitario = montos.unitario > 0 ? montos.unitario * factor : subtotal / cantidad;
-
     const previo = acumulado.get(servicio) || {
-      subtotal: 0,
-      unitario: 0,
+      subtotalLista: 0,
+      unitarioLista: 0,
       todasPorUsuario: true,
       codigos: [],
-      factor,
+      pcts: new Set(),
     };
-    previo.subtotal += subtotal;
-    previo.unitario += unitario;
+    // Se acumulan los montos a PRECIO DE LISTA: el descuento viaja aparte, en
+    // Descuento_Ejecutivo, para que Creator lo imprima como línea propia
+    // ("Descuento 30%") y agregue las columnas "V. con Dcto" a la tabla.
+    previo.subtotalLista += montos.subtotal;
+    previo.unitarioLista += montos.unitario > 0 ? montos.unitario : montos.subtotal / cantidad;
     previo.todasPorUsuario = previo.todasPorUsuario && esLineaPorUsuario(row, cantidad, empleados);
     previo.codigos.push(String(row?.codigo || "").trim());
+    previo.pcts.add(descuentoPctLinea(row, descuentos));
     acumulado.set(servicio, previo);
   });
 
   const porServicio = {};
+  const descuentoPorServicio = {};
   const serviciosConEscalera = [];
   for (const [servicio, montos] of acumulado.entries()) {
+    // Descuento del servicio. Creator lo aplica a toda la tabla, así que solo se
+    // puede delegar cuando TODAS las líneas del servicio comparten el mismo %.
+    // Si conviven dos (no debería pasar hoy), se incorpora al precio y el campo
+    // va en 0: es preferible un PDF sin la línea de descuento a uno que cobre mal.
+    const pcts = Array.from(montos.pcts);
+    const descuentoDelegable = pcts.length === 1 ? pcts[0] : 0;
+    const factorIncorporado = pcts.length === 1 ? 1 : Math.min(...pcts.map((p) => 1 - p / 100));
+    descuentoPorServicio[servicio] = descuentoDelegable;
+
     // Escalera completa cuando el servicio viene de UN solo ítem del catálogo:
     // es el caso normal (asistencia → Control de Asistencia). Si dos ítems caen
     // en el mismo servicio no hay una escalera única que los represente, así que
@@ -271,7 +286,7 @@ function buildChargeTables({
     const codigos = Array.from(new Set(montos.codigos.filter(Boolean)));
     const escalera = codigos.length === 1 ? escaleras[codigos[0]] : null;
     if (Array.isArray(escalera) && escalera.length > 0) {
-      const filas = escaleraAFilas(escalera, montos.factor);
+      const filas = escaleraAFilas(escalera, factorIncorporado);
       if (filas.length > 0) {
         porServicio[servicio] = filas;
         serviciosConEscalera.push(servicio);
@@ -285,8 +300,8 @@ function buildChargeTables({
             Modalidad: MODALIDAD_POR_USUARIO,
             Desde: 1,
             Hasta: empleados,
-            Valor: redondear(montos.unitario),
-            Valor_Usuario_Adicional: redondear(montos.unitario),
+            Valor: redondear(montos.unitarioLista * factorIncorporado),
+            Valor_Usuario_Adicional: redondear(montos.unitarioLista * factorIncorporado),
           },
         ]
       : [
@@ -294,7 +309,7 @@ function buildChargeTables({
             Modalidad: MODALIDAD_FIJA,
             Desde: 1,
             Hasta: empleados,
-            Valor: redondear(montos.subtotal),
+            Valor: redondear(montos.subtotalLista * factorIncorporado),
             Valor_Usuario_Adicional: 0,
           },
         ];
@@ -338,6 +353,7 @@ function buildChargeTables({
   return {
     master,
     porServicio,
+    descuentoPorServicio,
     diagnostico: {
       fallback,
       moneda: moneda || "UF",
@@ -354,6 +370,7 @@ module.exports = {
   MODALIDAD_POR_USUARIO,
   MODALIDAD_FIJA,
   buildChargeTables,
+  descuentoPctLinea,
   factorDescuentoLinea,
   esLineaPorUsuario,
   resolverDescuentos,

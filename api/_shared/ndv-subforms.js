@@ -103,7 +103,7 @@ async function createSubformRecord(creatorConfig, formLinkName, record, timeoutM
 //    JsonPdf desde ella.
 //  - Hito/Plantilla van con el valor estático (los reales son picklists dinámicos
 //    que REST rechaza).
-function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTable }) {
+function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTable, descuentoPct }) {
   const employees = toNumber(ndvRecord.N_Empleados_Compometidos) || 1;
   const tabla = Array.isArray(chargeTable) && chargeTable.length > 0
     ? chargeTable
@@ -126,7 +126,10 @@ function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTa
     Moneda: toText(ndvRecord.Moneda) || "UF",
     country: toText(ndvRecord.Pa_s_Facturaci_n) || "Chile",
     Logo_PDF: "Geovictoria",
-    Descuento_Ejecutivo: toNumber(ndvRecord.Descuento_Ejecutivo) || 0,
+    // El descuento va acá, NO incorporado al precio de la tabla: así Creator lo
+    // imprime como línea propia ("Descuento 30%") y agrega las columnas
+    // "V. con Dcto" a la tabla de cobro, como en las notas de venta bien hechas.
+    Descuento_Ejecutivo: toNumber(descuentoPct) || toNumber(ndvRecord.Descuento_Ejecutivo) || 0,
     N_Empleados_Compometidos: employees,
     Cantidad_de_Usuarios: employees,
     Cantidad_de_Usuarios_PDF: employees,
@@ -171,9 +174,17 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables }) {
   }
 
   const errors = [];
-  const recurringServices = (Array.isArray(ndvRecord.Servicios_Recurrentes)
-    ? ndvRecord.Servicios_Recurrentes
-    : []
+  // Un bloque de la NDV por cada servicio CON DINERO, no solo por los de la
+  // lista Servicios_Recurrentes del maestro. El arriendo de equipos es un
+  // Servicio_Recurrente en Creator ("2º Arriendo de Equipos" en las notas de
+  // venta de referencia), pero en el maestro vive en
+  // Servicio_Recurrente_Configurado, así que iterando solo esa lista su bloque
+  // nunca se creaba y el reloj no aparecía en el PDF.
+  const recurringServices = Array.from(
+    new Set([
+      ...(Array.isArray(ndvRecord.Servicios_Recurrentes) ? ndvRecord.Servicios_Recurrentes : []),
+      ...Object.keys(chargeTables?.porServicio || {}),
+    ])
   ).filter(Boolean);
 
   console.log(`[ndv-subforms] ndvId=${ndvId} servicios=${JSON.stringify(recurringServices)}`);
@@ -193,10 +204,17 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables }) {
           `[ndv-subforms] ${serviceName} sin tabla propia; hereda la del maestro (precio posiblemente incorrecto en el PDF).`
         );
       }
-      const record = buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTable });
+      const record = buildServicioRecurrenteRecord({
+        ndvId,
+        serviceName,
+        ndvRecord,
+        chargeTable,
+        descuentoPct: chargeTables?.descuentoPorServicio?.[serviceName],
+      });
       const serviceId = await createSubformRecord(creatorConfig, "Servicio_Recurrente", record);
       console.log(
-        `[ndv-subforms] Servicio_Recurrente(${serviceName}) → id=${serviceId} tabla=${JSON.stringify(record.Tabla_de_Cobro)}`
+        `[ndv-subforms] Servicio_Recurrente(${serviceName}) → id=${serviceId} ` +
+          `dcto=${record.Descuento_Ejecutivo}% tabla=${JSON.stringify(record.Tabla_de_Cobro)}`
       );
       if (serviceId) serviceCount++;
     } catch (err) {

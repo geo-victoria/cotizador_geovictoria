@@ -225,6 +225,10 @@ const CREATOR_SERVICIOS_RECURRENTES_ALLOWED = new Set([
   "Bolsa de Horas de Desarrollo",
 ]);
 
+// Nombre del servicio con el que Creator titula el bloque de arriendo en la NDV
+// ("2º Arriendo de Equipos" en las notas de venta de referencia).
+const SERVICIO_ARRIENDO_EQUIPOS = "Arriendo de Equipos";
+
 const CREATOR_SERVICIO_RECURRENTE_CONFIG_ALLOWED = new Set([
   ...Array.from(CREATOR_SERVICIOS_RECURRENTES_ALLOWED),
   "Arriendo de Equipos",
@@ -320,9 +324,19 @@ function recurrentesDeFilaPorNombre(normalizedItemName) {
   return labels.filter((label) => CREATOR_SERVICIOS_RECURRENTES_ALLOWED.has(label));
 }
 
-// Misma resolución, tomando la fila cruda del subform. Es lo que se le inyecta
-// a buildChargeTables para agrupar el cobro por servicio.
+/**
+ * Servicio de Creator que se lleva el cobro de una fila del subform.
+ *
+ * Se diferencia de recurrentesDeFilaPorNombre en que mira también la modalidad:
+ * el arriendo de hardware es un Servicio_Recurrente más en Creator (bloque
+ * "Arriendo de Equipos" de la NDV), aunque en el registro maestro viva en
+ * Servicio_Recurrente_Configurado y no en la lista Servicios_Recurrentes —
+ * ese picklist no lo acepta.
+ */
 function resolveServiciosRecurrentesDeFila(row) {
+  const modalidad = normalizeItemName(row?.Modalidad);
+  if (modalidad.includes("arriendo")) return [SERVICIO_ARRIENDO_EQUIPOS];
+
   const name = normalizeItemName(row?.Nombre_Item);
   if (!name) return [];
   return recurrentesDeFilaPorNombre(name);
