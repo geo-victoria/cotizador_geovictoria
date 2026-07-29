@@ -41,6 +41,19 @@ const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
 const { getUFActualSafe } = require("../_shared/uf-actual");
 const crypto = require("crypto");
+const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
+
+// waitUntil: corre trabajo en segundo plano DESPUÉS de responder, dentro de la
+// misma invocación. La cotización nueva en Creator no debe hacer esperar a
+// quien llama (Vicky o el post-call de Dapta).
+let waitUntil;
+try {
+  ({ waitUntil } = require("@vercel/functions"));
+} catch (_e) {
+  waitUntil = (p) => {
+    Promise.resolve(p).catch(() => {});
+  };
+}
 
 const TOPE_TELEFONICO_PCT = 25;
 const CONDICION_TELEFONICA =
@@ -257,6 +270,18 @@ module.exports = async function handler(req, res) {
         [config.quoteAcceptanceUrlField]: acceptanceUrl,
       },
       true
+    );
+
+    // Precio nuevo → cotización NUEVA en Creator. No se actualiza la anterior:
+    // queda como la versión superada, igual que las versiones del PDF.
+    waitUntil(
+      emitirCotizacionEnCreator({
+        config,
+        quoteId,
+        dealId,
+        motivo: "descuento_telefonico",
+        forzarNueva: true,
+      })
     );
 
     return sendJson(res, 200, {

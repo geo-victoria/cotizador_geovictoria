@@ -224,6 +224,19 @@ function buildMensajeParaProspecto(escalon, linkAceptacion) {
 }
 
 const crypto = require("crypto");
+const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
+
+// waitUntil: corre trabajo en segundo plano DESPUÉS de responder, dentro de la
+// misma invocación. La cotización nueva en Creator no debe hacer esperar a Vicky.
+let waitUntil;
+try {
+  ({ waitUntil } = require("@vercel/functions"));
+} catch (_e) {
+  waitUntil = (p) => {
+    Promise.resolve(p).catch(() => {});
+  };
+}
+
 
 module.exports = async function handler(req, res) {
   if (req.method === "OPTIONS") {
@@ -377,6 +390,19 @@ module.exports = async function handler(req, res) {
         [config.quoteAcceptanceUrlField]: acceptanceUrl,
       },
       true
+    );
+
+    // Precio nuevo → cotización NUEVA en Creator. No se actualiza la anterior:
+    // queda como la versión superada, igual que las versiones del PDF. En
+    // segundo plano, porque el agente está esperando esta respuesta.
+    waitUntil(
+      emitirCotizacionEnCreator({
+        config,
+        quoteId,
+        dealId,
+        motivo: "descuento",
+        forzarNueva: true,
+      })
     );
 
     const topeAlcanzado = !hayEscalonDespues(quote, config, targetIdx);
