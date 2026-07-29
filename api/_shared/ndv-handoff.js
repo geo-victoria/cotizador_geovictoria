@@ -7,6 +7,7 @@ const {
   toText,
 } = require("./zoho-crm");
 const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
+const { buildChargeTables } = require("./ndv-charge-table");
 
 function toNumberOrNull(value) {
   const n = Number.parseInt(toText(value), 10);
@@ -286,6 +287,47 @@ function addAllowed(targetSet, label, allowedSet) {
   if (text && allowedSet.has(text)) targetSet.add(text);
 }
 
+/**
+ * Servicios recurrentes de Creator a los que mapea el nombre de una línea del
+ * subform, en orden de precedencia (el primero es el titular del cobro).
+ *
+ * Fuente única: la usan tanto la lista Servicios_Recurrentes del registro como
+ * la Tabla_de_Cobro (ndv-charge-table), para que el servicio que aparece en la
+ * NDV y el que lleva el precio no puedan divergir.
+ */
+function recurrentesDeFilaPorNombre(normalizedItemName) {
+  const labels = [];
+  const push = (label) => {
+    if (label && !labels.includes(label)) labels.push(label);
+  };
+
+  resolveCreatorMappingFromDictionary(normalizedItemName).recurrente.forEach((label) => push(label));
+
+  if (normalizedItemName.includes("asistencia")) push("Control de Asistencia");
+  else if (normalizedItemName.includes("alert")) push("Alertas");
+  else if (normalizedItemName.includes("banco de horas")) push("Bolsa de Horas de Desarrollo");
+  else if (normalizedItemName.includes("documental")) push("Gestión Documental");
+  else if (normalizedItemName.includes("vacaciones") || normalizedItemName.includes("permiso")) push("Vacaciones");
+  else if (normalizedItemName.includes("calendario") || normalizedItemName.includes("planificador"))
+    push("Calendario Inteligente");
+  else if (normalizedItemName.includes("connect")) push("Integraciones Victoria Connect");
+  else if (normalizedItemName.includes("dashboard")) push("Dashboard BI");
+  else if (normalizedItemName.includes("sso")) push("SSO");
+  else if (normalizedItemName.includes("casino") || normalizedItemName.includes("comedor"))
+    push("Servicio de Comedor");
+  else if (normalizedItemName.includes("reporte a medida")) push("Reporte a Medida");
+
+  return labels.filter((label) => CREATOR_SERVICIOS_RECURRENTES_ALLOWED.has(label));
+}
+
+// Misma resolución, tomando la fila cruda del subform. Es lo que se le inyecta
+// a buildChargeTables para agrupar el cobro por servicio.
+function resolveServiciosRecurrentesDeFila(row) {
+  const name = normalizeItemName(row?.Nombre_Item);
+  if (!name) return [];
+  return recurrentesDeFilaPorNombre(name);
+}
+
 function inferServiciosCreator(quote, config) {
   const rows = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
   const recurrentes = new Set();
@@ -315,23 +357,10 @@ function inferServiciosCreator(quote, config) {
     if (!name) continue;
 
     const mapped = resolveCreatorMappingFromDictionary(name);
-    if (mapped.recurrente.size > 0 || mapped.noRecurrente.size > 0 || mapped.noRecurrenteConfigurado.size > 0) {
-      mapped.recurrente.forEach((label) => addRecurrente(label));
-      mapped.noRecurrente.forEach((label) => addNoRecurrente(label));
-      mapped.noRecurrenteConfigurado.forEach((label) => addNoRecurrenteConfigurado(label));
-    }
+    mapped.noRecurrente.forEach((label) => addNoRecurrente(label));
+    mapped.noRecurrenteConfigurado.forEach((label) => addNoRecurrenteConfigurado(label));
 
-    if (name.includes("asistencia")) addRecurrente("Control de Asistencia");
-    else if (name.includes("alert")) addRecurrente("Alertas");
-    else if (name.includes("banco de horas")) addRecurrente("Bolsa de Horas de Desarrollo");
-    else if (name.includes("documental")) addRecurrente("Gesti\u00f3n Documental");
-    else if (name.includes("vacaciones") || name.includes("permiso")) addRecurrente("Vacaciones");
-    else if (name.includes("calendario") || name.includes("planificador")) addRecurrente("Calendario Inteligente");
-    else if (name.includes("connect")) addRecurrente("Integraciones Victoria Connect");
-    else if (name.includes("dashboard")) addRecurrente("Dashboard BI");
-    else if (name.includes("sso")) addRecurrente("SSO");
-    else if (name.includes("casino") || name.includes("comedor")) addRecurrente("Servicio de Comedor");
-    else if (name.includes("reporte a medida")) addRecurrente("Reporte a Medida");
+    recurrentesDeFilaPorNombre(name).forEach((label) => addRecurrente(label));
 
     if (modalidad.includes("arriendo")) {
       addRecurrenteConfigurado("Arriendo de Equipos");
@@ -450,55 +479,8 @@ function inferCommittedEmployees(quote) {
   return maxQty > 0 ? maxQty : 0;
 }
 
-function inferChargeTable(quote, committedEmployees) {
-  const existingTable = safeArray(quote?.Tabla_de_Cobro)
-    .map((row) => ({
-      Modalidad: toText(row?.Modalidad) || "Rango Fijo",
-      Desde: toPositiveInt(row?.Desde) || 1,
-      Hasta: toPositiveInt(row?.Hasta) || committedEmployees || 1,
-      Valor: toPositiveNumber(row?.Valor),
-      Valor_Usuario_Adicional: toPositiveNumber(row?.Valor_Usuario_Adicional),
-    }))
-    .filter((row) => row.Valor > 0);
-  if (existingTable.length > 0) return existingTable;
-
-  const rows = safeArray(quote?.Detalle_Items_Cotizacion).length
-    ? safeArray(quote?.Detalle_Items_Cotizacion)
-    : safeArray(quote?.items);
-  const prioritizedRows = [
-    ...rows.filter((row) => normalizeItemName(row?.Nombre_Item).includes("asistencia")),
-    ...rows.filter((row) => !normalizeItemName(row?.Nombre_Item).includes("asistencia")),
-  ];
-  const baseRow = prioritizedRows.find((row) => toPositiveInt(row?.Cantidad) > 0) || {};
-  const qty = Math.max(toPositiveInt(baseRow?.Cantidad), committedEmployees || 1);
-
-  const rowSubtotalClp = toPositiveNumber(baseRow?.Subtotal_CLP);
-  const rowPriceClp = toPositiveNumber(baseRow?.Precio_Unitario_CLP);
-  const rowSubtotalUf = toPositiveNumber(baseRow?.Subtotal_UF);
-  const rowPriceUf = toPositiveNumber(baseRow?.Precio_Unitario_UF);
-
-  const value =
-    rowSubtotalClp ||
-    (rowPriceClp > 0 ? rowPriceClp * qty : 0) ||
-    rowSubtotalUf ||
-    (rowPriceUf > 0 ? rowPriceUf * qty : 0) ||
-    1;
-  const additional =
-    rowPriceClp ||
-    rowPriceUf ||
-    (value > 0 && qty > 0 ? Number((value / qty).toFixed(5)) : value) ||
-    1;
-
-  return [
-    {
-      Modalidad: "Rango Fijo",
-      Desde: 1,
-      Hasta: Math.max(committedEmployees || qty, 1),
-      Valor: Number(value.toFixed(5)),
-      Valor_Usuario_Adicional: Number(additional.toFixed(5)),
-    },
-  ];
-}
+// La Tabla_de_Cobro se arma en ndv-charge-table.js a partir de TODAS las líneas
+// del subform, en la moneda del registro y con los descuentos ya aplicados.
 
 function formatCreatorDate(value) {
   const date = value instanceof Date ? value : new Date(value || Date.now());
@@ -761,8 +743,20 @@ function buildNdvRecord({
   );
   const servicios = inferServiciosCreator(quote, config);
   const committedEmployees = inferCommittedEmployees(quote);
-  const chargeTable = inferChargeTable(quote, committedEmployees);
   const firstServicio = toText(servicios.serviciosRecurrentes[0]) || "Control de Asistencia";
+  const moneda = toText(quote?.Moneda) || "UF";
+
+  // La tabla se construye con la MISMA moneda que declara el registro: mandarla
+  // en pesos con Moneda=UF es lo que inflaba el PDF ~39.000x.
+  const chargeTables = buildChargeTables({
+    quote,
+    config,
+    committedEmployees,
+    moneda,
+    servicioPrincipal: firstServicio,
+    resolveServicios: resolveServiciosRecurrentesDeFila,
+  });
+  const chargeTable = chargeTables.master;
   const resolvedBusinessLine = "Estándar";
   const resolvedBillingMilestone = inferBillingMilestoneForTelemarketing(firstServicio);
   const dealsAsociados =
@@ -770,7 +764,7 @@ function buildNdvRecord({
     toText(deal?.Deal_Name) ||
     (toText(accountName) ? `${toText(accountName)} (${firstServicio})` : "");
 
-  return {
+  const record = {
     Formulario: creatorFormulario,
     STATUS: creatorStatus,
     FORM_STATUS: creatorFormStatus,
@@ -787,7 +781,7 @@ function buildNdvRecord({
     CRM_Deal: includeCrmDeal ? dealName || undefined : undefined,
     Deals_Asociados: dealsAsociados || undefined,
     CRM_REFERENCE_ID: toSafeCreatorNumber(quote?.id),
-    Moneda: toText(quote?.Moneda) || "UF",
+    Moneda: moneda,
     Pa_s_Facturaci_n: toText(quote?.Pa_s_Facturaci_n) || "Chile",
     Identificador_Tributario_Empresa:
       toText(acceptanceData?.companyRut || quote?.RUT_Cliente || quote?.RUT || quote?.Identificador_Tributario_Empresa) ||
@@ -822,6 +816,10 @@ function buildNdvRecord({
       toText(acceptanceData?.billingPhone || quote?.Telefono_Facturacion || quote?.Tel_fono_de_Facturaci_n) ||
       undefined,
   };
+
+  // chargeTables viaja aparte del record: `record` es literalmente el payload
+  // que se POSTea a Creator y no admite claves que no sean campos del formulario.
+  return { record, chargeTables };
 }
 
 function pickFromLookup(value) {
@@ -881,7 +879,7 @@ async function runNdvHandoff({ config, quoteId, dealId, acceptanceData }) {
     );
   }
 
-  const ndvRecord = buildNdvRecord({
+  const { record: ndvRecord, chargeTables } = buildNdvRecord({
     config,
     quote,
     deal,
@@ -930,6 +928,7 @@ async function runNdvHandoff({ config, quoteId, dealId, acceptanceData }) {
       ndvId: "",
       reconciled: false,
       createPayload,
+      chargeTables,
       message: "NDV creada sin ID devuelto por Creator.",
     };
   }
@@ -959,6 +958,7 @@ async function runNdvHandoff({ config, quoteId, dealId, acceptanceData }) {
     createPayload,
     updatePayload,
     ndvRecord,
+    chargeTables,
     usedIds: {
       accountId: toText(ndvRecord.CRM_Account),
       contactId: toText(contactId),
@@ -1059,7 +1059,7 @@ async function runNdvHandoffFromDraft({
     ),
   };
 
-  const ndvRecord = buildNdvRecord({
+  const { record: ndvRecord, chargeTables } = buildNdvRecord({
     config,
     quote: pseudoQuote,
     deal,
@@ -1199,6 +1199,7 @@ async function runNdvHandoffFromDraft({
       ndvId: "",
       reconciled: false,
       createPayload,
+      chargeTables,
       message: "NDV creada sin ID devuelto por Creator.",
     };
   }
@@ -1257,9 +1258,10 @@ async function runNdvHandoffFromDraft({
     ndvId: toText(ndvCreatorId),
     reconciled: true,
     schemaVersion: NDV_CANONICAL_SCHEMA_VERSION,
-    usedFormLinkName: createAttempt.usedFormLinkName,
+    usedFormLinkName: finalAttempt.usedFormLinkName,
     createPayload,
     ndvRecord,
+    chargeTables,
   };
 }
 
@@ -1271,4 +1273,5 @@ module.exports = {
   normalizeCreatorBusinessError,
   runNdvHandoff,
   runNdvHandoffFromDraft,
+  resolveServiciosRecurrentesDeFila,
 };

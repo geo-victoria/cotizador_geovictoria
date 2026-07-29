@@ -248,7 +248,11 @@ async function triggerNdvIfEnabled(config, payload) {
     let subformSetup = null;
     if (ndvId) {
       try {
-        subformSetup = await runNdvSubformSetup({ ndvId, ndvRecord: ndvResult?.ndvRecord || {} });
+        subformSetup = await runNdvSubformSetup({
+          ndvId,
+          ndvRecord: ndvResult?.ndvRecord || {},
+          chargeTables: ndvResult?.chargeTables,
+        });
       } catch (subformError) {
         subformSetup = { errors: [String(subformError?.message || subformError)] };
       }

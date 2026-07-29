@@ -408,7 +408,11 @@ module.exports = async function handler(req, res) {
 
     // 2) Subforms (Servicio_Recurrente x N + Finalizar_Formulario → dispara GeneratePDF)
     if (ndvId) {
-      const subformSetup = await runNdvSubformSetup({ ndvId, ndvRecord: ndvResult?.ndvRecord || {} });
+      const subformSetup = await runNdvSubformSetup({
+        ndvId,
+        ndvRecord: ndvResult?.ndvRecord || {},
+        chargeTables: ndvResult?.chargeTables,
+      });
       out.steps.subforms = subformSetup;
 
       // 3) Estado del registro tras crear subforms — confirma Form_Order / PDF

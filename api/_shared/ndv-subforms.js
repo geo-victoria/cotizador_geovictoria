@@ -103,9 +103,13 @@ async function createSubformRecord(creatorConfig, formLinkName, record, timeoutM
 //    JsonPdf desde ella.
 //  - Hito/Plantilla van con el valor estático (los reales son picklists dinámicos
 //    que REST rechaza).
-function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord }) {
+function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTable }) {
   const employees = toNumber(ndvRecord.N_Empleados_Compometidos) || 1;
-  const chargeTable = Array.isArray(ndvRecord.Tabla_de_Cobro) ? ndvRecord.Tabla_de_Cobro : [];
+  const tabla = Array.isArray(chargeTable) && chargeTable.length > 0
+    ? chargeTable
+    : Array.isArray(ndvRecord.Tabla_de_Cobro)
+      ? ndvRecord.Tabla_de_Cobro
+      : [];
 
   return {
     ID_Formulario: ndvId,
@@ -128,7 +132,7 @@ function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord }) {
     Cantidad_de_Usuarios_PDF: employees,
     isSimpleService: false,
     CAN_UPDATE_FIELDS: true,
-    Tabla_de_Cobro: chargeTable,
+    Tabla_de_Cobro: tabla,
   };
 }
 
@@ -155,9 +159,12 @@ function buildFinalizarFormularioRecord({ ndvId, ndvRecord }) {
  *
  * @param {string} ndvId  - ID numérico del registro ALL_DATA en Creator
  * @param {object} ndvRecord - El objeto enviado a Creator al crear el NDV (buildNdvRecord output)
+ * @param {object} [chargeTables] - Tablas de cobro por servicio (ndv-charge-table).
+ *   Cada Servicio_Recurrente lleva SU precio; sin esto todos heredaban la tabla
+ *   del maestro, o sea el precio del servicio titular repetido en el PDF.
  * @returns {{ serviceCount, finalizarId, errors }}
  */
-async function runNdvSubformSetup({ ndvId, ndvRecord }) {
+async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables }) {
   const creatorConfig = getCreatorConfig();
   if (creatorConfig.missing.length > 0) {
     throw new Error(`Faltan variables de Zoho Creator para sub-formularios: ${creatorConfig.missing.join(", ")}`);
@@ -180,9 +187,17 @@ async function runNdvSubformSetup({ ndvId, ndvRecord }) {
   let serviceCount = 0;
   for (const serviceName of recurringServices) {
     try {
-      const record = buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord });
+      const chargeTable = chargeTables?.porServicio?.[serviceName];
+      if (!chargeTable) {
+        console.warn(
+          `[ndv-subforms] ${serviceName} sin tabla propia; hereda la del maestro (precio posiblemente incorrecto en el PDF).`
+        );
+      }
+      const record = buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTable });
       const serviceId = await createSubformRecord(creatorConfig, "Servicio_Recurrente", record);
-      console.log(`[ndv-subforms] Servicio_Recurrente(${serviceName}) → id=${serviceId}`);
+      console.log(
+        `[ndv-subforms] Servicio_Recurrente(${serviceName}) → id=${serviceId} tabla=${JSON.stringify(record.Tabla_de_Cobro)}`
+      );
       if (serviceId) serviceCount++;
     } catch (err) {
       console.warn(`[ndv-subforms] Servicio_Recurrente(${serviceName}) ERROR: ${err.message}`);

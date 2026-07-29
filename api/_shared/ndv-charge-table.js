@@ -1,0 +1,281 @@
+/**
+ * Tabla_de_Cobro para Zoho Creator, construida desde los ítems que Vicky cotizó.
+ *
+ * POR QUÉ EXISTE ESTE MÓDULO
+ * La Tabla_de_Cobro es lo que Creator lee para armar el JsonPdf (workflow
+ * UpdatePdfJson1) y, con eso, el PDF de la cotización. Antes se derivaba de UNA
+ * sola línea del subform y en pesos, mientras el registro declaraba Moneda=UF:
+ * el PDF salía con un único ítem y con el valor inflado ~39.000x. Acá se arma
+ * desde TODAS las líneas, en la moneda del registro y con los descuentos
+ * negociados ya aplicados — los mismos números que el cliente vio en el chat y
+ * en la página de aceptación.
+ *
+ * SEMÁNTICA DE LA TABLA (receta verificada en COT-56717, ver api/creator-ndv-test.js)
+ * Cada fila es un TRAMO de precio de UN servicio:
+ *   { Modalidad, Desde, Hasta, Valor, Valor_Usuario_Adicional }
+ *   · "Rango por Usuario" → Valor es el precio POR USUARIO dentro del tramo.
+ *   · "Rango Fijo"        → Valor es el monto FIJO del tramo.
+ * Una cotización de Vicky tiene una dotación concreta (N usuarios), así que la
+ * escalera de cada servicio colapsa a un solo tramo 1..N.
+ *
+ * DESCUENTOS
+ * Se replica línea por línea la MISMA regla que cobra Mercado Pago y que muestra
+ * la página de aceptación (`computePaymentAmounts` en quote-pricing.js):
+ *   · el descuento recurrente aplica al plan de software, NO al arriendo de hardware;
+ *   · los descuentos de instalación aplican solo a las líneas de instalación de su zona.
+ * El precio viaja YA descontado y `Descuento_Ejecutivo` se deja en 0, para que
+ * Creator no vuelva a descontar sobre un precio que ya lo trae.
+ */
+
+const {
+  DEFAULT_FIELD_MAP,
+  sanitizeItems,
+  clampDescuentoPct,
+  clampInstalacionPct,
+  isRecurrentModalidad,
+  isInstalacionItem,
+  getZonaTarifa,
+} = require("./quote-pricing");
+
+const MODALIDAD_POR_USUARIO = "Rango por Usuario";
+const MODALIDAD_FIJA = "Rango Fijo";
+
+function toNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function toPositiveInt(value) {
+  const n = Number.parseInt(String(value ?? "").trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+// Creator guarda montos con decimales (UF llega a 3-4); 5 posiciones cubren UF
+// sin arrastrar ruido de punto flotante, y no molestan en CLP/COP/MXN.
+function redondear(value) {
+  return Number(toNumber(value).toFixed(5));
+}
+
+function normalizar(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+/**
+ * Descuentos vigentes de la cotización, saneados con los mismos clamps que usa
+ * el cobro. Si el registro no los trae, todo queda en 0 (precio de lista).
+ */
+function resolverDescuentos(quote, config) {
+  return {
+    recurrentePct: clampDescuentoPct(quote?.[config.quoteDiscountPctField]),
+    instalacionRMPct: clampInstalacionPct(quote?.[config.quoteDiscountInstRMPctField]),
+    instalacionRegionPct: clampInstalacionPct(quote?.[config.quoteDiscountInstRegionPctField]),
+  };
+}
+
+/**
+ * Factor total de descuento de una línea. Espejo de computePaymentAmounts:
+ * el de instalación va por zona, el recurrente NO toca el arriendo de hardware.
+ */
+function factorDescuentoLinea(row, descuentos) {
+  let factor = 1;
+
+  if (isInstalacionItem(row)) {
+    const zona = getZonaTarifa(row);
+    if (zona === "RM") factor *= 1 - descuentos.instalacionRMPct / 100;
+    else if (zona === "regiones") factor *= 1 - descuentos.instalacionRegionPct / 100;
+  }
+
+  if (isRecurrentModalidad(row?.modalidad)) {
+    const esArriendoHardware = normalizar(row?.modalidad).includes("arriendo");
+    if (!esArriendoHardware) factor *= 1 - descuentos.recurrentePct / 100;
+  }
+
+  return factor;
+}
+
+/**
+ * Montos de la línea en la moneda en que está denominada la cotización.
+ *
+ * Chile guarda UF en los campos *_UF y su equivalente en pesos en los *_CLP.
+ * CO y MX escriben el MISMO monto local (COP / MXN) en ambos pares (ver la
+ * cabecera de create-from-vicky-co.js). Por eso los campos *_UF son, en los
+ * tres países, "el monto en la moneda de la cotización", y son el default.
+ * La rama *_CLP queda para un registro que declare explícitamente otra moneda.
+ */
+function montosLinea(row, usaUf) {
+  const unitario = usaUf ? toNumber(row?.precioUnitarioUf) : toNumber(row?.precioUnitarioClp);
+  const subtotalDirecto = usaUf ? toNumber(row?.subtotalUf) : toNumber(row?.subtotalClp);
+  const cantidad = toNumber(row?.cantidad);
+  const subtotal = subtotalDirecto > 0 ? subtotalDirecto : unitario * cantidad;
+  return { unitario, subtotal };
+}
+
+/**
+ * ¿La línea se cobra por usuario? El subform ya trae la modalidad mapeada a Zoho
+ * ("Recurrente" = por usuario, "Único" = tarifa fija mensual, "Arriendo", "Venta").
+ * Se exige además que la cantidad coincida con la dotación comprometida: si no,
+ * un precio unitario en un tramo 1..N daría un total distinto al cotizado, y
+ * preferimos un tramo fijo que respete el monto que el cliente vio.
+ */
+function esLineaPorUsuario(row, cantidad, empleados) {
+  return normalizar(row?.modalidad) === "recurrente" && cantidad === empleados;
+}
+
+/**
+ * Arma las tablas de cobro de la cotización.
+ *
+ * @param {object}   args.quote               registro de la cotización en el CRM
+ * @param {object}   args.config              config de aceptación (nombres de campo)
+ * @param {number}   args.committedEmployees  dotación comprometida (N usuarios)
+ * @param {string}   args.moneda              Moneda del registro NDV ("UF", "COP", "MXN"…)
+ * @param {string}   args.servicioPrincipal   servicio Creator que encabeza la NDV
+ * @param {(row:object) => string[]} args.resolveServicios
+ *        Devuelve los servicios recurrentes de Creator a los que mapea una fila
+ *        cruda del subform. Lo inyecta ndv-handoff para no duplicar el diccionario.
+ *
+ * @returns {{ master: object[], porServicio: Record<string, object[]>,
+ *             diagnostico: { fallback: boolean, moneda: string, empleados: number,
+ *                            lineasSinServicio: string[], lineasSinPrecio: string[] } }}
+ */
+function buildChargeTables({
+  quote,
+  config,
+  committedEmployees,
+  moneda,
+  servicioPrincipal,
+  resolveServicios,
+}) {
+  const rawRows = Array.isArray(quote?.[config.quoteItemsSubformField])
+    ? quote[config.quoteItemsSubformField]
+    : [];
+  // El nombre del campo de zona es configurable por env; sin esto, un override
+  // dejaría los descuentos de instalación sin aplicar en silencio.
+  const fieldMap = config?.quoteItemZonaTarifaField
+    ? { ...DEFAULT_FIELD_MAP, zonaTarifa: config.quoteItemZonaTarifaField }
+    : DEFAULT_FIELD_MAP;
+  const rows = sanitizeItems(rawRows, fieldMap);
+  const usaUf = normalizar(moneda) === "uf" || !moneda;
+  const descuentos = resolverDescuentos(quote, config);
+
+  const cantidadMaxima = rows.reduce((acc, row) => Math.max(acc, toPositiveInt(row?.cantidad)), 0);
+  const empleados = Math.max(toPositiveInt(committedEmployees), cantidadMaxima, 1);
+
+  // Acumulador por servicio: varias líneas pueden caer en el mismo servicio de
+  // Creator (p. ej. dos módulos que mapean a Control de Asistencia).
+  const acumulado = new Map();
+  const lineasSinServicio = [];
+  const lineasSinPrecio = [];
+
+  rows.forEach((row, index) => {
+    const nombre = String(row?.nombre || "").trim();
+    const cantidad = toPositiveInt(row?.cantidad);
+    if (cantidad <= 0) return;
+
+    const montos = montosLinea(row, usaUf);
+    if (montos.subtotal <= 0) {
+      if (nombre) lineasSinPrecio.push(nombre);
+      return;
+    }
+
+    // Una fila puede mapear a más de un servicio; el cobro se imputa al PRIMERO
+    // para no duplicar el monto en la tabla.
+    const servicios = typeof resolveServicios === "function" ? resolveServicios(rawRows[index]) : [];
+    const servicio = servicios.find(Boolean);
+    if (!servicio) {
+      // Hardware en arriendo, instalación, envío y ventas no son "Servicio
+      // Recurrente" de Creator: no tienen tabla propia donde colgarse.
+      if (nombre) lineasSinServicio.push(nombre);
+      return;
+    }
+
+    const factor = factorDescuentoLinea(row, descuentos);
+    const subtotal = montos.subtotal * factor;
+    const unitario = montos.unitario > 0 ? montos.unitario * factor : subtotal / cantidad;
+
+    const previo = acumulado.get(servicio) || { subtotal: 0, unitario: 0, todasPorUsuario: true };
+    previo.subtotal += subtotal;
+    previo.unitario += unitario;
+    previo.todasPorUsuario = previo.todasPorUsuario && esLineaPorUsuario(row, cantidad, empleados);
+    acumulado.set(servicio, previo);
+  });
+
+  const porServicio = {};
+  for (const [servicio, montos] of acumulado.entries()) {
+    porServicio[servicio] = montos.todasPorUsuario
+      ? [
+          {
+            Modalidad: MODALIDAD_POR_USUARIO,
+            Desde: 1,
+            Hasta: empleados,
+            Valor: redondear(montos.unitario),
+            Valor_Usuario_Adicional: redondear(montos.unitario),
+          },
+        ]
+      : [
+          {
+            Modalidad: MODALIDAD_FIJA,
+            Desde: 1,
+            Hasta: empleados,
+            Valor: redondear(montos.subtotal),
+            Valor_Usuario_Adicional: 0,
+          },
+        ];
+  }
+
+  // Tabla del registro maestro: la del servicio que encabeza la NDV.
+  const claveMaster = porServicio[servicioPrincipal]
+    ? servicioPrincipal
+    : Object.keys(porServicio)[0];
+  let master = claveMaster ? porServicio[claveMaster] : [];
+  let fallback = false;
+
+  if (!master || master.length === 0) {
+    // Sin ninguna línea con precio utilizable (caso típico: el widget del CRM,
+    // que manda proposalData sin montos). Creator exige la tabla no vacía, así
+    // que se manda un tramo mínimo y se deja rastro para no confundirlo con un
+    // precio real.
+    fallback = true;
+    master = [
+      {
+        Modalidad: MODALIDAD_FIJA,
+        Desde: 1,
+        Hasta: empleados,
+        Valor: 1,
+        Valor_Usuario_Adicional: 0,
+      },
+    ];
+    console.warn(
+      `[ndv-charge-table] Sin líneas con precio: se envía tabla mínima (Valor=1). ` +
+        `moneda=${moneda || "UF"} empleados=${empleados} filas=${rows.length}`
+    );
+  }
+
+  if (lineasSinServicio.length > 0) {
+    console.warn(
+      `[ndv-charge-table] ${lineasSinServicio.length} línea(s) sin Servicio_Recurrente asociado, ` +
+        `quedan fuera de la tabla de cobro: ${lineasSinServicio.join(", ")}`
+    );
+  }
+
+  return {
+    master,
+    porServicio,
+    diagnostico: {
+      fallback,
+      moneda: moneda || "UF",
+      empleados,
+      descuentos,
+      lineasSinServicio,
+      lineasSinPrecio,
+    },
+  };
+}
+
+module.exports = {
+  MODALIDAD_POR_USUARIO,
+  MODALIDAD_FIJA,
+  buildChargeTables,
+  factorDescuentoLinea,
+  esLineaPorUsuario,
+  resolverDescuentos,
+};

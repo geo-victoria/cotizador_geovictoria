@@ -140,7 +140,11 @@ export default async function handler(req, res) {
     let subformResult = null;
     if (ndvId) {
       try {
-        subformResult = await runNdvSubformSetup({ ndvId, ndvRecord: result?.ndvRecord || {} });
+        subformResult = await runNdvSubformSetup({
+          ndvId,
+          ndvRecord: result?.ndvRecord || {},
+          chargeTables: result?.chargeTables,
+        });
       } catch (subformError) {
         subformResult = { errors: [String(subformError?.message || subformError)] };
       }
