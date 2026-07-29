@@ -11,9 +11,13 @@
  * sin duplicar registros.
  */
 
-const { getRecord, updateRecordBestEffort, toText } = require("./zoho-crm");
+const { getRecord, toText } = require("./zoho-crm");
 const { runOnboardingHandoff } = require("./onboarding-handoff");
-const { runNdvHandoff } = require("./ndv-handoff");
+const {
+  runNdvHandoff,
+  quoteHasNdvReference,
+  persistNdvReferences,
+} = require("./ndv-handoff");
 const { runNdvSubformSetup } = require("./ndv-subforms");
 const { normalizeEmail } = require("./verification-token");
 const { notifyQuoteEvent } = require("./quote-internal-notify");
@@ -44,46 +48,6 @@ function buildAcceptanceDataFromQuote(config, quote) {
   };
 }
 
-async function persistNdvReferences(config, quoteId, ndvId) {
-  const normalizedNdvId = toText(ndvId);
-  if (!normalizedNdvId) return;
-
-  if (config.quoteNvdIdTextField) {
-    try {
-      await updateRecordBestEffort(
-        config.quoteModule,
-        quoteId,
-        { [config.quoteNvdIdTextField]: normalizedNdvId },
-        true
-      );
-    } catch (_error) {
-      // best effort
-    }
-  }
-
-  if (config.quoteNvdLookupField) {
-    try {
-      await updateRecordBestEffort(
-        config.quoteModule,
-        quoteId,
-        { [config.quoteNvdLookupField]: { id: normalizedNdvId } },
-        true
-      );
-    } catch (_firstError) {
-      try {
-        await updateRecordBestEffort(
-          config.quoteModule,
-          quoteId,
-          { [config.quoteNvdLookupField]: normalizedNdvId },
-          true
-        );
-      } catch (_secondError) {
-        // best effort
-      }
-    }
-  }
-}
-
 /**
  * @returns {Promise<{ onboardingUrl: string, onboardingId: string, ndv: object, reused: boolean }>}
  */
@@ -97,9 +61,18 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
   // Onboarding y NDV en paralelo: son independientes entre sí y juntos sumarían
   // ~30 s secuenciales; en paralelo el techo baja a ~15 s.
   console.log("[finalize] iniciando onboarding + NDV en paralelo");
+  // La cotización se crea en Creator al EMITIRLA (create-from-vicky). Acá solo
+  // queda la red de seguridad: si aquella vez falló o se quedó sin tiempo de
+  // función, se crea ahora. Si ya existe, no se toca — la conversión a Nota de
+  // Venta es el paso humano del ejecutivo.
+  const ndvYaExiste = quoteHasNdvReference(config, quote);
+  if (ndvYaExiste) {
+    console.log(`[finalize] cotización ${quoteId} ya está en Creator; no se recrea.`);
+  }
+
   const [handoffResult, ndvResultRaw] = await Promise.all([
     runOnboardingHandoff({ config, quoteId, dealId: resolvedDealId, acceptanceData }),
-    config.ndvHandoffEnabled
+    config.ndvHandoffEnabled && !ndvYaExiste
       ? runNdvHandoff({ config, quoteId, dealId: resolvedDealId, acceptanceData }).catch((err) => ({
           _error: toText(err?.message || err),
         }))
@@ -113,8 +86,8 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
   }
 
   // NDV best-effort: no debe bloquear la entrega del onboarding tras un pago OK.
-  let ndv = { status: "skipped", reason: "disabled" };
-  if (config.ndvHandoffEnabled) {
+  let ndv = { status: "skipped", reason: ndvYaExiste ? "already_linked" : "disabled" };
+  if (config.ndvHandoffEnabled && !ndvYaExiste) {
     if (ndvResultRaw?._error) {
       console.warn(`[finalize] NDV handoff error: ${ndvResultRaw._error}`);
       ndv = { status: "error", error: ndvResultRaw._error };

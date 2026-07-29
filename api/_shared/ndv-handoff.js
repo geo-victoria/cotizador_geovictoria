@@ -713,6 +713,7 @@ function buildNdvRecord({
   billingContactId,
   acceptanceData,
   overrides,
+  escalerasPrecio,
 }) {
   const creatorOverrides = overrides && typeof overrides === "object" ? overrides : {};
   const creatorFormulario = toText(creatorOverrides.formulario) || "Nota de Venta";
@@ -755,6 +756,7 @@ function buildNdvRecord({
     moneda,
     servicioPrincipal: firstServicio,
     resolveServicios: resolveServiciosRecurrentesDeFila,
+    escalerasEnMemoria: escalerasPrecio,
   });
   const chargeTable = chargeTables.master;
   const resolvedBusinessLine = "Estándar";
@@ -827,7 +829,68 @@ function pickFromLookup(value) {
   return value || "";
 }
 
-async function runNdvHandoff({ config, quoteId, dealId, acceptanceData }) {
+/**
+ * Guarda en la cotización el ID del registro creado en Creator. Es lo que hace
+ * idempotente al handoff: sin esta referencia, un reintento crea un duplicado.
+ */
+async function persistNdvReferences(config, quoteId, ndvId) {
+  const normalizedNdvId = toText(ndvId);
+  if (!normalizedNdvId || !quoteId) return;
+
+  if (config.quoteNvdIdTextField) {
+    try {
+      await updateRecordBestEffort(
+        config.quoteModule,
+        quoteId,
+        { [config.quoteNvdIdTextField]: normalizedNdvId },
+        true
+      );
+    } catch (_error) {
+      // best effort
+    }
+  }
+
+  if (!config.quoteNvdLookupField) return;
+  try {
+    await updateRecordBestEffort(
+      config.quoteModule,
+      quoteId,
+      { [config.quoteNvdLookupField]: { id: normalizedNdvId } },
+      true
+    );
+  } catch (_firstError) {
+    try {
+      await updateRecordBestEffort(
+        config.quoteModule,
+        quoteId,
+        { [config.quoteNvdLookupField]: normalizedNdvId },
+        true
+      );
+    } catch (_secondError) {
+      // best effort
+    }
+  }
+}
+
+/** ¿La cotización ya tiene un registro de Creator asociado? */
+function quoteHasNdvReference(config, quoteRow) {
+  const fromText = toText(config?.quoteNvdIdTextField ? quoteRow?.[config.quoteNvdIdTextField] : "");
+  if (fromText) return true;
+
+  if (!config?.quoteNvdLookupField) return false;
+  const lookupValue = quoteRow?.[config.quoteNvdLookupField];
+  if (lookupValue && typeof lookupValue === "object") {
+    return Boolean(toText(lookupValue?.id || lookupValue?.ID || lookupValue?.name || lookupValue?.display_value));
+  }
+  return Boolean(toText(lookupValue));
+}
+
+/**
+ * @param {object} [escalerasPrecio] Escalera de precios por Codigo_Item, en
+ *   memoria. La usa la EMISIÓN (create-from-vicky), donde la escalera viene en
+ *   el request y todavía no hace falta haberla persistido en el CRM.
+ */
+async function runNdvHandoff({ config, quoteId, dealId, acceptanceData, escalerasPrecio }) {
   const creatorConfig = getCreatorConfig();
   if (creatorConfig.missing.length > 0) {
     throw new Error(`Faltan variables de Zoho Creator: ${creatorConfig.missing.join(", ")}`);
@@ -888,6 +951,7 @@ async function runNdvHandoff({ config, quoteId, dealId, acceptanceData }) {
     ownerUser,
     billingContactId,
     acceptanceData: acceptanceData || {},
+    escalerasPrecio,
     // Vicky deja una COTIZACIÓN (editable). El maestro debe nacer como "Cotización"
     // para que CreateNextStep pueble Form_Order al crear los servicios. La
     // conversión a NDV y el confirmar quedan como paso humano posterior.
@@ -1274,4 +1338,6 @@ module.exports = {
   runNdvHandoff,
   runNdvHandoffFromDraft,
   resolveServiciosRecurrentesDeFila,
+  persistNdvReferences,
+  quoteHasNdvReference,
 };

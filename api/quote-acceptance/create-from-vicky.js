@@ -7,6 +7,12 @@ const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
 const { descuentosHasta } = require("../_shared/discount-engine");
+const {
+  runNdvHandoff,
+  persistNdvReferences,
+  quoteHasNdvReference,
+} = require("../_shared/ndv-handoff");
+const { runNdvSubformSetup } = require("../_shared/ndv-subforms");
 
 // waitUntil: corre trabajo en segundo plano DESPUÉS de responder, dentro de la
 // misma invocación (Vercel mantiene viva la función hasta que termine). Se usa
@@ -650,6 +656,79 @@ function resolveDescripcionItem(item) {
   if (tipo !== "hardware") return "";
   const id = String(item.id || "").toLowerCase();
   return HARDWARE_ID_TO_DESCRIPCION[id] || "";
+}
+
+/**
+ * Crea la cotización en Zoho Creator al momento de emitirla.
+ *
+ * Best-effort de punta a punta: nada de lo que pase acá puede afectar una
+ * cotización que el cliente ya recibió. Si falla, la aceptación o el post-pago
+ * la crean después — ambos verifican la referencia antes de crear, así que no
+ * se duplica.
+ */
+async function crearCotizacionEnCreator({
+  config,
+  quoteId,
+  dealId,
+  cliente,
+  escalerasPrecio,
+  crmIncompleto,
+}) {
+  if (!config.ndvHandoffEnabled) return;
+
+  // Sin Deal no hay Cuenta ni dueño que resolver, y el handoff exige ambos.
+  // El caso degradado lo recoge la aceptación, cuando reconcile-crm ya corrió.
+  if (!dealId || crmIncompleto) {
+    console.warn(
+      `[create-from-vicky] Creator omitido en la emisión (dealId=${dealId || "∅"}, crmIncompleto=${crmIncompleto}); ` +
+        `queda para la aceptación.`
+    );
+    return;
+  }
+
+  const inicio = Date.now();
+  try {
+    // Idempotencia: una re-emisión sobre el mismo Borrador no debe crear un
+    // segundo registro en Creator.
+    const yaCreada = await getRecordWithFields(
+      config.quoteModule,
+      quoteId,
+      [config.quoteNvdIdTextField, config.quoteNvdLookupField].filter(Boolean)
+    ).catch(() => null);
+    if (yaCreada && quoteHasNdvReference(config, yaCreada)) {
+      console.log(`[create-from-vicky] Creator ya tiene la cotización ${quoteId}; no se recrea.`);
+      return;
+    }
+
+    const ndvResult = await runNdvHandoff({
+      config,
+      quoteId,
+      dealId,
+      // En la emisión todavía no hay datos de facturación: el cliente los
+      // entrega recién en la página de aceptación. El RUT ya está en la
+      // cotización, que es lo que exige la prevalidación.
+      acceptanceData: { companyRut: toText(cliente?.rutEmpresa) },
+      escalerasPrecio,
+    });
+
+    const ndvId = toText(ndvResult?.ndvId);
+    if (ndvId) {
+      await persistNdvReferences(config, quoteId, ndvId);
+      await runNdvSubformSetup({
+        ndvId,
+        ndvRecord: ndvResult?.ndvRecord || {},
+        chargeTables: ndvResult?.chargeTables,
+      });
+    }
+    console.log(
+      `[create-from-vicky] Cotización en Creator id=${ndvId || "∅"} (${Date.now() - inicio}ms)`
+    );
+  } catch (error) {
+    console.error(
+      `[create-from-vicky] Creator falló en la emisión (${Date.now() - inicio}ms): ` +
+        `${toText(error?.message || error).slice(0, 300)}. La aceptación lo reintenta.`
+    );
+  }
 }
 
 /**
@@ -1366,6 +1445,29 @@ module.exports = async function handler(req, res) {
             pdfUrl,
             tieneReloj,
           }),
+        });
+
+        // ── Cotización en Zoho Creator ──
+        // Nace ACÁ, en la emisión, no al aceptar/pagar: lo que Creator crea es
+        // una COTIZACIÓN (Formulario="Cotización", STATUS="BORRADOR"), así que
+        // su momento natural es cuando Vicky cotiza. Además la escalera de
+        // precios está en memoria en este request.
+        //
+        // Va ÚLTIMO a propósito: el link, el PDF y el correo son la ruta
+        // crítica del cliente y no deben esperar a Creator. Si acá nos
+        // quedamos sin tiempo de función, la aceptación y el post-pago siguen
+        // creando el registro si no existe (red de seguridad), porque ambos
+        // consultan la referencia antes de crear.
+        //
+        // La conversión Cotización → Nota de Venta y el confirmar siguen
+        // siendo el paso humano del ejecutivo en Creator.
+        await crearCotizacionEnCreator({
+          config,
+          quoteId,
+          dealId,
+          cliente,
+          escalerasPrecio,
+          crmIncompleto,
         });
       })().catch((bgErr) =>
         console.error(

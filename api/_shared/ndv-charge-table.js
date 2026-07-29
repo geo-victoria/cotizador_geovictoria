@@ -192,6 +192,7 @@ function buildChargeTables({
   moneda,
   servicioPrincipal,
   resolveServicios,
+  escalerasEnMemoria,
 }) {
   const rawRows = Array.isArray(quote?.[config.quoteItemsSubformField])
     ? quote[config.quoteItemsSubformField]
@@ -202,7 +203,12 @@ function buildChargeTables({
     ? { ...DEFAULT_FIELD_MAP, zonaTarifa: config.quoteItemZonaTarifaField }
     : DEFAULT_FIELD_MAP;
   const rows = sanitizeItems(rawRows, fieldMap);
-  const escaleras = leerEscaleras(quote, config);
+  // La escalera en memoria manda: la emisión la tiene en el propio request y no
+  // depende de que se haya persistido en el CRM.
+  const escaleras =
+    escalerasEnMemoria && Object.keys(escalerasEnMemoria).length > 0
+      ? escalerasEnMemoria
+      : leerEscaleras(quote, config);
   const usaUf = normalizar(moneda) === "uf" || !moneda;
   const descuentos = resolverDescuentos(quote, config);
 

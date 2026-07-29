@@ -3,7 +3,11 @@ const { getRecord, updateRecordBestEffort, createRecord, toText } = require("../
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { getMercadoPagoConfig, isTestLaneQuote } = require("../_shared/mercadopago-config");
 const { runOnboardingHandoff } = require("../_shared/onboarding-handoff");
-const { runNdvHandoff } = require("../_shared/ndv-handoff");
+const {
+  runNdvHandoff,
+  persistNdvReferences,
+  quoteHasNdvReference,
+} = require("../_shared/ndv-handoff");
 const { runNdvSubformSetup } = require("../_shared/ndv-subforms");
 const { notifyQuoteEvent } = require("../_shared/quote-internal-notify");
 const {
@@ -175,61 +179,20 @@ function shouldBlockNdv(config) {
   return toText(config?.ndvHandoffMode).toLowerCase() === "blocking";
 }
 
-function quoteHasNdvReference(config, quoteRow) {
-  const fromText = toText(config?.quoteNvdIdTextField ? quoteRow?.[config.quoteNvdIdTextField] : "");
-  if (fromText) return true;
-
-  if (!config?.quoteNvdLookupField) return false;
-  const lookupValue = quoteRow?.[config.quoteNvdLookupField];
-  if (lookupValue && typeof lookupValue === "object") {
-    return Boolean(toText(lookupValue?.id || lookupValue?.ID || lookupValue?.name || lookupValue?.display_value));
-  }
-  return Boolean(toText(lookupValue));
-}
-
-async function persistNdvReferences(config, quoteId, ndvId) {
-  const normalizedNdvId = toText(ndvId);
-  if (!normalizedNdvId) return;
-
-  if (config.quoteNvdIdTextField) {
-    try {
-      await updateRecordBestEffort(
-        config.quoteModule,
-        quoteId,
-        { [config.quoteNvdIdTextField]: normalizedNdvId },
-        true
-      );
-    } catch (_error) {
-      // Best effort
-    }
-  }
-
-  if (config.quoteNvdLookupField) {
-    try {
-      await updateRecordBestEffort(
-        config.quoteModule,
-        quoteId,
-        { [config.quoteNvdLookupField]: { id: normalizedNdvId } },
-        true
-      );
-    } catch (_firstError) {
-      try {
-        await updateRecordBestEffort(
-          config.quoteModule,
-          quoteId,
-          { [config.quoteNvdLookupField]: normalizedNdvId },
-          true
-        );
-      } catch (_secondError) {
-        // Best effort
-      }
-    }
-  }
-}
+// quoteHasNdvReference y persistNdvReferences viven en ndv-handoff.js: los
+// comparten la emisión, la aceptación y el post-pago, y tener copias por
+// archivo era pedir que se desincronizaran.
 
 async function triggerNdvIfEnabled(config, payload) {
   if (!config.ndvHandoffEnabled) {
     return { status: "skipped", reason: "disabled" };
+  }
+
+  // La cotización se crea en Creator al EMITIRLA (create-from-vicky). Acá solo
+  // queda la red de seguridad para cuando aquello falló. Si ya existe no se
+  // toca: convertirla a Nota de Venta es el paso humano del ejecutivo.
+  if (payload.quoteRow && quoteHasNdvReference(config, payload.quoteRow)) {
+    return { status: "skipped", reason: "already_linked" };
   }
 
   try {
@@ -670,6 +633,7 @@ export default async function handler(req, res) {
       ndvResult = await triggerNdvIfEnabled(config, {
         quoteId: payload.quoteId,
         dealId: payload.dealId,
+        quoteRow: quote,
         acceptanceData: {
           billingEmail: billingEmailFromForm,
           billingPhone: toText(acceptanceData.billingPhone),
