@@ -43,6 +43,13 @@ function getAcceptanceConfig(req) {
     quoteItemZonaTarifaField: toText(
       process.env.QUOTE_ITEM_ZONA_TARIFA_FIELD || "Zona_Tarifa"
     ),
+    // Campo de texto largo donde se guarda, en JSON, la escalera de precios que
+    // el agente usó para cotizar ({ codigoItem: [{desde,hasta,modalidad,precioUF}] }).
+    // Creator necesita la escalera COMPLETA para imprimir la tabla de cobro y
+    // resaltar el tramo aplicable; se persiste con la cotización para que la NDV
+    // refleje los precios vigentes cuando el cliente aceptó, no los de hoy.
+    // Sin el campo configurado, la tabla cae al tramo único (ver ndv-charge-table).
+    quotePriceLadderField: toText(process.env.QUOTE_PRICE_LADDER_FIELD || ""),
     quoteMarkingMethodsField: toText(
       process.env.QUOTE_MARKING_METHODS_FIELD || "Metodos_de_Marcaje1"
     ),

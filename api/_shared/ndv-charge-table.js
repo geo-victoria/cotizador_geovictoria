@@ -111,6 +111,54 @@ function montosLinea(row, usaUf) {
 }
 
 /**
+ * Escalera de precios que el agente usó al cotizar, guardada como JSON en la
+ * cotización ({ codigoItem: [{desde,hasta,modalidad,precioUF}] }). Si el campo
+ * no está configurado o el JSON viene corrupto, se devuelve vacío y la tabla
+ * cae al tramo único (montos correctos, PDF más pobre).
+ */
+function leerEscaleras(quote, config) {
+  const campo = config?.quotePriceLadderField;
+  if (!campo) return {};
+  const crudo = quote?.[campo];
+  if (!crudo) return {};
+  if (typeof crudo === "object") return crudo;
+  try {
+    const parsed = JSON.parse(String(crudo));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_error) {
+    console.warn(`[ndv-charge-table] Escalera de precios ilegible en ${campo}; se usa el tramo único.`);
+    return {};
+  }
+}
+
+/**
+ * Convierte la escalera del catálogo en filas de Tabla_de_Cobro de Creator,
+ * con el descuento aplicado a cada tramo.
+ *
+ * Los tramos "fijo" son un monto mensual total del tramo; los "por_usuario",
+ * un precio unitario. Es la misma distinción que Creator hace entre
+ * "Rango Fijo" y "Rango por Usuario".
+ */
+function escaleraAFilas(escalera, factorDescuento) {
+  return escalera
+    .map((tramo) => {
+      const desde = toPositiveInt(tramo?.desde);
+      const hasta = toPositiveInt(tramo?.hasta);
+      const precio = toNumber(tramo?.precioUF) * factorDescuento;
+      if (desde <= 0 || hasta <= 0 || precio <= 0) return null;
+      return {
+        Modalidad: normalizar(tramo?.modalidad) === "fijo" ? MODALIDAD_FIJA : MODALIDAD_POR_USUARIO,
+        Desde: desde,
+        Hasta: hasta,
+        Valor: redondear(precio),
+        Valor_Usuario_Adicional: 0,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.Desde - b.Desde);
+}
+
+/**
  * ¿La línea se cobra por usuario? El subform ya trae la modalidad mapeada a Zoho
  * ("Recurrente" = por usuario, "Único" = tarifa fija mensual, "Arriendo", "Venta").
  * Se exige además que la cantidad coincida con la dotación comprometida: si no,
@@ -154,6 +202,7 @@ function buildChargeTables({
     ? { ...DEFAULT_FIELD_MAP, zonaTarifa: config.quoteItemZonaTarifaField }
     : DEFAULT_FIELD_MAP;
   const rows = sanitizeItems(rawRows, fieldMap);
+  const escaleras = leerEscaleras(quote, config);
   const usaUf = normalizar(moneda) === "uf" || !moneda;
   const descuentos = resolverDescuentos(quote, config);
 
@@ -192,15 +241,38 @@ function buildChargeTables({
     const subtotal = montos.subtotal * factor;
     const unitario = montos.unitario > 0 ? montos.unitario * factor : subtotal / cantidad;
 
-    const previo = acumulado.get(servicio) || { subtotal: 0, unitario: 0, todasPorUsuario: true };
+    const previo = acumulado.get(servicio) || {
+      subtotal: 0,
+      unitario: 0,
+      todasPorUsuario: true,
+      codigos: [],
+      factor,
+    };
     previo.subtotal += subtotal;
     previo.unitario += unitario;
     previo.todasPorUsuario = previo.todasPorUsuario && esLineaPorUsuario(row, cantidad, empleados);
+    previo.codigos.push(String(row?.codigo || "").trim());
     acumulado.set(servicio, previo);
   });
 
   const porServicio = {};
+  const serviciosConEscalera = [];
   for (const [servicio, montos] of acumulado.entries()) {
+    // Escalera completa cuando el servicio viene de UN solo ítem del catálogo:
+    // es el caso normal (asistencia → Control de Asistencia). Si dos ítems caen
+    // en el mismo servicio no hay una escalera única que los represente, así que
+    // se usa el tramo único, que al menos mantiene el monto correcto.
+    const codigos = Array.from(new Set(montos.codigos.filter(Boolean)));
+    const escalera = codigos.length === 1 ? escaleras[codigos[0]] : null;
+    if (Array.isArray(escalera) && escalera.length > 0) {
+      const filas = escaleraAFilas(escalera, montos.factor);
+      if (filas.length > 0) {
+        porServicio[servicio] = filas;
+        serviciosConEscalera.push(servicio);
+        continue;
+      }
+    }
+
     porServicio[servicio] = montos.todasPorUsuario
       ? [
           {
@@ -265,6 +337,7 @@ function buildChargeTables({
       moneda: moneda || "UF",
       empleados,
       descuentos,
+      serviciosConEscalera,
       lineasSinServicio,
       lineasSinPrecio,
     },

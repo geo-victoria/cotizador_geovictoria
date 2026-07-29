@@ -653,6 +653,34 @@ function resolveDescripcionItem(item) {
 }
 
 /**
+ * Recolecta la escalera de precios que el agente mandó por ítem, indexada por
+ * Codigo_Item. Va a un campo JSON de la cotización porque la NDV de Creator
+ * imprime la tabla de cobro COMPLETA (todos los tramos, con el aplicable
+ * resaltado): con un solo tramo el PDF sale pobre y Creator no puede redactar
+ * la descripción del ítem.
+ *
+ * Se persiste en vez de recalcularse al aceptar para que la NDV muestre los
+ * precios vigentes AL MOMENTO DE COTIZAR: si el catálogo cambia entre la
+ * cotización y el pago, el cliente firma lo que vio.
+ */
+function collectEscalerasPrecio(items) {
+  if (!Array.isArray(items)) return {};
+  const out = {};
+  for (const item of items) {
+    const codigo = String(item?.id || "").trim();
+    const escalera = Array.isArray(item?.escalera) ? item.escalera : [];
+    if (!codigo || escalera.length === 0) continue;
+    out[codigo] = escalera.map((tramo) => ({
+      desde: Number(tramo?.desde || 0),
+      hasta: Number(tramo?.hasta || 0),
+      modalidad: String(tramo?.modalidad || ""),
+      precioUF: Number(tramo?.precioUF || 0),
+    }));
+  }
+  return out;
+}
+
+/**
  * Convierte los items que recibimos de Vicky en el formato que espera el
  * subform Detalle_Items_Cotizacion de Zoho.
  *
@@ -1114,6 +1142,7 @@ module.exports = async function handler(req, res) {
     // ── Cotización: crear nueva o reusar el Borrador en curso ──
     const ufActual = Number(cotizacion.ufActual || 0);
     const subformItems = buildSubformItems(cotizacion.items, ufActual, config);
+    const escalerasPrecio = collectEscalerasPrecio(cotizacion.items);
 
     // Si la cotización nace con descuento negociado en el preform, calculamos
     // el descuento acumulado con el MISMO motor que usa el commit (mismos ítems
@@ -1202,6 +1231,9 @@ module.exports = async function handler(req, res) {
         // los actualiza después).
         [config.quoteVersionPdfField]: 1,
         ...quoteDiscountFields,
+        ...(config.quotePriceLadderField && Object.keys(escalerasPrecio).length > 0
+          ? { [config.quotePriceLadderField]: JSON.stringify(escalerasPrecio) }
+          : {}),
       };
       const quoteResult = await createRecord(config.quoteModule, quoteFields, true);
       quoteId = toText(quoteResult?.id);
