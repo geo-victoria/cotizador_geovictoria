@@ -181,8 +181,21 @@ function getNitVariants(nit) {
     compact,
     `${cuerpo}-${dv}`,
     `${cuerpoConPuntos}-${dv}`,
+    // Convención COLOMBIA (Ana María, 30-jul): las cuentas CO guardan el NIT
+    // SIN dígito de verificación. Sin estas variantes el dedup no encontraba
+    // las cuentas existentes y se duplicaban (caso Odalisca: cuenta nueva
+    // "900624654-1" pese a la convención sin DV).
+    cuerpo,
+    cuerpoConPuntos,
   ];
   return Array.from(new Set(variantes)).filter(Boolean);
+}
+
+// NIT normalizado para ESCRIBIR en RUT_Empresa según la convención CO: sin
+// puntos y sin el dígito de verificación (solo se recorta un "-X" final
+// explícito — nunca se adivina si un número pelado trae DV o no).
+function nitParaGuardarCO(nit) {
+  return String(nit || "").trim().replace(/[.\s]/g, "").replace(/-[0-9kK]$/i, "");
 }
 
 async function executeCoqlQuery(selectQuery) {
@@ -461,7 +474,7 @@ module.exports = async function handler(req, res) {
       stage = "create_account";
       const createAccountPayload = {
         Account_Name: empresa,
-        RUT_Empresa: nit,
+        RUT_Empresa: nitParaGuardarCO(nit),
         Phone: contactoTelefono || undefined,
         Description: `Cuenta creada por Vicky CO (WhatsApp). NIT: ${nit}`,
         Industry: VICKY_CO_SECTOR,
