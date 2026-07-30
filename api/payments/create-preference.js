@@ -99,9 +99,36 @@ export default async function handler(req, res) {
       });
     }
 
+    // Petición de FINANZAS (30-jul): que el registro del pago diga QUIÉN paga.
+    // El payer con nombre + identificación queda visible en la actividad y los
+    // reportes de Mercado Pago; empresa y nombre van además en metadata (junto
+    // al quote_id/deal_id de Zoho que ya viajaban) para los exports por API.
+    const pagadorNombre = toText(
+      session.quote?.Contacto_Facturacion?.name || session.quote?.Contacto_Asociado?.name,
+    );
+    const pagadorEmpresa = toText(session.quote?.Cuenta_Asociada?.name);
+    const partesNombre = pagadorNombre.split(/\s+/).filter(Boolean);
+    const payer = {
+      ...(billingEmail ? { email: billingEmail } : {}),
+      ...(partesNombre.length
+        ? {
+            name: partesNombre.slice(0, -1).join(" ") || partesNombre[0],
+            surname: partesNombre.length > 1 ? partesNombre.slice(-1)[0] : undefined,
+          }
+        : {}),
+      ...(session.companyRut
+        ? {
+            identification: {
+              type: session.pais === "co" ? "NIT" : "RUT",
+              number: session.companyRut,
+            },
+          }
+        : {}),
+    };
+
     const preference = {
       items,
-      payer: billingEmail ? { email: billingEmail } : undefined,
+      payer: Object.keys(payer).length ? payer : undefined,
       back_urls: {
         success: landingUrl(mpConfig, token, { oneshot: "success" }),
         pending: landingUrl(mpConfig, token, { oneshot: "pending" }),
@@ -111,7 +138,14 @@ export default async function handler(req, res) {
       notification_url: mpConfig.notificationUrl,
       external_reference: externalReference,
       statement_descriptor: mpConfig.statementDescriptor,
-      metadata: { quote_id: quoteId, deal_id: dealId, kind: "oneshot" },
+      metadata: {
+        quote_id: quoteId,
+        deal_id: dealId,
+        kind: "oneshot",
+        pagador_nombre: pagadorNombre || undefined,
+        empresa: pagadorEmpresa || undefined,
+        rut_empresa: session.companyRut || undefined,
+      },
     };
 
     const created = await createPreference(mpConfig, preference);
