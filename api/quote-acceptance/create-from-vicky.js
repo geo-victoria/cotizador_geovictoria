@@ -1392,6 +1392,10 @@ module.exports = async function handler(req, res) {
           // cotización, que es lo que exige la prevalidación.
           acceptanceData: { companyRut: toText(cliente?.rutEmpresa) },
           escalerasPrecio,
+          // La dotación que pidió el cliente, de primera mano. En un tramo de
+          // tarifa fija la línea va con cantidad 1, así que deducirla del
+          // subform daría "1 usuario" y Creator cobraría el tramo equivocado.
+          userCount: Number(cliente?.userCount) || 0,
           crmIncompleto,
           motivo: "emision",
         });

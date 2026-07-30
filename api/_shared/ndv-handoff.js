@@ -470,7 +470,24 @@ function inferServiciosRecurrentes(quote, config) {
   return Array.from(selected);
 }
 
-function inferCommittedEmployees(quote) {
+/**
+ * Dotación comprometida de la cotización.
+ *
+ * OJO con la última capa: en un tramo de TARIFA FIJA la cantidad de la línea es
+ * 1 —un cobro plano mensual, no una persona—, así que leerla como dotación
+ * decía "1 usuario" en toda cotización de 10 o menos, y Creator terminaba
+ * eligiendo el tramo 1-1 y cobrando 0,25 UF donde Vicky cotizó 0,6. Por eso el
+ * número real se toma, en orden: del dato en memoria de la emisión, de los
+ * campos propios, del Deal, y solo al final de las líneas POR USUARIO.
+ *
+ * @param {number} [userCountOverride] Dotación conocida en el request (emisión).
+ * @param {object} [deal] Deal del CRM; create-from-vicky le escribe
+ *   N_Empleados_que_marcan tanto al convertir el Lead como al crearlo.
+ */
+function inferCommittedEmployees(quote, deal, userCountOverride) {
+  const desdeRequest = toPositiveInt(userCountOverride);
+  if (desdeRequest > 0) return desdeRequest;
+
   const fromFields = [
     quote?.N_Empleados_Compometidos,
     quote?.N_Empleados_Comprometidos,
@@ -482,14 +499,31 @@ function inferCommittedEmployees(quote) {
     .find((value) => value > 0);
   if (fromFields) return fromFields;
 
+  const fromDeal = [
+    deal?.N_Empleados_que_marcan,
+    deal?.N_Empleados_Compometidos,
+    deal?.N_Empleados_Comprometidos,
+  ]
+    .map((value) => toPositiveInt(value))
+    .find((value) => value > 0);
+  if (fromDeal) return fromDeal;
+
   const rows = safeArray(quote?.Detalle_Items_Cotizacion).length
     ? safeArray(quote?.Detalle_Items_Cotizacion)
     : safeArray(quote?.items);
-  const asistenciaRow = rows.find((row) => normalizeItemName(row?.Nombre_Item).includes("asistencia"));
+
+  // Solo las líneas cobradas POR USUARIO dicen algo de la dotación. "Único" es
+  // tarifa fija mensual y "Arriendo" cuenta equipos: en ambas la cantidad no es
+  // gente.
+  const esPorUsuario = (row) => toText(row?.Modalidad).trim().toLowerCase() === "recurrente";
+  const porUsuario = rows.filter(esPorUsuario);
+  const asistenciaRow = porUsuario.find((row) =>
+    normalizeItemName(row?.Nombre_Item).includes("asistencia")
+  );
   const asistenciaQty = toPositiveInt(asistenciaRow?.Cantidad);
   if (asistenciaQty > 0) return asistenciaQty;
 
-  const maxQty = rows.reduce((acc, row) => Math.max(acc, toPositiveInt(row?.Cantidad)), 0);
+  const maxQty = porUsuario.reduce((acc, row) => Math.max(acc, toPositiveInt(row?.Cantidad)), 0);
   return maxQty > 0 ? maxQty : 0;
 }
 
@@ -757,7 +791,7 @@ function buildNdvRecord({
       ownerUser?.Email
   );
   const servicios = inferServiciosCreator(quote, config);
-  const committedEmployees = inferCommittedEmployees(quote);
+  const committedEmployees = inferCommittedEmployees(quote, deal, creatorOverrides.userCount);
   const firstServicio = toText(servicios.serviciosRecurrentes[0]) || "Control de Asistencia";
   const moneda = toText(quote?.Moneda) || "UF";
 
@@ -903,8 +937,16 @@ function quoteHasNdvReference(config, quoteRow) {
  * @param {object} [escalerasPrecio] Escalera de precios por Codigo_Item, en
  *   memoria. La usa la EMISIÓN (create-from-vicky), donde la escalera viene en
  *   el request y todavía no hace falta haberla persistido en el CRM.
+ * @param {number} [userCount] Dotación comprometida, también de la emisión.
  */
-async function runNdvHandoff({ config, quoteId, dealId, acceptanceData, escalerasPrecio }) {
+async function runNdvHandoff({
+  config,
+  quoteId,
+  dealId,
+  acceptanceData,
+  escalerasPrecio,
+  userCount,
+}) {
   const creatorConfig = getCreatorConfig();
   if (creatorConfig.missing.length > 0) {
     throw new Error(`Faltan variables de Zoho Creator: ${creatorConfig.missing.join(", ")}`);
@@ -975,6 +1017,9 @@ async function runNdvHandoff({ config, quoteId, dealId, acceptanceData, escalera
       formStatus: "BEING EDITED",
       estadoCot: "Vigente",
       hitoFacturacion: "Cargando...",
+      // Dotación que la emisión conoce de primera mano. Sin esto habría que
+      // deducirla del subform, donde una tarifa fija dice "cantidad 1".
+      userCount,
     },
   });
 

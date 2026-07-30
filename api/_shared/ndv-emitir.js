@@ -34,6 +34,7 @@ async function emitirCotizacionEnCreator({
   dealId,
   acceptanceData,
   escalerasPrecio,
+  userCount,
   motivo = "emision",
   forzarNueva = false,
   crmIncompleto = false,
@@ -70,6 +71,7 @@ async function emitirCotizacionEnCreator({
       dealId,
       acceptanceData: acceptanceData || {},
       escalerasPrecio,
+      userCount,
     });
 
     const ndvId = toText(resultado?.ndvId);
