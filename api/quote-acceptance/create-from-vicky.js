@@ -197,6 +197,44 @@ async function convertLead(leadId, dealData, existingIds = {}) {
   };
 }
 
+// LEAD-FIRST (Lalo 30-jul, cierre del patrón Odalisca): si el contacto ya
+// tiene un lead CONVERTIDO (la sincronización de hitos convierte apenas ve
+// el preform), la formal debe COLGARSE de ese deal — no crear otro. Busca el
+// lead por teléfono y devuelve los ids de su conversión, descartando deals
+// en Cierre Perdido (ahí sí corresponde ciclo nuevo).
+async function findConvertedIdsByPhone(telefono) {
+  const fono = toText(telefono).replace(/\D/g, "");
+  if (!fono) return {};
+  try {
+    const res = await zohoApiFetch(
+      `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
+    );
+    if (!res.ok || res.status === 204) return {};
+    const lead = ((await res.json())?.data || []).find(
+      (l) => l?.["$converted_detail"]?.deal || l?.Converted_Deal?.id || l?.Converted_Account?.id,
+    );
+    if (!lead) return {};
+    const detail = lead["$converted_detail"] || {};
+    const ids = {
+      accountId: toText(detail.account || lead?.Converted_Account?.id),
+      contactId: toText(detail.contact || lead?.Converted_Contact?.id),
+      dealId: toText(detail.deal || lead?.Converted_Deal?.id),
+    };
+    if (ids.dealId) {
+      const deal = await getRecord("Deals", ids.dealId);
+      if (toText(deal?.Stage) === "Cierre Perdido") ids.dealId = "";
+    }
+    if (ids.accountId || ids.contactId || ids.dealId) {
+      console.warn(
+        `[create-from-vicky] lead-first: contacto ${fono} ya convertido — se reusa account=${ids.accountId || "-"} contact=${ids.contactId || "-"} deal=${ids.dealId || "-"}`,
+      );
+    }
+    return ids;
+  } catch {
+    return {};
+  }
+}
+
 // Recupera los IDs de la conversión desde el lead convertido. Verificado
 // contra el API real (17-jul): GET /Leads?ids={id}&converted=true devuelve
 // $converted_detail = { account, contact, deal } con los ids planos.
@@ -910,6 +948,16 @@ module.exports = async function handler(req, res) {
     let crmIncompleto = false;
     try {
     if (!reuse.leadConverted) {
+      // LEAD-FIRST: si no vino leadId pero el contacto ya tiene un lead
+      // convertido (hito preform), reusar SU cuenta/contacto/deal — la
+      // cotización se asocia al deal existente en vez de duplicarlo.
+      if (!existing.leadId && !accountId && !contactId && !dealId) {
+        stage = "find_converted_by_phone";
+        const convertidos = await findConvertedIdsByPhone(cliente.contactoTelefono);
+        if (convertidos.accountId && !existing.accountId) existing.accountId = convertidos.accountId;
+        if (convertidos.contactId && !existing.contactId) existing.contactId = convertidos.contactId;
+        if (convertidos.dealId) dealId = convertidos.dealId;
+      }
       // ── CAMINO B: Crear Account o reusar existente ──
       let needCreateAccount = !existing.accountId;
 

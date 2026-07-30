@@ -90,6 +90,43 @@ const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
+
+// LEAD-FIRST (Lalo 30-jul): si el contacto ya tiene un lead CONVERTIDO (la
+// sincronización de hitos convierte al ver el preform), la formal se cuelga
+// de ESE deal — no se crea otro (patrón Odalisca). Descarta Cierre Perdido.
+async function findConvertedIdsByPhone(telefono) {
+  const fono = toText(telefono).replace(/\D/g, "");
+  if (!fono) return {};
+  try {
+    const res = await zohoApiFetch(
+      `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
+    );
+    if (!res.ok || res.status === 204) return {};
+    const lead = ((await res.json())?.data || []).find(
+      (l) => l?.["$converted_detail"]?.deal || l?.Converted_Deal?.id || l?.Converted_Account?.id,
+    );
+    if (!lead) return {};
+    const detail = lead["$converted_detail"] || {};
+    const ids = {
+      accountId: toText(detail.account || (lead.Converted_Account && lead.Converted_Account.id)),
+      contactId: toText(detail.contact || (lead.Converted_Contact && lead.Converted_Contact.id)),
+      dealId: toText(detail.deal || (lead.Converted_Deal && lead.Converted_Deal.id)),
+    };
+    if (ids.dealId) {
+      const r = await zohoApiFetch(`/crm/v3/Deals/${ids.dealId}?fields=Stage`);
+      const stageDeal = r.ok ? toText((await r.json())?.data?.[0]?.Stage) : "";
+      if (stageDeal === "Cierre Perdido") ids.dealId = "";
+    }
+    if (ids.accountId || ids.contactId || ids.dealId) {
+      console.warn(`[lead-first] contacto ${fono} ya convertido — se reusa account=${ids.accountId || "-"} contact=${ids.contactId || "-"} deal=${ids.dealId || "-"}`);
+    }
+    return ids;
+  } catch {
+    return {};
+  }
+}
+
+
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtmlMX, EJEC_MX } = require("../_shared/proposal-html-builder-mx");
@@ -586,6 +623,13 @@ module.exports = async function handler(req, res) {
     let contactId;
     let dealId;
     try {
+    // LEAD-FIRST: contacto ya convertido → reusar su cuenta/contacto/deal.
+    stage = "find_converted_by_phone";
+    const convertidosPrevios = await findConvertedIdsByPhone(contactoTelefono);
+    if (convertidosPrevios.accountId) { accountId = convertidosPrevios.accountId; accountReused = true; }
+    if (convertidosPrevios.contactId) contactId = convertidosPrevios.contactId;
+    if (convertidosPrevios.dealId) dealId = convertidosPrevios.dealId;
+
     // ── Account: dedup por RFC antes de crear ──
     stage = "find_account_by_rfc";
     accountId = await findAccountIdByRfc(rfc, empresa);
@@ -683,6 +727,7 @@ module.exports = async function handler(req, res) {
 
     // ── Deal (Territorio México + obligatorios del layout, ver Chile) ──
     stage = "create_deal";
+    if (!dealId) {
     const dealResult = await createRecord("Deals", {
       Deal_Name: `${empresa} - Cotización Vicky`,
       ...(accountId ? { Account_Name: { id: accountId } } : {}),
@@ -705,6 +750,7 @@ module.exports = async function handler(req, res) {
     }, true);
     dealId = toText(dealResult?.id);
     if (!dealId) throw new Error("No se obtuvo dealId");
+    }
     } catch (plumbingError) {
       if (String(process.env.CRM_STRICT || "") === "1") throw plumbingError;
       crmIncompleto = true;
