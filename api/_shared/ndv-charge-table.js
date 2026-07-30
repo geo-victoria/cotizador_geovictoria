@@ -36,6 +36,11 @@ const {
   isInstalacionItem,
   getZonaTarifa,
 } = require("./quote-pricing");
+const { PRICING_TIERS } = require("./proposal-constants");
+
+// Creator no acepta un tramo abierto: el último de una tabla bien formada llega
+// hasta 9999 (ver las notas de venta de referencia).
+const TOPE_ULTIMO_TRAMO = 9999;
 
 const MODALIDAD_POR_USUARIO = "Rango por Usuario";
 const MODALIDAD_FIJA = "Rango Fijo";
@@ -137,6 +142,60 @@ function leerEscaleras(quote, config) {
 }
 
 /**
+ * Completa la escalera con los tramos por encima del alcance de Vicky.
+ *
+ * Vicky vende 1-50 y su catálogo cubre solo eso, pero una tabla de cobro bien
+ * formada muestra la escalera ENTERA (las notas de venta de referencia llegan a
+ * 9999). Los tramos de arriba salen de PRICING_TIERS, la escalera oficial del
+ * cotizador. Esto NO cambia lo que Vicky vende: es solo lo que se imprime.
+ *
+ * PRICING_TIERS es la escalera de ASISTENCIA. Para los demás módulos se extiende
+ * únicamente si su escalera es un múltiplo exacto de aquella en TODOS los tramos
+ * compartidos — que es la regla de negocio vigente (vacaciones = asistencia ×
+ * 0,30, ver lib/catalogo/modulos.ts del agente). Si la relación no es constante,
+ * no se inventa nada y la tabla se queda donde llega el catálogo.
+ */
+function completarEscaleraSobreTope(escalera) {
+  const oficiales = Array.isArray(PRICING_TIERS) ? PRICING_TIERS : [];
+  if (escalera.length === 0 || oficiales.length === 0) return escalera;
+
+  const tope = escalera.reduce((acc, t) => Math.max(acc, toPositiveInt(t?.hasta)), 0);
+  if (tope <= 0) return escalera;
+
+  // Razón contra la escalera oficial en los tramos que comparten rango.
+  const razones = [];
+  for (const tramo of escalera) {
+    const oficial = oficiales.find(
+      (o) => toPositiveInt(o?.min) === toPositiveInt(tramo?.desde) && Number(o?.max) === Number(tramo?.hasta)
+    );
+    const precioOficial = toNumber(oficial?.uf);
+    const precio = toNumber(tramo?.precioUF);
+    if (precioOficial <= 0 || precio <= 0) return escalera; // sin correspondencia: no extender
+    razones.push(precio / precioOficial);
+  }
+  const razon = razones[0];
+  const constante = razones.every((r) => Math.abs(r - razon) < 1e-9);
+  if (!constante) {
+    console.warn(
+      "[ndv-charge-table] La escalera no es múltiplo constante de la oficial; no se extiende sobre el tope."
+    );
+    return escalera;
+  }
+
+  const continuacion = oficiales
+    .filter((o) => toPositiveInt(o?.min) > tope && toNumber(o?.uf) > 0)
+    .map((o) => ({
+      desde: toPositiveInt(o.min),
+      // El tramo abierto (max: Infinity) se cierra en 9999, como en las NDV reales.
+      hasta: Number.isFinite(Number(o.max)) ? toPositiveInt(o.max) : TOPE_ULTIMO_TRAMO,
+      modalidad: normalizar(o.type) === "fijo" ? "fijo" : "por_usuario",
+      precioUF: toNumber(o.uf) * razon,
+    }));
+
+  return [...escalera, ...continuacion];
+}
+
+/**
  * Convierte la escalera del catálogo en filas de Tabla_de_Cobro de Creator,
  * con el descuento aplicado a cada tramo.
  *
@@ -145,7 +204,9 @@ function leerEscaleras(quote, config) {
  * "Rango Fijo" y "Rango por Usuario".
  */
 function escaleraAFilas(escalera, factorDescuento) {
-  return escalera
+  const completa = completarEscaleraSobreTope(escalera);
+  const ultimoDesde = completa.reduce((acc, t) => Math.max(acc, toPositiveInt(t?.desde)), 0);
+  return completa
     .map((tramo) => {
       const desde = toPositiveInt(tramo?.desde);
       const hasta = toPositiveInt(tramo?.hasta);
@@ -156,7 +217,9 @@ function escaleraAFilas(escalera, factorDescuento) {
         Desde: desde,
         Hasta: hasta,
         Valor: redondear(precio),
-        Valor_Usuario_Adicional: 0,
+        // El último tramo repite el valor como precio del usuario adicional: es
+        // el que rige de ahí en adelante, y así lo imprimen las NDV de referencia.
+        Valor_Usuario_Adicional: desde === ultimoDesde ? redondear(precio) : 0,
       };
     })
     .filter(Boolean)
