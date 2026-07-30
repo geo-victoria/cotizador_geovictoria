@@ -566,6 +566,7 @@ module.exports = async function handler(req, res) {
       Monda_del_trato: VICKY_CO_MONEDA,
       Sector: VICKY_CO_SECTOR,
       N_Empleados_que_marcan: userCount,
+      Tipo_de_Cobro: (Number(userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
       Producto_Soluci_n: VICKY_CO_PRODUCTO,
       Owner: OWNER_CO,
     }, true);

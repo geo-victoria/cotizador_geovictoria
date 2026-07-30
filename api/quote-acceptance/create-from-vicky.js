@@ -848,6 +848,10 @@ module.exports = async function handler(req, res) {
           Monda_del_trato: VICKY_MONEDA,
           Sector: sectorParaZoho,
           N_Empleados_que_marcan: cliente.userCount,
+          // Tarifa plana hasta 10 usuarios, por usuario desde 11 (regla del
+          // catálogo, misma en CL/CO/MX). Antes nacía vacío y lo llenaba el
+          // ejecutivo a mano (backfill 30-jul lo rellenó retroactivamente).
+          Tipo_de_Cobro: (Number(cliente.userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
           Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
           Lead_Source: VICKY_LEAD_SOURCE,
         };
@@ -1123,6 +1127,7 @@ module.exports = async function handler(req, res) {
           Monda_del_trato: VICKY_MONEDA,
           Sector: sectorParaZoho,
           N_Empleados_que_marcan: cliente.userCount,
+          Tipo_de_Cobro: (Number(cliente.userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
           Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
           Owner: EJEC_OWNER,
         }, true);

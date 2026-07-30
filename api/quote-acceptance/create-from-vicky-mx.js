@@ -699,6 +699,7 @@ module.exports = async function handler(req, res) {
       Monda_del_trato: VICKY_MX_MONEDA,
       Sector: VICKY_MX_SECTOR,
       N_Empleados_que_marcan: userCount,
+      Tipo_de_Cobro: (Number(userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
       Producto_Soluci_n: VICKY_MX_PRODUCTO,
       Owner: OWNER_MX,
     }, true);
