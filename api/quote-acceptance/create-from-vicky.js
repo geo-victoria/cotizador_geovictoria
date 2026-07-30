@@ -854,6 +854,11 @@ module.exports = async function handler(req, res) {
           Tipo_de_Cobro: (Number(cliente.userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
           Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
           Lead_Source: VICKY_LEAD_SOURCE,
+          // Regla Lalo 30-jul: el deal SIEMPRE con el mismo owner que la
+          // cotización. Sin esto, el deal nacido por conversión hereda el
+          // owner del LEAD (Vicky) y queda en la bandeja de nadie — así se
+          // generaron 16 deals huérfanos entre el 17 y el 29 de julio.
+          Owner: EJEC_OWNER,
         };
         const convertResult = await convertLead(existing.leadId, dealDataForConvert);
         accountId = convertResult.accountId;
@@ -876,6 +881,7 @@ module.exports = async function handler(req, res) {
 
         stage = "update_deal_after_convert";
         await updateRecord("Deals", dealId, {
+          Owner: EJEC_OWNER,
           Territorio: VICKY_TERRITORIO,
           Tombola: VICKY_TOMBOLA,
           Monda_del_trato: VICKY_MONEDA,
