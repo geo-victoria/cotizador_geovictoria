@@ -358,7 +358,24 @@ function buildDocFila(href, label, nota) {
 // PDF de la cotización (desde ahí se llega a la aceptación online); los
 // documentos van como botones de descarga a archivos hosteados. La ficha del
 // reloj solo se incluye si la cotización tiene hardware.
-function buildEmailHtml({ contacto, empresa, pdfUrl, tieneReloj }) {
+function buildEmailHtml({ contacto, empresa, pdfUrl, tieneReloj, ejecutivo }) {
+  // El bloque "Te presento a tu ejecutivo" usa al DUEÑO REAL sorteado por la
+  // tómbola (caso Grey, 31-jul: el correo decía Eddyluz fija mientras el deal
+  // era de Grey). Sin dato, cae al ejecutivo por defecto de siempre.
+  const ej = ejecutivo && toText(ejecutivo.email)
+    ? {
+        nombre: toText(ejecutivo.nombre) || toText(ejecutivo.email).split("@")[0],
+        cargo: toText(ejecutivo.cargo) || "Ejecutivo Comercial",
+        email: toText(ejecutivo.email),
+        // Sin teléfono conocido NO se hereda el de otra persona: el bloque
+        // sale solo con nombre y correo.
+        telefono: toText(ejecutivo.telefono),
+      }
+    : { nombre: EJEC_NOMBRE, cargo: EJEC_CARGO, email: EJEC_EMAIL, telefono: EJEC_TELEFONO };
+  ej.whatsapp = ej.telefono.replace(/\D/g, "");
+  const telHtml = ej.telefono
+    ? ` &nbsp;·&nbsp; 📱 <a href="https://wa.me/${ej.whatsapp}" style="color:#1a73e8;text-decoration:none;">${ej.telefono}</a>`
+    : "";
   const primerNombre = String(contacto || "").trim().split(/\s+/)[0] || "";
   const saludo = primerNombre ? `Hola ${primerNombre} 👋` : "Hola 👋";
   const fichaFila = tieneReloj
@@ -399,11 +416,11 @@ function buildEmailHtml({ contacto, empresa, pdfUrl, tieneReloj }) {
     </td></tr>
     <tr><td style="padding:28px 32px 0 32px;">
       <h3 style="margin:0 0 8px 0;font-size:15px;color:#1a202c;">Te presento a tu ejecutivo 🤝</h3>
-      <p style="margin:0 0 16px 0;font-size:14px;color:#4a5568;line-height:1.6;">De aquí en adelante, <strong>${EJEC_NOMBRE}</strong> te acompaña en todo el proceso. Cualquier duda o ajuste que necesites, <strong>responde este correo</strong> o escríbele directo por WhatsApp — está para ayudarte. 😊</p>
+      <p style="margin:0 0 16px 0;font-size:14px;color:#4a5568;line-height:1.6;">De aquí en adelante, <strong>${ej.nombre}</strong> te acompaña en todo el proceso. Cualquier duda o ajuste que necesites, <strong>responde este correo</strong> o escríbele directo por WhatsApp — está para ayudarte. 😊</p>
       <table role="presentation" width="100%" style="background:#f7f9fc;border:1px solid #e2e8f0;border-radius:10px;"><tr><td style="padding:16px 20px;">
-        <p style="margin:0 0 4px 0;font-size:14px;color:#1a202c;font-weight:600;">${EJEC_NOMBRE}</p>
-        <p style="margin:0 0 8px 0;font-size:13px;color:#718096;">${EJEC_CARGO} · GeoVictoria</p>
-        <p style="margin:0;font-size:13px;color:#718096;">✉️ <a href="mailto:${EJEC_EMAIL}" style="color:#1a73e8;text-decoration:none;">${EJEC_EMAIL}</a> &nbsp;·&nbsp; 📱 <a href="https://wa.me/${EJEC_WHATSAPP}" style="color:#1a73e8;text-decoration:none;">${EJEC_TELEFONO}</a></p>
+        <p style="margin:0 0 4px 0;font-size:14px;color:#1a202c;font-weight:600;">${ej.nombre}</p>
+        <p style="margin:0 0 8px 0;font-size:13px;color:#718096;">${ej.cargo} · GeoVictoria</p>
+        <p style="margin:0;font-size:13px;color:#718096;">✉️ <a href="mailto:${ej.email}" style="color:#1a73e8;text-decoration:none;">${ej.email}</a>${telHtml}</p>
       </td></tr></table>
     </td></tr>
     <tr><td style="padding:28px 32px 30px 32px;">
@@ -1275,8 +1292,12 @@ module.exports = async function handler(req, res) {
     let quoteOwner = EJEC_OWNER;
     // El correo del dueño sorteado: reply-to y CC del correo al cliente van a
     // ÉL (Lalo 31-jul) — el ejecutivo asignado ve la cotización que le llegó
-    // a su cliente y el cliente que responde el correo le responde a él.
+    // a su cliente y el cliente que responde el correo le responde a él. Y el
+    // bloque "Te presento a tu ejecutivo" del correo presenta AL MISMO dueño
+    // (caso Grey: decía Eddyluz fija mientras el deal era de Grey).
     let quoteOwnerEmail = EJEC_EMAIL;
+    let quoteOwnerNombre = EJEC_NOMBRE;
+    let quoteOwnerTelefono = EJEC_TELEFONO;
     if (dealId) {
       const dealNuevo = reuse.leadConverted || !reuse.dealReused;
       try {
@@ -1292,6 +1313,18 @@ module.exports = async function handler(req, res) {
           if (ownerDeal && ownerDeal.id) {
             quoteOwner = { id: toText(ownerDeal.id) };
             if (ownerDeal.email) quoteOwnerEmail = toText(ownerDeal.email);
+            if (ownerDeal.name) quoteOwnerNombre = toText(ownerDeal.name);
+            // Teléfono desde su ficha de usuario (best-effort; sin él, el
+            // correo muestra solo nombre y correo del dueño).
+            try {
+              const rU = await zohoApiFetch(`/crm/v3/users/${toText(ownerDeal.id)}`);
+              if (rU.ok) {
+                const u = (((await rU.json())?.users || [])[0] || {});
+                const tel = toText(u.phone) || toText(u.mobile);
+                if (tel) quoteOwnerTelefono = tel;
+                else if (quoteOwnerEmail !== EJEC_EMAIL) quoteOwnerTelefono = "";
+              }
+            } catch (_e) { /* best-effort */ }
           }
           // Notificación de traspaso al dueño sorteado + CC Victoria Luna
           // (template "Traspaso Deal Global 2024"; el workflow on-create de
@@ -1549,6 +1582,8 @@ module.exports = async function handler(req, res) {
             empresa: cliente.empresa,
             pdfUrl,
             tieneReloj,
+            // El dueño sorteado por la tómbola es quien se presenta (Grey 31-jul).
+            ejecutivo: { nombre: quoteOwnerNombre, email: quoteOwnerEmail, telefono: quoteOwnerTelefono },
           }),
         });
 
