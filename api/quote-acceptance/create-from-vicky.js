@@ -1216,6 +1216,55 @@ module.exports = async function handler(req, res) {
     }
     if (!accountId || !contactId || !dealId) crmIncompleto = crmIncompleto || !accountId || !dealId;
 
+    // ── DATOS REALES pisan PLACEHOLDERS (Lalo 31-jul, caso D'amore) ────────
+    // La cuenta, el contacto y el deal reusados pueden venir de un hito
+    // temprano de la conversación, cuando la empresa aún no se conocía
+    // ("Prospecto WhatsApp", "Por identificar..."). Al llegar la formal con
+    // los datos reales, esos provisorios se corrigen — SOLO los provisorios:
+    // un nombre real existente jamás se pisa (update conservador de siempre).
+    stage = "corregir_placeholders";
+    const ES_PLACEHOLDER = /prospecto whatsapp|por identificar|sin empresa|tu empresa|no identificado/i;
+    try {
+      if (accountId && cliente.empresa && !ES_PLACEHOLDER.test(cliente.empresa)) {
+        const acc = await getRecord("Accounts", accountId).catch(() => null);
+        if (acc && ES_PLACEHOLDER.test(toText(acc.Account_Name))) {
+          await updateRecord("Accounts", accountId, {
+            Account_Name: cliente.empresa,
+            ...(cliente.rutEmpresa ? { RUT_Empresa: cliente.rutEmpresa } : {}),
+          }, true);
+        }
+      }
+      if (dealId && cliente.empresa && !ES_PLACEHOLDER.test(cliente.empresa)) {
+        const dl = await getRecord("Deals", dealId).catch(() => null);
+        if (dl && ES_PLACEHOLDER.test(toText(dl.Deal_Name))) {
+          await updateRecord("Deals", dealId, {
+            Deal_Name: `${cliente.empresa} (Control de Asistencia)`,
+            ...(cliente.userCount ? { N_Empleados_que_marcan: cliente.userCount } : {}),
+          }, true);
+        }
+      }
+      if (contactId && (cliente.contactoEmail || cliente.contacto)) {
+        const ct = await getRecord("Contacts", contactId).catch(() => null);
+        if (ct) {
+          const patch = {};
+          if (!toText(ct.Email) && cliente.contactoEmail) patch.Email = cliente.contactoEmail;
+          if (!toText(ct.Phone) && cliente.contactoTelefono) patch.Phone = cliente.contactoTelefono;
+          if (/prospecto/i.test(toText(ct.Last_Name)) && cliente.contacto) {
+            const partes = splitFullName(cliente.contacto);
+            if (partes.lastName && !/prospecto/i.test(partes.lastName)) {
+              patch.First_Name = partes.firstName;
+              patch.Last_Name = partes.lastName;
+            }
+          }
+          if (Object.keys(patch).length) await updateRecord("Contacts", contactId, patch, true);
+        }
+      }
+    } catch (phErr) {
+      console.warn(
+        `[create-from-vicky] corrección de placeholders falló (no bloquea): ${toText(phErr?.message || phErr).slice(0, 150)}`,
+      );
+    }
+
     // ── REGLA DE ASIGNACIÓN (Lalo, 31-jul) ─────────────────────────────────
     // Todo deal que Vicky CREA pasa por la tómbola de Deals de Zoho
     // ("Tómbola Deals 2026 Chile", lar_id) y la COTIZACIÓN se asigna al dueño
