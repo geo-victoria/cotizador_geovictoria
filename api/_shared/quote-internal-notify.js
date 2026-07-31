@@ -184,14 +184,29 @@ async function sendInternalMail({ quoteModule, quoteId, subject, htmlBody, recip
     mail_format: "html",
   };
   if (rest.length) dataPayload.cc = rest.map((email) => ({ email }));
-  const response = await zohoApiFetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ data: [dataPayload] }),
-  });
-  if (!response.ok) {
+  const enviar = async (payload) => {
+    const response = await zohoApiFetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: [payload] }),
+    });
     const text = await response.text().catch(() => "");
-    throw new Error(`send_mail ${response.status}: ${text.slice(0, 200)}`);
+    return { ok: response.ok, status: response.status, text };
+  };
+  let r = await enviar(dataPayload);
+  // Un destinatario BLOQUEADO por Zoho no puede matar el aviso al resto
+  // (caso pdíaz@ con tilde en la lista de rebotes, 31-jul): se reintenta sin
+  // CC — al menos el destinatario principal recibe la notificación.
+  if (!r.ok && dataPayload.cc && /NOT_ALLOWED|blocked email|UTF-8 addresses/i.test(r.text)) {
+    console.error(
+      `[quote-notify] CC bloqueado por Zoho (${r.text.slice(0, 160)}). Reintentando SIN copias.`,
+    );
+    const sinCc = { ...dataPayload };
+    delete sinCc.cc;
+    r = await enviar(sinCc);
+  }
+  if (!r.ok) {
+    throw new Error(`send_mail ${r.status}: ${r.text.slice(0, 200)}`);
   }
 }
 
