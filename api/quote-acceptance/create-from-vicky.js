@@ -50,6 +50,9 @@ const VICKY_EXPANSION_REGIONAL = toText(process.env.VICKY_EXPANSION_REGIONAL) ||
 const EJEC_NOMBRE = "Eddyluz Mujica";
 const EJEC_CARGO = "Ejecutiva Comercial";
 const EJEC_EMAIL = "emujica@geovictoria.com";
+
+// Copia fija en todo correo de cotización al cliente (Lalo, 31-jul).
+const CC_FIJO = (process.env.QUOTE_EMAIL_CC_FIJO || "egomez@geovictoria.com").trim();
 const EJEC_TELEFONO = "+56 9 3932 1687";
 const EJEC_WHATSAPP = "56939321687";
 const EJEC_OWNER_ID = "3525045000000211283";
@@ -1470,7 +1473,8 @@ module.exports = async function handler(req, res) {
           // cliente le llega directo. Fallback: ejecutivo por defecto.
           replyToEmail: quoteOwnerEmail,
           ccEmail: quoteOwnerEmail,
-          ccEmails: Array.isArray(body.cc) ? body.cc : [],
+          // Copia fija a Lalo (pedida 31-jul) + las copias que traiga el body.
+          ccEmails: [CC_FIJO, ...(Array.isArray(body.cc) ? body.cc : [])].filter(Boolean),
           toEmail: cliente.contactoEmail,
           toName: cliente.contacto,
           subject: `Tu cotización GeoVictoria — ${cliente.empresa}`,

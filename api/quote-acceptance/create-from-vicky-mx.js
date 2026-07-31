@@ -856,7 +856,11 @@ module.exports = async function handler(req, res) {
           fromEmail: VICKY_FROM_EMAIL,
           replyToEmail: EJEC_MX.email,
           ccEmail: EJEC_MX.email,
-          ccEmails: Array.isArray(body.cc) ? body.cc : [],
+          // Copia fija a Lalo (pedida 31-jul) + las copias que traiga el body.
+          ccEmails: [
+            (process.env.QUOTE_EMAIL_CC_FIJO || "egomez@geovictoria.com").trim(),
+            ...(Array.isArray(body.cc) ? body.cc : []),
+          ].filter(Boolean),
           toEmail: contactoEmail,
           toName: contacto,
           subject: `Tu cotización GeoVictoria — ${empresa}`,
