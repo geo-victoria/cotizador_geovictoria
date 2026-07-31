@@ -221,8 +221,13 @@ async function findConvertedIdsByPhone(telefono) {
       dealId: toText(detail.deal || lead?.Converted_Deal?.id),
     };
     if (ids.dealId) {
+      // La dedup es de procesos ABIERTOS (Lalo 31-jul, caso Sasval): un deal
+      // en Cierre Perdido (perdido) o 8. Facturando (cliente actual) es OTRA
+      // negociación ya cerrada — la cotización nueva abre ciclo nuevo con
+      // deal propio (reglas 4 y 6 del Proceso de Gestión de Leads). La
+      // cuenta y el contacto sí se reusan: la empresa es la misma.
       const deal = await getRecord("Deals", ids.dealId);
-      if (toText(deal?.Stage) === "Cierre Perdido") ids.dealId = "";
+      if (["Cierre Perdido", "8. Facturando"].includes(toText(deal?.Stage))) ids.dealId = "";
     }
     if (ids.accountId || ids.contactId || ids.dealId) {
       console.warn(

@@ -113,9 +113,12 @@ async function findConvertedIdsByPhone(telefono) {
       dealId: toText(detail.deal || (lead.Converted_Deal && lead.Converted_Deal.id)),
     };
     if (ids.dealId) {
+      // Dedup de procesos ABIERTOS (Lalo 31-jul): Cierre Perdido y
+      // 8. Facturando son negociaciones cerradas — ciclo nuevo con deal
+      // propio; cuenta y contacto sí se reusan.
       const r = await zohoApiFetch(`/crm/v3/Deals/${ids.dealId}?fields=Stage`);
       const stageDeal = r.ok ? toText((await r.json())?.data?.[0]?.Stage) : "";
-      if (stageDeal === "Cierre Perdido") ids.dealId = "";
+      if (["Cierre Perdido", "8. Facturando"].includes(stageDeal)) ids.dealId = "";
     }
     if (ids.accountId || ids.contactId || ids.dealId) {
       console.warn(`[lead-first] contacto ${fono} ya convertido — se reusa account=${ids.accountId || "-"} contact=${ids.contactId || "-"} deal=${ids.dealId || "-"}`);
