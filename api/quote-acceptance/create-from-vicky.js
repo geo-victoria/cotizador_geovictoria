@@ -1244,6 +1244,23 @@ module.exports = async function handler(req, res) {
             quoteOwner = { id: toText(ownerDeal.id) };
             if (ownerDeal.email) quoteOwnerEmail = toText(ownerDeal.email);
           }
+          // Notificación de traspaso al dueño sorteado + CC Victoria Luna
+          // (template "Traspaso Deal Global 2024"; el workflow on-create de
+          // Zoho no la manda porque el sorteo llega después del create).
+          if (dealNuevo && ownerDeal && ownerDeal.email) {
+            await zohoApiFetch(`/crm/v3/Deals/${dealId}/actions/send_mail`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                data: [{
+                  from: { email: VICKY_FROM_EMAIL },
+                  to: [{ email: toText(ownerDeal.email) }],
+                  cc: [{ email: (process.env.VICKY_TRASPASO_CC || "vluna@geovictoria.com").trim() }],
+                  template: { id: (process.env.VICKY_TPL_TRASPASO_DEAL || "3525045000389574614").trim() },
+                }],
+              }),
+            }).catch((e) => console.warn(`[create-from-vicky] notificación de traspaso falló: ${toText(e?.message || e).slice(0, 120)}`));
+          }
         }
       } catch (tombolaErr) {
         console.warn(
