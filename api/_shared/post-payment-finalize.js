@@ -85,6 +85,20 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
     throw new Error("No se obtuvo onboardingUrl al finalizar el pago.");
   }
 
+  // Notificación interna "pagada" ANTES del trabajo lento de NDV (subforms):
+  // si la función muere por timeout después de crear el onboarding, el
+  // reintento entra por reused=true y ya nadie notifica (le pasó a COT315
+  // Lotus Pet el 31-jul: pago OK, onboarding OK, cero correo PAGADA). Solo en
+  // la PRIMERA finalización (onboarding nuevo) para no duplicar entre el
+  // webhook y el polling de status; best-effort: jamás bloquea el onboarding.
+  if (handoffResult?.reused !== true) {
+    try {
+      await notifyQuoteEvent({ config, quote, quoteId, evento: "pagada" });
+    } catch (notifyError) {
+      console.warn(`[finalize] notificación PAGADA falló: ${toText(notifyError?.message || notifyError)}`);
+    }
+  }
+
   // NDV best-effort: no debe bloquear la entrega del onboarding tras un pago OK.
   let ndv = { status: "skipped", reason: ndvYaExiste ? "already_linked" : "disabled" };
   if (config.ndvHandoffEnabled && !ndvYaExiste) {
@@ -117,14 +131,6 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
         ndv = { status: "error", error: toText(error?.message || error) };
       }
     }
-  }
-
-  // Notificación interna "pagada" (best-effort, no bloquea la finalización).
-  // Solo en la PRIMERA finalización (onboarding nuevo): si fue reusado, este
-  // pago ya se había finalizado antes → no re-notificamos (anti-duplicado entre
-  // el webhook y el polling de status).
-  if (handoffResult?.reused !== true) {
-    await notifyQuoteEvent({ config, quote, quoteId, evento: "pagada" });
   }
 
   return {
