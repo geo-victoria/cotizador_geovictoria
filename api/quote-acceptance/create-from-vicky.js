@@ -55,6 +55,11 @@ const EJEC_WHATSAPP = "56939321687";
 const EJEC_OWNER_ID = "3525045000000211283";
 const EJEC_OWNER = { id: EJEC_OWNER_ID };
 
+// Regla de tómbola de Deals en Zoho para Chile ("Tómbola Deals 2026 Chile",
+// compartida por Lalo el 31-jul). Todo deal creado por Vicky se sortea con
+// lar_id y la cotización se asigna al dueño resultante. Override por env.
+const TOMBOLA_DEALS_RULE_CL = (process.env.VICKY_TOMBOLA_DEALS_CL || "3525045000595568541").trim();
+
 // Cuentas internas de GeoVictoria que NUNCA deben reusarse al deduplicar por RUT.
 // Un RUT basura/de prueba puede chocar con una cuenta interna y terminar asociando
 // la cotización de un prospecto a esa cuenta (caso real: el dedup pegó el lead a la
@@ -961,7 +966,11 @@ module.exports = async function handler(req, res) {
         const convertidos = await findConvertedIdsByPhone(cliente.contactoTelefono);
         if (convertidos.accountId && !existing.accountId) existing.accountId = convertidos.accountId;
         if (convertidos.contactId && !existing.contactId) existing.contactId = convertidos.contactId;
-        if (convertidos.dealId) dealId = convertidos.dealId;
+        if (convertidos.dealId) {
+          dealId = convertidos.dealId;
+          // Deal preexistente: conserva su dueño (no se re-sortea).
+          reuse.dealReused = true;
+        }
       }
       // ── CAMINO B: Crear Account o reusar existente ──
       let needCreateAccount = !existing.accountId;
@@ -1204,6 +1213,35 @@ module.exports = async function handler(req, res) {
     }
     if (!accountId || !contactId || !dealId) crmIncompleto = crmIncompleto || !accountId || !dealId;
 
+    // ── REGLA DE ASIGNACIÓN (Lalo, 31-jul) ─────────────────────────────────
+    // Todo deal que Vicky CREA pasa por la tómbola de Deals de Zoho
+    // ("Tómbola Deals 2026 Chile", lar_id) y la COTIZACIÓN se asigna al dueño
+    // que salga sorteado. Un deal REUSADO (Borrador en curso o lead-first)
+    // conserva su dueño y la cotización lo sigue igual. Best-effort: si el
+    // sorteo o la lectura fallan, todo queda con el ejecutivo por defecto.
+    stage = "tombola_deal";
+    let quoteOwner = EJEC_OWNER;
+    if (dealId) {
+      const dealNuevo = reuse.leadConverted || !reuse.dealReused;
+      try {
+        if (dealNuevo && TOMBOLA_DEALS_RULE_CL) {
+          await zohoApiFetch(`/crm/v3/Deals`, {
+            method: "PUT",
+            body: JSON.stringify({ data: [{ id: dealId }], lar_id: TOMBOLA_DEALS_RULE_CL }),
+          });
+        }
+        const rOwner = await zohoApiFetch(`/crm/v3/Deals/${dealId}?fields=Owner`);
+        if (rOwner.ok) {
+          const ownerDeal = (((await rOwner.json())?.data || [])[0] || {}).Owner;
+          if (ownerDeal && ownerDeal.id) quoteOwner = { id: toText(ownerDeal.id) };
+        }
+      } catch (tombolaErr) {
+        console.warn(
+          `[create-from-vicky] tómbola/lectura de owner falló para deal=${dealId}: ${toText(tombolaErr?.message || tombolaErr).slice(0, 150)} — cotización queda con el ejecutivo por defecto.`,
+        );
+      }
+    }
+
     // ── Cotización: crear nueva o reusar el Borrador en curso ──
     const ufActual = Number(cotizacion.ufActual || 0);
     const subformItems = buildSubformItems(cotizacion.items, ufActual, config);
@@ -1278,7 +1316,8 @@ module.exports = async function handler(req, res) {
       stage = "create_quote";
       const quoteFields = {
         Name: `Cotización ${cliente.empresa} - ${new Date().toISOString().slice(0, 10)}`,
-        Owner: EJEC_OWNER,
+        // La cotización sigue al dueño del deal (tómbola de Zoho, Lalo 31-jul).
+        Owner: quoteOwner,
         ...(dealId ? { [config.quoteDealLookupField]: { id: dealId } } : {}),
         ...(contactId ? { [config.quoteContactLookupField]: { id: contactId } } : {}),
         ...(accountId ? { Cuenta_Asociada: { id: accountId } } : {}),
