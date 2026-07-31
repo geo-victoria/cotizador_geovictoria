@@ -20,31 +20,22 @@ const {
 } = require("./mercadopago-client");
 
 const NOTIFY_FROM = toText(process.env.VICKY_FROM_EMAIL) || "vicky@geovictoria.com";
-const NOTIFY_RECIPIENTS = (
-  process.env.QUOTE_NOTIFY_RECIPIENTS ||
-  "egomez@geovictoria.com,emujica@geovictoria.com,adiazg@geovictoria.com,rlewit@geovictoria.com"
-)
+// Base de destinatarios (Lalo 31-jul): Lalo + Rodrigo + Victoria Luna. El
+// PROPIETARIO del trato/cotización se agrega DINÁMICO en notifyQuoteEvent —
+// con la tómbola el dueño cambia por deal, ya no sirve una lista fija.
+const NOTIFY_BASE = "egomez@geovictoria.com,rlewit@geovictoria.com,vluna@geovictoria.com";
+const NOTIFY_RECIPIENTS = (process.env.QUOTE_NOTIFY_RECIPIENTS || NOTIFY_BASE)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-// Multi-país: en Colombia el ejecutivo a cargo es Alejandro Gordillo —
-// reemplaza a Anderson (Chile) en las notificaciones de cotizaciones CO.
-// Mismo formato env.
-const NOTIFY_RECIPIENTS_CO = (
-  process.env.QUOTE_NOTIFY_RECIPIENTS_CO ||
-  "egomez@geovictoria.com,agordillo@geovictoria.com,rlewit@geovictoria.com"
-)
+// Multi-país: misma base; el ejecutivo del país llega por el dueño dinámico.
+const NOTIFY_RECIPIENTS_CO = (process.env.QUOTE_NOTIFY_RECIPIENTS_CO || NOTIFY_BASE)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-// Multi-país: en México el ejecutivo a cargo es Yahel Segura — reemplaza a
-// Anderson (Chile) en las notificaciones de cotizaciones MX. Mismo formato env.
-const NOTIFY_RECIPIENTS_MX = (
-  process.env.QUOTE_NOTIFY_RECIPIENTS_MX ||
-  "egomez@geovictoria.com,ysegura@geovictoria.com,rlewit@geovictoria.com"
-)
+const NOTIFY_RECIPIENTS_MX = (process.env.QUOTE_NOTIFY_RECIPIENTS_MX || NOTIFY_BASE)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -298,7 +289,22 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
     // siempre.
     const esCO = await esCotizacionCO(quote, null, config).catch(() => false);
     const esMX = !esCO && (await esCotizacionMX(quote, config).catch(() => false));
-    const recipients = esCO ? NOTIFY_RECIPIENTS_CO : esMX ? NOTIFY_RECIPIENTS_MX : NOTIFY_RECIPIENTS;
+    // PROPIETARIO del trato/cotización SIEMPRE copiado (Lalo 31-jul): primero
+    // el Owner de la cotización; si no viene, el Owner del deal. Dedup contra
+    // la base y jamás el robot Vicky.
+    let ownerEmail = toText(quote?.Owner?.email);
+    if (!ownerEmail && dealId) {
+      const dealOwner = await getRecordWithFields("Deals", dealId, ["Owner"]).catch(() => null);
+      ownerEmail = toText(dealOwner?.Owner?.email);
+    }
+    const base = esCO ? NOTIFY_RECIPIENTS_CO : esMX ? NOTIFY_RECIPIENTS_MX : NOTIFY_RECIPIENTS;
+    const vistos = new Set();
+    const recipients = [...base, ownerEmail].filter((e) => {
+      const low = String(e || "").trim().toLowerCase();
+      if (!low || low === "vicky@geovictoria.com" || vistos.has(low)) return false;
+      vistos.add(low);
+      return true;
+    });
     await sendInternalMail({ quoteModule: config.quoteModule, quoteId, subject, htmlBody, recipients });
     console.log(`[quote-notify] enviado evento=${evento} quote=${numero || quoteId} pais=${esCO ? "co" : esMX ? "mx" : "cl"} → ${recipients.join(", ")}`);
     // Además del correo: aviso por WhatsApp (best-effort, no bloquea).
