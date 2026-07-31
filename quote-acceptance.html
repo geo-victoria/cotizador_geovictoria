@@ -1863,11 +1863,14 @@
           }
         }
 
-        setStatus("Cotización ya aceptada", "ok");
+        // Con onboarding listo la cotización ya está PAGADA (el link de
+        // onboarding solo existe después del pago): el estado lo dice claro
+        // en vez del genérico "ya aceptada" (pedido de Lalo, 31-jul).
+        setStatus(flowState.onboardingUrl ? "Cotización pagada ✅" : "Cotización ya aceptada", "ok");
         if (flowState.onboardingUrl) {
           setMessage(
-            "Esta cotización ya fue aceptada" +
-              (acceptedAtLabel ? " el " + acceptedAtLabel : "") +
+            "Esta cotización ya fue aceptada y pagada" +
+              (acceptedAtLabel ? " (aceptada el " + acceptedAtLabel + ")" : "") +
               ". Ya puedes continuar a tu auto-onboarding.",
             "ok"
           );
@@ -1960,7 +1963,7 @@
           setStepClass(stepInfoEl, "done");
           setStepClass(stepVerifyEl, "done");
           journeyHintEl.textContent = flowState.onboardingUrl
-            ? "Tu cotización ya fue aceptada. Te llevamos al auto-onboarding para iniciar tu experiencia con GeoVictoria."
+            ? "Tu cotización ya está pagada. Te llevamos al auto-onboarding para iniciar tu experiencia con GeoVictoria."
             : "Tu cotización ya fue aceptada. Estamos terminando de preparar tu enlace de onboarding.";
           return;
         }
@@ -2809,7 +2812,7 @@
       async function onSendCode() {
         if (flowState.acceptedLocked) {
           if (flowState.onboardingUrl) {
-            setMessage("Esta cotización ya fue aceptada. Continúa con tu auto-onboarding.", "ok");
+            setMessage("Esta cotización ya fue aceptada y pagada. Continúa con tu auto-onboarding.", "ok");
           } else {
             setMessage(
               "Esta cotización ya fue aceptada. Tu enlace de onboarding se está preparando. Contacta a tu ejecutivo comercial si persiste.",
@@ -2905,7 +2908,7 @@
       async function onVerifyCode() {
         if (flowState.acceptedLocked) {
           if (flowState.onboardingUrl) {
-            setMessage("Esta cotización ya fue aceptada. Continúa con tu auto-onboarding.", "ok");
+            setMessage("Esta cotización ya fue aceptada y pagada. Continúa con tu auto-onboarding.", "ok");
           } else {
             setMessage(
               "Esta cotización ya fue aceptada. Tu enlace de onboarding se está preparando. Contacta a tu ejecutivo comercial si persiste.",
