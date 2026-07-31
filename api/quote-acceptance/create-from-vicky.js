@@ -1221,6 +1221,10 @@ module.exports = async function handler(req, res) {
     // sorteo o la lectura fallan, todo queda con el ejecutivo por defecto.
     stage = "tombola_deal";
     let quoteOwner = EJEC_OWNER;
+    // El correo del dueño sorteado: reply-to y CC del correo al cliente van a
+    // ÉL (Lalo 31-jul) — el ejecutivo asignado ve la cotización que le llegó
+    // a su cliente y el cliente que responde el correo le responde a él.
+    let quoteOwnerEmail = EJEC_EMAIL;
     if (dealId) {
       const dealNuevo = reuse.leadConverted || !reuse.dealReused;
       try {
@@ -1233,7 +1237,10 @@ module.exports = async function handler(req, res) {
         const rOwner = await zohoApiFetch(`/crm/v3/Deals/${dealId}?fields=Owner`);
         if (rOwner.ok) {
           const ownerDeal = (((await rOwner.json())?.data || [])[0] || {}).Owner;
-          if (ownerDeal && ownerDeal.id) quoteOwner = { id: toText(ownerDeal.id) };
+          if (ownerDeal && ownerDeal.id) {
+            quoteOwner = { id: toText(ownerDeal.id) };
+            if (ownerDeal.email) quoteOwnerEmail = toText(ownerDeal.email);
+          }
         }
       } catch (tombolaErr) {
         console.warn(
@@ -1458,8 +1465,11 @@ module.exports = async function handler(req, res) {
           quoteModule: config.quoteModule,
           quoteId,
           fromEmail: VICKY_FROM_EMAIL,
-          replyToEmail: EJEC_EMAIL,
-          ccEmail: EJEC_EMAIL,
+          // Reply-to y CC al EJECUTIVO ASIGNADO por la tómbola (Lalo 31-jul):
+          // él ve el correo que recibió su cliente, y una respuesta del
+          // cliente le llega directo. Fallback: ejecutivo por defecto.
+          replyToEmail: quoteOwnerEmail,
+          ccEmail: quoteOwnerEmail,
           ccEmails: Array.isArray(body.cc) ? body.cc : [],
           toEmail: cliente.contactoEmail,
           toName: cliente.contacto,
