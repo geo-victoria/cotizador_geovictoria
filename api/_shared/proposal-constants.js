@@ -55,8 +55,11 @@ const SERVICIOS_GRATIS = [
 const PRICING_TIERS = [
   // Micro-plan: 1 usuario que marca (cubre marcador + 1 administrador). Desde
   // 2 que marcan, tramo fijo normal.
-  { min: 1, max: 1, type: 'fijo', uf: 0.25 },
-  { min: 2, max: 10, type: 'fijo', uf: 0.6 },
+  // Ajuste de tramos (Lalo, 31-jul-2026): el micro-plan cubre 1-2 personas
+  // y el tramo fijo estándar parte en 3. Espejo de lib/catalogo/modulos.ts
+  // del agente — si cambia allá, cambiar acá en el mismo movimiento.
+  { min: 1, max: 2, type: 'fijo', uf: 0.25 },
+  { min: 3, max: 10, type: 'fijo', uf: 0.6 },
   { min: 11, max: 20, type: 'por_usuario', uf: 0.07 },
   { min: 21, max: 30, type: 'por_usuario', uf: 0.065 },
   { min: 31, max: 50, type: 'por_usuario', uf: 0.055 },
