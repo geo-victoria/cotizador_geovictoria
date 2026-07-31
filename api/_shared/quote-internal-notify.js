@@ -20,22 +20,30 @@ const {
 } = require("./mercadopago-client");
 
 const NOTIFY_FROM = toText(process.env.VICKY_FROM_EMAIL) || "vicky@geovictoria.com";
-// Base de destinatarios (Lalo 31-jul): Lalo + Rodrigo + Victoria Luna. El
-// PROPIETARIO del trato/cotización se agrega DINÁMICO en notifyQuoteEvent —
-// con la tómbola el dueño cambia por deal, ya no sirve una lista fija.
-const NOTIFY_BASE = "egomez@geovictoria.com,rlewit@geovictoria.com,vluna@geovictoria.com";
-const NOTIFY_RECIPIENTS = (process.env.QUOTE_NOTIFY_RECIPIENTS || NOTIFY_BASE)
+// CHILE (Lalo 31-jul): Lalo + Rodrigo + Victoria Luna, y el PROPIETARIO del
+// trato/cotización se agrega DINÁMICO en notifyQuoteEvent — con la tómbola
+// el dueño cambia por deal, ya no sirve una lista fija. Victoria va SOLO en
+// Chile: CO y MX conservan sus reglas antiguas (ejecutivo del país fijo).
+const NOTIFY_RECIPIENTS = (
+  process.env.QUOTE_NOTIFY_RECIPIENTS ||
+  "egomez@geovictoria.com,rlewit@geovictoria.com,vluna@geovictoria.com"
+)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-// Multi-país: misma base; el ejecutivo del país llega por el dueño dinámico.
-const NOTIFY_RECIPIENTS_CO = (process.env.QUOTE_NOTIFY_RECIPIENTS_CO || NOTIFY_BASE)
+const NOTIFY_RECIPIENTS_CO = (
+  process.env.QUOTE_NOTIFY_RECIPIENTS_CO ||
+  "egomez@geovictoria.com,agordillo@geovictoria.com,rlewit@geovictoria.com"
+)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-const NOTIFY_RECIPIENTS_MX = (process.env.QUOTE_NOTIFY_RECIPIENTS_MX || NOTIFY_BASE)
+const NOTIFY_RECIPIENTS_MX = (
+  process.env.QUOTE_NOTIFY_RECIPIENTS_MX ||
+  "egomez@geovictoria.com,ysegura@geovictoria.com,rlewit@geovictoria.com"
+)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
