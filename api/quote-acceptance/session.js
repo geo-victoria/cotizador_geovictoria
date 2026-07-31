@@ -311,12 +311,17 @@ export default async function handler(req, res) {
           ? "co"
           : "cl";
 
+    // La asociación de deal puede cambiar legítimamente DESPUÉS de emitido el
+    // link (consolidación de duplicados, reparaciones — caso vaitiare 31-jul:
+    // el deal del token se eliminó al consolidar y el link quedó "no
+    // disponible" para un cliente real). El token firma la COTIZACIÓN
+    // (quoteId) y esa es la identidad que importa; si el deal del token quedó
+    // viejo, manda el Deal_Asociado vigente de la cotización.
+    const dealIdVigente = dealId || toText(payload.dealId);
     if (dealId && dealId !== payload.dealId) {
-      sendJson(res, 400, {
-        success: false,
-        error: "Token invalido para esta cotizacion.",
-      });
-      return;
+      console.warn(
+        `[session] deal del token (${payload.dealId}) distinto al vigente (${dealId}) para quote ${payload.quoteId} — se usa el vigente.`,
+      );
     }
 
     const fieldMap = {
@@ -352,7 +357,7 @@ export default async function handler(req, res) {
     const paymentUrl = needsPayment
       ? buildPaymentUrlForQuote(mpConfig, {
           quoteId: payload.quoteId,
-          dealId: payload.dealId,
+          dealId: dealIdVigente,
           billingEmail: toText(quote?.[config.billingEmailField]),
           pais,
         })
@@ -378,7 +383,7 @@ export default async function handler(req, res) {
       pais,
       quote: {
         id: payload.quoteId,
-        dealId: payload.dealId,
+        dealId: dealIdVigente,
         name: toText(quote?.Name),
         status,
         isAcceptedLocked,
