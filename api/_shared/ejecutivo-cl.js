@@ -37,6 +37,23 @@ const EJECUTIVOS_CL_POR_ID = {
     telefono: "+57 314 267 7765",
     whatsapp: "573142677765",
   },
+  // Vendedores de la tómbola de deals 2026 (auditoría 31-jul: un PDF
+  // regenerado o reenvío de una cotización de la tómbola presentaba a Eddyluz
+  // por el fallback). IDs verificados contra /crm/v3/users.
+  "3525045000223766001": {
+    nombre: "Tamara Martínez",
+    cargo: "Ejecutiva Comercial",
+    email: "tmartinezq@geovictoria.com",
+    telefono: "+56 9 3452 9937",
+    whatsapp: "56934529937",
+  },
+  "3525045000126464001": {
+    nombre: "Ana Paula López",
+    cargo: "Ejecutiva Comercial",
+    email: "alopez@geovictoria.com",
+    telefono: "+56 9 6647 4270",
+    whatsapp: "56966474270",
+  },
 };
 
 const EJECUTIVO_CL_DEFAULT = EJECUTIVOS_CL_POR_ID["3525045000000211283"];

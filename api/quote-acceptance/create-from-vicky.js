@@ -1349,6 +1349,29 @@ module.exports = async function handler(req, res) {
           `[create-from-vicky] tómbola/lectura de owner falló para deal=${dealId}: ${toText(tombolaErr?.message || tombolaErr).slice(0, 150)} — cotización queda con el ejecutivo por defecto.`,
         );
       }
+      // La cuenta y el contacto CREADOS en este request siguen al dueño del
+      // deal (residuo 31-jul: nacían con Owner Eddyluz aunque el deal fuera de
+      // la tómbola — deal de Tamara colgando de una cuenta de Eddyluz). Los
+      // REUSADOS no se tocan: pueden traer gestión de un SDR. Con skip de
+      // assignment_rules (convención: los updates de owner que no pasan por la
+      // regla no la disparan). Best-effort.
+      if (quoteOwner.id !== EJEC_OWNER_ID) {
+        const seguirDueno = async (mod, id) => {
+          try {
+            await zohoApiFetch(`/crm/v3/${mod}`, {
+              method: "PUT",
+              body: JSON.stringify({
+                data: [{ id, Owner: quoteOwner }],
+                skip_feature_execution: [{ name: "assignment_rules" }],
+              }),
+            });
+          } catch (e) {
+            console.warn(`[create-from-vicky] owner de ${mod} no siguió al deal: ${toText(e?.message || e).slice(0, 100)}`);
+          }
+        };
+        if (accountId && !reuse.accountReused) await seguirDueno("Accounts", accountId);
+        if (contactId && !reuse.contactReused) await seguirDueno("Contacts", contactId);
+      }
     }
 
     // ── Cotización: crear nueva o reusar el Borrador en curso ──
@@ -1511,6 +1534,8 @@ module.exports = async function handler(req, res) {
       pdfPendiente: true,
       sectorAplicado: sectorParaZoho,
       reuse,
+      // Dueño real (tómbola/deal) para que Vicky sepa quién da seguimiento.
+      ejecutivo: { nombre: quoteOwnerNombre, email: quoteOwnerEmail },
       expiresAt: new Date(expMs).toISOString(),
     });
 
@@ -1540,9 +1565,11 @@ module.exports = async function handler(req, res) {
         const html = buildProposalHtml({
           cliente: {
             ...cliente,
-            ejecutivo: EJEC_NOMBRE,
-            ejecutivoEmail: EJEC_EMAIL,
-            ejecutivoTelefono: EJEC_TELEFONO,
+            // Dueño real del deal (tómbola) — el PDF presenta al mismo
+            // ejecutivo que el correo y el pie (residuo Eddyluz fija, 31-jul).
+            ejecutivo: quoteOwnerNombre,
+            ejecutivoEmail: quoteOwnerEmail,
+            ejecutivoTelefono: quoteOwnerTelefono,
           },
           cotizacion,
           acceptanceUrl,
