@@ -6,6 +6,7 @@
 //   GET /api/creator-meta?secret=<QUOTE_ACCEPTANCE_SECRET>
 //   GET /api/creator-meta?secret=...&form=Servicio_Recurrente   (un solo form)
 //   GET /api/creator-meta?secret=...&forms=1                    (solo lista de forms)
+//   GET /api/creator-meta?secret=...&form=X&full=1              (campos SIN resumir)
 //
 // Es TEMPORAL: bórralo una vez extraída la estructura.
 const { getCreatorConfig, creatorApiFetch } = require("./_shared/zoho-creator-auth");
@@ -34,6 +35,20 @@ function summarizeField(f) {
   const choices = f.choices || f.picklist_values || f.values;
   if (Array.isArray(choices) && choices.length > 0) {
     out.choices = choices.map((c) => (typeof c === "string" ? c : c.display_value || c.value || c)).slice(0, 60);
+  }
+  // Subformularios (type 21): sin esto solo se veía "es un grid" y había que
+  // adivinar sus columnas. Se arrastran tanto el formulario hijo como sus
+  // campos, según cómo los devuelva la Meta API en este tenant.
+  const sub = f.subform || f.sub_form || f.child_form || f.lookup;
+  if (sub && typeof sub === "object") {
+    out.subform = {
+      form_link_name: sub.form_link_name || sub.link_name || sub.form || undefined,
+      display: sub.display_name || undefined,
+      columnas: Array.isArray(sub.fields) ? sub.fields.map((c) => c.link_name || c.api_name) : undefined,
+    };
+  }
+  if (Array.isArray(f.fields) && f.fields.length > 0) {
+    out.columnas = f.fields.map((c) => c.link_name || c.api_name || c.display_name);
   }
   return out;
 }
@@ -195,7 +210,14 @@ module.exports = async function handler(req, res) {
       out.fields[form] = {
         status: resp.status,
         count: Array.isArray(rawFields) ? rawFields.length : 0,
-        fields: Array.isArray(rawFields) ? rawFields.map(summarizeField) : payload,
+        // ?full=1 devuelve el objeto crudo de cada campo, sin resumir. Es el
+        // último recurso cuando el resumen no alcanza (p. ej. las columnas de
+        // un subformulario si este tenant las expone con otra forma).
+        fields: req.query?.full
+          ? rawFields
+          : Array.isArray(rawFields)
+            ? rawFields.map(summarizeField)
+            : payload,
       };
     }
 
