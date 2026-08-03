@@ -9,6 +9,7 @@ const {
 const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
 const { buildChargeTables } = require("./ndv-charge-table");
 const { construirNotasPdf } = require("./ndv-notas");
+const { ejecutivoPorOwner } = require("./ejecutivo-cl");
 
 function toNumberOrNull(value) {
   const n = Number.parseInt(toText(value), 10);
@@ -829,6 +830,15 @@ function buildNdvRecord({
     Email: contactEmail || undefined,
     Tel_fono: contactPhone || undefined,
     Correo_Vendedor: sellerEmail || undefined,
+    // Quién creó el registro. Solo lo marca el camino de Vicky: el widget del
+    // CRM lo usa un ejecutivo, y atribuirle esas cotizaciones al bot ensuciaría
+    // cualquier medición de canal.
+    ...(toText(creatorOverrides.creador) ? { Creador: toText(creatorOverrides.creador) } : {}),
+    // "Ejecutivo comercial / KAM". Es un picklist DINÁMICO (la Meta API solo
+    // devuelve "Cargando..."), así que puede ser rechazado; el alta se reintenta
+    // sin él antes que perder la cotización. Va el dueño real del deal, no un
+    // nombre fijo — es el mismo criterio que el bloque de Notas.
+    ...(toText(creatorOverrides.vendedor) ? { Vendedor: toText(creatorOverrides.vendedor) } : {}),
     CRM_Deal: includeCrmDeal ? dealName || undefined : undefined,
     Deals_Asociados: dealsAsociados || undefined,
     CRM_REFERENCE_ID: toSafeCreatorNumber(quote?.id),
@@ -1021,6 +1031,8 @@ async function runNdvHandoff({
       // Dotación que la emisión conoce de primera mano. Sin esto habría que
       // deducirla del subform, donde una tarifa fija dice "cantidad 1".
       userCount,
+      vendedor: ejecutivoPorOwner(ownerId).nombre,
+      creador: "vicky_geovictoria",
     },
   });
 
@@ -1033,7 +1045,25 @@ async function runNdvHandoff({
     throw new Error("No se pudo resolver Correo_Vendedor desde Owner del Deal.");
   }
 
-  const createAttempt = await createNdvWithFormFallback({ creatorConfig, ndvRecord });
+  let createAttempt = await createNdvWithFormFallback({ creatorConfig, ndvRecord });
+
+  // Vendedor es un picklist dinámico: si el nombre del ejecutivo no coincide con
+  // un valor de la lista, Creator rechaza el alta COMPLETA. Se reintenta sin él
+  // — perder el campo es molesto, perder la cotización no es aceptable.
+  if (!createAttempt.ok && ndvRecord.Vendedor) {
+    const detalle = creatorErrorMessage(createAttempt.payload, "");
+    console.warn(
+      `[ndv-handoff] alta rechazada con Vendedor="${ndvRecord.Vendedor}" (${detalle}); se reintenta sin el campo.`
+    );
+    const sinVendedor = { ...ndvRecord };
+    delete sinVendedor.Vendedor;
+    const reintento = await createNdvWithFormFallback({ creatorConfig, ndvRecord: sinVendedor });
+    if (reintento.ok) {
+      delete ndvRecord.Vendedor;
+      createAttempt = reintento;
+    }
+  }
+
   const createResp = createAttempt.response;
   const createPayload = createAttempt.payload;
   if (!createAttempt.ok) {
