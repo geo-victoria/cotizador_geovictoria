@@ -961,12 +961,33 @@ module.exports = async function handler(req, res) {
         }, true);
       } catch (convErr) {
         console.error(
-          `[create-from-vicky] CONVERT FALLÓ lead=${existing.leadId} (${toText(convErr?.message || convErr).slice(0, 250)}) → fallback a creación directa; lead queda para revisión manual.`,
+          `[create-from-vicky] CONVERT FALLÓ lead=${existing.leadId} (${toText(convErr?.message || convErr).slice(0, 250)})`,
         );
         accountId = undefined;
         contactId = undefined;
         dealId = undefined;
         reuse.leadConverted = false;
+        // CAUSA Nº1 del deal GEMELO (03-ago: Veterinaria, Curacautín,
+        // Consistorial, Contadores): el convert falla porque el flujo del
+        // agente YA convirtió este lead en el hito del preform. Antes se caía
+        // a creación directa y nacía un deal paralelo; ahora se RECUPERAN los
+        // ids de la conversión previa ($converted_detail) y se reusa todo.
+        try {
+          const recovered = await recoverConvertedIds(existing.leadId);
+          if (recovered.dealId) {
+            // Misma convención que el lead-first: los ids van a existing.*
+            // para que el Camino B los REUSE y actualice (no los cree).
+            if (recovered.accountId && !existing.accountId) existing.accountId = recovered.accountId;
+            if (recovered.contactId && !existing.contactId) existing.contactId = recovered.contactId;
+            dealId = recovered.dealId;
+            reuse.dealReused = true;
+            console.warn(
+              `[create-from-vicky] lead=${existing.leadId} ya estaba convertido — se reusa su deal=${dealId} (adiós gemelo).`,
+            );
+          }
+        } catch (recErr) {
+          console.warn(`[create-from-vicky] recuperación post-convert falló: ${toText(recErr?.message || recErr).slice(0, 120)}`);
+        }
       }
     }
 
@@ -978,10 +999,12 @@ module.exports = async function handler(req, res) {
     let crmIncompleto = false;
     try {
     if (!reuse.leadConverted) {
-      // LEAD-FIRST: si no vino leadId pero el contacto ya tiene un lead
-      // convertido (hito preform), reusar SU cuenta/contacto/deal — la
-      // cotización se asocia al deal existente en vez de duplicarlo.
-      if (!existing.leadId && !accountId && !contactId && !dealId) {
+      // LEAD-FIRST: si el contacto ya tiene un lead convertido (hito
+      // preform), reusar SU cuenta/contacto/deal — la cotización se asocia
+      // al deal existente en vez de duplicarlo. Corre también cuando VINO
+      // leadId pero el convert falló y la recuperación no trajo ids (causa
+      // gemelos 03-ago): la búsqueda por teléfono es la última red.
+      if (!accountId && !contactId && !dealId) {
         stage = "find_converted_by_phone";
         const convertidos = await findConvertedIdsByPhone(cliente.contactoTelefono);
         if (convertidos.accountId && !existing.accountId) existing.accountId = convertidos.accountId;
@@ -1301,7 +1324,23 @@ module.exports = async function handler(req, res) {
     if (dealId) {
       const dealNuevo = reuse.leadConverted || !reuse.dealReused;
       try {
-        if (dealNuevo && TOMBOLA_DEALS_RULE_CL) {
+        // Un deal REUSADO con dueño INTERINO también se sortea (fix gemelos
+        // 03-ago): el deal del hito del agente nace con Eddyluz-interina (o
+        // Vicky robot) — eso es un marcador de "sin dueño real", no gestión.
+        // Un dueño humano REAL (sorteado o con cartera) jamás se pisa. Edge
+        // asumido: si un PTV alcanzó a presentar a la interina antes de la
+        // formal, el sorteo cambia el nombre — caso raro (el TTV no vence
+        // mientras el cliente conversa) y preferible al Eddyluz-para-todo.
+        const DUENOS_INTERINOS = new Set([EJEC_OWNER_ID, "3525045000484500876"]);
+        let sorteo = dealNuevo;
+        if (!sorteo) {
+          const rPre = await zohoApiFetch(`/crm/v3/Deals/${dealId}?fields=Owner`);
+          if (rPre.ok) {
+            const ownerPre = (((await rPre.json())?.data || [])[0] || {}).Owner;
+            if (ownerPre && DUENOS_INTERINOS.has(toText(ownerPre.id))) sorteo = true;
+          }
+        }
+        if (sorteo && TOMBOLA_DEALS_RULE_CL) {
           await zohoApiFetch(`/crm/v3/Deals`, {
             method: "PUT",
             body: JSON.stringify({ data: [{ id: dealId }], lar_id: TOMBOLA_DEALS_RULE_CL }),
@@ -1329,7 +1368,7 @@ module.exports = async function handler(req, res) {
           // Notificación de traspaso al dueño sorteado + CC Victoria Luna
           // (template "Traspaso Deal Global 2024"; el workflow on-create de
           // Zoho no la manda porque el sorteo llega después del create).
-          if (dealNuevo && ownerDeal && ownerDeal.email) {
+          if (sorteo && ownerDeal && ownerDeal.email) {
             await zohoApiFetch(`/crm/v3/Deals/${dealId}/actions/send_mail`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
