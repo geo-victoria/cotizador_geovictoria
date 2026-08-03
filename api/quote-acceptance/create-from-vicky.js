@@ -861,11 +861,13 @@ module.exports = async function handler(req, res) {
     // existing.quoteId/existing.dealId.
     const draft = body.draft === true;
 
-    // Validaciones
-    if (!cliente.empresa || !cliente.contacto || !cliente.contactoEmail || !cliente.rutEmpresa) {
+    // Validaciones. contactoEmail es OPCIONAL (Lalo 03-ago): sin correo la
+    // cotización se emite igual (PDF + link) y la entrega corre por WhatsApp;
+    // simplemente no se envía el correo con el PDF.
+    if (!cliente.empresa || !cliente.contacto || !cliente.rutEmpresa) {
       return sendJson(res, 400, {
         ok: false,
-        error: "Faltan campos en cliente: empresa, contacto, contactoEmail, rutEmpresa",
+        error: "Faltan campos en cliente: empresa, contacto, rutEmpresa",
       });
     }
     if (!cotizacion.items || !Array.isArray(cotizacion.items) || cotizacion.items.length === 0) {
@@ -1643,7 +1645,10 @@ module.exports = async function handler(req, res) {
         const tieneReloj = (cotizacion.items || []).some(
           (it) => it && it.tipo === "hardware",
         );
-        await sendQuoteEmailViaZoho({
+        // Sin correo del contacto no hay envío: la entrega corre por WhatsApp
+        // (PDF adjunto + link). El respaldo por correo se ofrece en el chat y
+        // recién ahí se pide la dirección.
+        if (cliente.contactoEmail) await sendQuoteEmailViaZoho({
           quoteModule: config.quoteModule,
           quoteId,
           fromEmail: VICKY_FROM_EMAIL,

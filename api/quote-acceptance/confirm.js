@@ -295,7 +295,7 @@ export default async function handler(req, res) {
     const bypassPayment = isTestLaneQuote(quote, config);
     const currentOnboardingUrl = toText(quote?.[config.quoteOnboardingUrlField]);
     const currentOnboardingLookup = toText(quote?.[config.quoteOnboardingLookupField]?.id);
-    const authoritativeContactEmail = normalizeEmail(quote?.[config.contactEmailField]);
+    let authoritativeContactEmail = normalizeEmail(quote?.[config.contactEmailField]);
     const billingEmailFromForm = normalizeEmail(acceptanceData?.billingEmail);
 
     const currentStatus = toText(quote?.[config.quoteStatusField]);
@@ -437,21 +437,22 @@ export default async function handler(req, res) {
       return;
     }
 
-    if (!isValidEmail(authoritativeContactEmail)) {
-      sendJson(res, 400, {
-        success: false,
-        error:
-          "No hay correo de contacto valido en la cotizacion. Solicita a tu ejecutivo comercial actualizar la cotizacion antes de continuar.",
-      });
-      return;
-    }
-
     if (!isValidEmail(billingEmailFromForm)) {
       sendJson(res, 400, {
         success: false,
         error: "Debes ingresar un correo de facturacion valido para continuar.",
       });
       return;
+    }
+
+    // Cotización emitida SIN correo de contacto (entrega por WhatsApp, Lalo
+    // 03-ago): la aceptación no se bloquea — el correo de facturación que el
+    // cliente acaba de ingresar pasa a ser su correo de contacto y se
+    // respalda en la cotización.
+    let backfillContactEmail = false;
+    if (!isValidEmail(authoritativeContactEmail)) {
+      authoritativeContactEmail = billingEmailFromForm;
+      backfillContactEmail = true;
     }
 
     // Política Lalo 24-jul: el OTP ya NO es requisito para aceptar. Si el
@@ -507,6 +508,9 @@ export default async function handler(req, res) {
         [config.quoteHandoffStatusField]: config.quoteOnboardingStatusPending || "En Curso",
         [config.quoteHandoffErrorField]: "",
       };
+      if (backfillContactEmail) {
+        updateMap[config.contactEmailField] = authoritativeContactEmail;
+      }
       if (config.quoteEmailVerifiedField) {
         updateMap[config.quoteEmailVerifiedField] = true;
       }
