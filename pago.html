@@ -415,6 +415,9 @@
         }
 
         function transferPanelHtml(state) {
+          var cotRef = String(
+            (state.transfer && state.transfer.quoteNumber) || (state.quote && state.quote.name) || ""
+          ).trim();
           var waLink = transferWhatsappLink(state);
           var waBtn = waLink
             ? '<a class="btn" id="transferWaBtn" href="' + waLink +
@@ -431,9 +434,15 @@
             "<li><span>Banco</span><strong>Banco de Chile</strong></li>" +
             "<li><span>Cuenta corriente</span><strong>8001204108</strong></li>" +
             "<li><span>Email</span><strong>vicky@geovictoria.com</strong></li>" +
+            (cotRef
+              ? "<li><span>Referencia</span><strong>" + cotRef + "</strong></li>"
+              : "") +
             "</ul>" +
-            '<p class="transfer-help">Transfiere el pago inicial de tu cotización e indica el número de ' +
-            "cotización. Luego envíale el comprobante a Vicky por WhatsApp para procesar tu pedido. " +
+            '<p class="transfer-help">Transfiere el pago inicial de tu cotización' +
+            (cotRef ? " indicando la referencia <b>" + cotRef + "</b> en el comentario de la transferencia" : " e indica el número de cotización") +
+            ". Luego envíale el comprobante a Vicky por WhatsApp" +
+            (cotRef ? " mencionando esa misma referencia" : "") +
+            " para procesar tu pedido. " +
             "La verificación de la transferencia toma máximo 24 horas hábiles; confirmado el pago, Vicky te " +
             "escribe por WhatsApp para comenzar la configuración de tu cuenta.</p>" +
             waBtn +
