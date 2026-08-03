@@ -10,6 +10,7 @@ const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
 const { buildChargeTables } = require("./ndv-charge-table");
 const { construirNotasPdf } = require("./ndv-notas");
 const { ejecutivoPorOwner } = require("./ejecutivo-cl");
+const { articuloDeHardware } = require("./creator-articulos");
 
 function toNumberOrNull(value) {
   const n = Number.parseInt(toText(value), 10);
@@ -344,6 +345,16 @@ function resolveServiciosRecurrentesDeFila(row) {
   return recurrentesDeFilaPorNombre(name);
 }
 
+/**
+ * ¿La línea es un equipo? Se reconoce por el catálogo de artículos de Creator o
+ * por la categoría que le pone el subform. NO se usa la modalidad: "Venta"
+ * significa cobro único y la llevan también la instalación y el envío.
+ */
+function esFilaDeHardware(row) {
+  if (articuloDeHardware(row?.Codigo_Item)) return true;
+  return normalizeItemName(row?.Categoria_Item) === "equipos biometricos";
+}
+
 function inferServiciosCreator(quote, config) {
   const rows = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
   const recurrentes = new Set();
@@ -378,11 +389,20 @@ function inferServiciosCreator(quote, config) {
 
     recurrentesDeFilaPorNombre(name).forEach((label) => addRecurrente(label));
 
-    if (modalidad.includes("arriendo")) {
-      addRecurrenteConfigurado("Arriendo de Equipos");
-      addRecurrenteConfigurado("Arriendo de Equipos Asistencia");
-    } else if (modalidad.includes("venta")) {
-      addNoRecurrente("Venta de Equipos Asistencia");
+    // Arriendo o venta de EQUIPOS: solo se deduce de las líneas de hardware.
+    //
+    // "Venta" es la modalidad de COBRO ÚNICO, no una venta de equipos: la
+    // instalación y el envío también la llevan. Leerla literal hacía que una
+    // cotización con el reloj ARRENDADO le declarara a Creator una "Venta de
+    // Equipos Asistencia" que nunca existió, solo porque el envío se cobra una
+    // vez (caso real: HuelleroCompany, 15 personas, reloj en arriendo).
+    if (esFilaDeHardware(row)) {
+      if (modalidad.includes("arriendo")) {
+        addRecurrenteConfigurado("Arriendo de Equipos");
+        addRecurrenteConfigurado("Arriendo de Equipos Asistencia");
+      } else if (modalidad.includes("venta")) {
+        addNoRecurrente("Venta de Equipos Asistencia");
+      }
     }
 
     if (
