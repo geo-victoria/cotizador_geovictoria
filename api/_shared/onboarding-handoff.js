@@ -442,6 +442,19 @@ async function getOrCreateOnboardingRecord({ config, quoteId, dealId, quote, dra
   }
 
   const createResult = await createRecord(config.onboardingModule, createMap, true);
+  // RE-AFIRMAR el dueño después de crear (reporte de Grey, 03-ago): aunque el
+  // create manda Owner = dueño del deal, un workflow del módulo en Zoho (era
+  // pre-relevo) reasigna el registro a Anderson al nacer. Los workflows de
+  // creación no re-disparan en updates, así que este segundo PUT deja al
+  // dueño real. Best-effort: si falla, el registro queda como lo dejó Zoho.
+  if (createResult?.id && draft.ownerId) {
+    await updateRecordBestEffort(
+      config.onboardingModule,
+      createResult.id,
+      { Owner: { id: draft.ownerId } },
+      true,
+    );
+  }
   return { onboardingId: createResult.id, created: true };
 }
 
