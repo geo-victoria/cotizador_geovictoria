@@ -249,11 +249,16 @@ module.exports = async function handler(req, res) {
             toEmail: contactoEmail,
             toName: contactoNombre,
             subject: `Tu cotización GeoVictoria actualizada (v${versionNueva}) — ${empresa}`,
+            // El bloque "Te presento a tu ejecutivo" con el DUEÑO REAL de la
+            // cotización (caso DECOHOGAR 03-ago: el deal era de Tamara, el CC
+            // le llegó a ella, pero el correo presentaba a Eddyluz — sin este
+            // argumento buildEmailHtml cae al ejecutivo default).
             htmlBody: buildEmailHtml({
               contacto: contactoNombre,
               empresa,
               pdfUrl,
               tieneReloj,
+              ejecutivo: ejecutivoPorOwner(quote?.Owner?.id),
             }),
           });
         }
