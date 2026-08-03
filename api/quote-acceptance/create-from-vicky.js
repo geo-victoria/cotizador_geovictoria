@@ -1321,6 +1321,12 @@ module.exports = async function handler(req, res) {
     let quoteOwnerEmail = EJEC_EMAIL;
     let quoteOwnerNombre = EJEC_NOMBRE;
     let quoteOwnerTelefono = EJEC_TELEFONO;
+    // Asignación MANUAL (admin, sin sorteo): un ejecutivo con gestión previa
+    // pidió la cotización a su nombre (teléfono/presencial antes de la formal).
+    // Viene en existing.ownerId — solo lo inyectan los flujos admin, nunca el
+    // modelo. El deal se asigna directo a ese dueño (skip assignment_rules,
+    // convención 31-jul) y el correo/PDF lo presentan a él.
+    const ownerManualId = toText(existing.ownerId);
     if (dealId) {
       const dealNuevo = reuse.leadConverted || !reuse.dealReused;
       try {
@@ -1332,15 +1338,23 @@ module.exports = async function handler(req, res) {
         // formal, el sorteo cambia el nombre — caso raro (el TTV no vence
         // mientras el cliente conversa) y preferible al Eddyluz-para-todo.
         const DUENOS_INTERINOS = new Set([EJEC_OWNER_ID, "3525045000484500876"]);
-        let sorteo = dealNuevo;
-        if (!sorteo) {
+        let sorteo = !ownerManualId && dealNuevo;
+        if (!sorteo && !ownerManualId) {
           const rPre = await zohoApiFetch(`/crm/v3/Deals/${dealId}?fields=Owner`);
           if (rPre.ok) {
             const ownerPre = (((await rPre.json())?.data || [])[0] || {}).Owner;
             if (ownerPre && DUENOS_INTERINOS.has(toText(ownerPre.id))) sorteo = true;
           }
         }
-        if (sorteo && TOMBOLA_DEALS_RULE_CL) {
+        if (ownerManualId) {
+          await zohoApiFetch(`/crm/v3/Deals`, {
+            method: "PUT",
+            body: JSON.stringify({
+              data: [{ id: dealId, Owner: { id: ownerManualId } }],
+              skip_feature_execution: [{ name: "assignment_rules" }],
+            }),
+          });
+        } else if (sorteo && TOMBOLA_DEALS_RULE_CL) {
           await zohoApiFetch(`/crm/v3/Deals`, {
             method: "PUT",
             body: JSON.stringify({ data: [{ id: dealId }], lar_id: TOMBOLA_DEALS_RULE_CL }),
