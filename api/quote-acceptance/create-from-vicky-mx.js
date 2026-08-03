@@ -856,9 +856,11 @@ module.exports = async function handler(req, res) {
           fromEmail: VICKY_FROM_EMAIL,
           replyToEmail: EJEC_MX.email,
           ccEmail: EJEC_MX.email,
-          // Copia fija a Lalo (pedida 31-jul) + las copias que traiga el body.
+          // Copias fijas: Lalo (31-jul) + Rodrigo (03-ago) + las del body.
           ccEmails: [
-            (process.env.QUOTE_EMAIL_CC_FIJO || "egomez@geovictoria.com").trim(),
+            ...(process.env.QUOTE_EMAIL_CC_FIJO || "egomez@geovictoria.com,rlewit@geovictoria.com")
+              .split(",")
+              .map((s) => s.trim()),
             ...(Array.isArray(body.cc) ? body.cc : []),
           ].filter(Boolean),
           toEmail: contactoEmail,

@@ -240,7 +240,12 @@ module.exports = async function handler(req, res) {
             fromEmail: VICKY_FROM_EMAIL,
             replyToEmail: ejecutivoPorOwner(quote?.Owner?.id).email,
             ccEmail: ejecutivoPorOwner(quote?.Owner?.id).email,
-            ccEmails: [],
+            // Mismas copias fijas que la emisión (Lalo + Rodrigo, 03-ago): la
+            // actualización también es una cotización que le llega al cliente.
+            ccEmails: (process.env.QUOTE_EMAIL_CC_FIJO || "egomez@geovictoria.com,rlewit@geovictoria.com")
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
             toEmail: contactoEmail,
             toName: contactoNombre,
             subject: `Tu cotización GeoVictoria actualizada (v${versionNueva}) — ${empresa}`,

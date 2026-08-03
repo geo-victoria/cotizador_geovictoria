@@ -52,7 +52,12 @@ const EJEC_CARGO = "Ejecutiva Comercial";
 const EJEC_EMAIL = "emujica@geovictoria.com";
 
 // Copia fija en todo correo de cotización al cliente (Lalo, 31-jul).
-const CC_FIJO = (process.env.QUOTE_EMAIL_CC_FIJO || "egomez@geovictoria.com").trim();
+// Copias fijas del correo de cotización (lista separada por comas): Lalo
+// (pedida 31-jul) + Rodrigo (pedida 03-ago).
+const CC_FIJOS = (process.env.QUOTE_EMAIL_CC_FIJO || "egomez@geovictoria.com,rlewit@geovictoria.com")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 const EJEC_TELEFONO = "+56 9 3932 1687";
 const EJEC_WHATSAPP = "56939321687";
 const EJEC_OWNER_ID = "3525045000000211283";
@@ -1657,8 +1662,8 @@ module.exports = async function handler(req, res) {
           // cliente le llega directo. Fallback: ejecutivo por defecto.
           replyToEmail: quoteOwnerEmail,
           ccEmail: quoteOwnerEmail,
-          // Copia fija a Lalo (pedida 31-jul) + las copias que traiga el body.
-          ccEmails: [CC_FIJO, ...(Array.isArray(body.cc) ? body.cc : [])].filter(Boolean),
+          // Copias fijas (Lalo + Rodrigo) + las copias que traiga el body.
+          ccEmails: [...CC_FIJOS, ...(Array.isArray(body.cc) ? body.cc : [])].filter(Boolean),
           toEmail: cliente.contactoEmail,
           toName: cliente.contacto,
           subject: `Tu cotización GeoVictoria — ${cliente.empresa}`,
