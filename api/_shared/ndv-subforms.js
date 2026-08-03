@@ -175,7 +175,7 @@ function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTa
   };
 }
 
-function buildFinalizarFormularioRecord({ ndvId, ndvRecord }) {
+function buildFinalizarFormularioRecord({ ndvId, ndvRecord, notasPdf }) {
   return {
     ID_Formulario: ndvId,
     Empresa: "Creada en Plataforma",
@@ -184,7 +184,9 @@ function buildFinalizarFormularioRecord({ ndvId, ndvRecord }) {
     CAN_UPDATE_FIELDS: true,
     FORM_STATUS: "BEING EDITED",
     NDV_STATUS: toText(ndvRecord.STATUS) || "BORRADOR",
-    Notas_PDF: "",
+    // Ejecutivo, vigencia y valor de la UF. Se arma en ndv-notas.js con el dueño
+    // real del deal y la UF del día, no con valores fijos.
+    Notas_PDF: toText(notasPdf),
     Solicitar_datos_de_Facturaci_n_al_Cliente: false,
     BillingDataRequested: false,
     BillingDataReceived: false,
@@ -203,7 +205,7 @@ function buildFinalizarFormularioRecord({ ndvId, ndvRecord }) {
  *   del maestro, o sea el precio del servicio titular repetido en el PDF.
  * @returns {{ serviceCount, finalizarId, errors }}
  */
-async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables }) {
+async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) {
   const creatorConfig = getCreatorConfig();
   if (creatorConfig.missing.length > 0) {
     throw new Error(`Faltan variables de Zoho Creator para sub-formularios: ${creatorConfig.missing.join(", ")}`);
@@ -281,7 +283,7 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables }) {
   //    (→ RegeneratePdfJson → PDF_STRING).
   let finalizarId = "";
   try {
-    const finalizarRecord = buildFinalizarFormularioRecord({ ndvId, ndvRecord });
+    const finalizarRecord = buildFinalizarFormularioRecord({ ndvId, ndvRecord, notasPdf });
     finalizarId = await createSubformRecord(creatorConfig, "Finalizar_Formulario", finalizarRecord);
     console.log(`[ndv-subforms] Finalizar_Formulario → id=${finalizarId}`);
   } catch (err) {

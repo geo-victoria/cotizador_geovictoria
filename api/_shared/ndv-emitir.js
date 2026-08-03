@@ -87,6 +87,7 @@ async function emitirCotizacionEnCreator({
       ndvId,
       ndvRecord: resultado?.ndvRecord || {},
       chargeTables: resultado?.chargeTables,
+      notasPdf: resultado?.notasPdf,
     });
 
     console.log(`[ndv-emitir:${motivo}] cotización en Creator id=${ndvId} (${Date.now() - inicio}ms)`);

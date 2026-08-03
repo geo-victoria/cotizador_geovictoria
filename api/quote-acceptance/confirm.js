@@ -215,6 +215,7 @@ async function triggerNdvIfEnabled(config, payload) {
           ndvId,
           ndvRecord: ndvResult?.ndvRecord || {},
           chargeTables: ndvResult?.chargeTables,
+          notasPdf: ndvResult?.notasPdf,
         });
       } catch (subformError) {
         subformSetup = { errors: [String(subformError?.message || subformError)] };

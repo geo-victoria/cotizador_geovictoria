@@ -8,6 +8,7 @@ const {
 } = require("./zoho-crm");
 const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
 const { buildChargeTables } = require("./ndv-charge-table");
+const { construirNotasPdf } = require("./ndv-notas");
 
 function toNumberOrNull(value) {
   const n = Number.parseInt(toText(value), 10);
@@ -1082,6 +1083,12 @@ async function runNdvHandoff({
     updatePayload,
     ndvRecord,
     chargeTables,
+    // Bloque de Notas del PDF: se arma acá porque es donde se conoce el dueño
+    // del deal, que decide qué ejecutivo se presenta al cliente.
+    notasPdf: await construirNotasPdf({ config, ownerId }).catch((error) => {
+      console.warn(`[ndv-handoff] Notas_PDF no se pudo armar: ${toText(error?.message || error)}`);
+      return "";
+    }),
     usedIds: {
       accountId: toText(ndvRecord.CRM_Account),
       contactId: toText(contactId),

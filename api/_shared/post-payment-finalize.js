@@ -120,6 +120,7 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
               ndvId,
               ndvRecord: ndvResult?.ndvRecord || {},
               chargeTables: ndvResult?.chargeTables,
+              notasPdf: ndvResult?.notasPdf,
             });
           } catch (subformError) {
             subformSetup = { errors: [String(subformError?.message || subformError)] };

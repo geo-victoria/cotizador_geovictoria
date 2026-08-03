@@ -412,6 +412,7 @@ module.exports = async function handler(req, res) {
         ndvId,
         ndvRecord: ndvResult?.ndvRecord || {},
         chargeTables: ndvResult?.chargeTables,
+        notasPdf: ndvResult?.notasPdf,
       });
       out.steps.subforms = subformSetup;
 
