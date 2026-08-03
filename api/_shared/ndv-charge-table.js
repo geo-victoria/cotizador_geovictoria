@@ -37,6 +37,7 @@ const {
   getZonaTarifa,
 } = require("./quote-pricing");
 const { PRICING_TIERS } = require("./proposal-constants");
+const { articuloDeHardware, articuloDeServicio } = require("./creator-articulos");
 
 // Creator no acepta un tramo abierto: el último de una tabla bien formada llega
 // hasta 9999 (ver las notas de venta de referencia).
@@ -288,6 +289,11 @@ function buildChargeTables({
   const acumulado = new Map();
   const lineasSinServicio = [];
   const lineasSinPrecio = [];
+  // Destinadas al Formulario_de_Equipos: la venta de equipos a su grilla de
+  // Items y la instalación/envío a la de Servicios Asociados.
+  const lineasEquipos = [];
+  const lineasServicios = [];
+  const lineasSinArticulo = [];
 
   rows.forEach((row, index) => {
     const nombre = String(row?.nombre || "").trim();
@@ -305,9 +311,31 @@ function buildChargeTables({
     const servicios = typeof resolveServicios === "function" ? resolveServicios(rawRows[index]) : [];
     const servicio = servicios.find(Boolean);
     if (!servicio) {
-      // Instalación, envío y venta de equipos van al Formulario_de_Equipos, que
-      // es otro bloque de la NDV: no tienen tabla de cobro donde colgarse.
+      // Venta de equipos, instalación y envío no son servicios recurrentes: van
+      // al Formulario_de_Equipos, que es otro bloque de la NDV. Se clasifican
+      // acá con su precio ya descontado para que ndv-subforms arme sus grillas.
       if (nombre) lineasSinServicio.push(nombre);
+      const factor = factorDescuentoLinea(row, descuentos);
+      const total = montos.subtotal * factor;
+      const linea = {
+        nombre,
+        codigo: String(row?.codigo || "").trim(),
+        zona: getZonaTarifa(row) || "",
+        cantidad,
+        valorUnitario: redondear(
+          (montos.unitario > 0 ? montos.unitario : montos.subtotal / cantidad) * factor
+        ),
+        total: redondear(total),
+        descuentoPct: descuentoPctLinea(row, descuentos),
+      };
+      const articulo = articuloDeHardware(linea.codigo);
+      if (articulo) {
+        lineasEquipos.push({ ...linea, item: articulo.item, modelo: articulo.modelo });
+      } else {
+        const item = articuloDeServicio(linea.codigo, linea.zona);
+        if (item) lineasServicios.push({ ...linea, item });
+        else if (nombre) lineasSinArticulo.push(nombre);
+      }
       return;
     }
 
@@ -413,10 +441,19 @@ function buildChargeTables({
     );
   }
 
+  if (lineasSinArticulo.length > 0) {
+    console.warn(
+      `[ndv-charge-table] ${lineasSinArticulo.length} línea(s) sin artículo de Creator, quedan fuera del PDF: ` +
+        lineasSinArticulo.join(", ")
+    );
+  }
+
   return {
     master,
     porServicio,
     descuentoPorServicio,
+    lineasEquipos,
+    lineasServicios,
     diagnostico: {
       fallback,
       moneda: moneda || "UF",
@@ -425,6 +462,7 @@ function buildChargeTables({
       serviciosConEscalera,
       lineasSinServicio,
       lineasSinPrecio,
+      lineasSinArticulo,
     },
   };
 }

@@ -196,6 +196,63 @@ function buildFinalizarFormularioRecord({ ndvId, ndvRecord, notasPdf }) {
 }
 
 /**
+ * Formulario_de_Equipos: la venta de equipos y los servicios asociados
+ * (instalación, envío). Es el bloque que en el PDF sale como "Visitas y
+ * Servicios Técnicos".
+ *
+ * TODAS las columnas de precio van explícitas. En el formulario manual, al
+ * elegir el Item de la picklist, un script Deluge autorellena el resto de la
+ * fila; ese script es "on user input" y NO corre por API. Si mandáramos solo el
+ * Item, el bloque saldría con los precios en cero — peor que no tenerlo, porque
+ * el PDF se vería completo y estaría mintiendo.
+ *
+ * Columnas que a propósito NO se tocan: Stock y DEV_AmmountToRest (inventario),
+ * ID_item / IdItemService / Category / SKU (los resuelve el catálogo de Creator)
+ * y Valor_Mensual (es del arriendo, que va por su Servicio_Recurrente).
+ */
+function buildFormularioEquiposRecord({ ndvId, ndvRecord, lineasEquipos, lineasServicios }) {
+  const equipos = (lineasEquipos || []).map((l) => ({
+    Item: l.item,
+    Modelo: l.modelo,
+    Valor: toNumber(l.valorUnitario),
+    Cantidad: toNumber(l.cantidad) || 1,
+    Valor_Final: toNumber(l.total),
+    Sobrecargo: 0,
+  }));
+
+  const servicios = (lineasServicios || []).map((l) => ({
+    Items: l.item,
+    Valor_Unidad: toNumber(l.valorUnitario),
+    Cantidad: toNumber(l.cantidad) || 1,
+    Total: toNumber(l.total),
+    // El precio ya viaja descontado, así que la columna va en 0: no sabemos si
+    // Creator la interpreta como porcentaje o como monto, y equivocarse ahí
+    // cobraría de menos. El descuento negociado sigue reflejado en el total.
+    Descuento: 0,
+  }));
+
+  const montoHw = equipos.reduce((acc, e) => acc + toNumber(e.Valor_Final), 0);
+  const montoServicios = servicios.reduce((acc, s) => acc + toNumber(s.Total), 0);
+
+  return {
+    ID_Formulario: ndvId,
+    Formulario: "Cotización",
+    FORM_STATUS: "CREATED",
+    IdDuplicatedMasterForm: 0,
+    Linea_de_Negocio: "Estándar",
+    Moneda: toText(ndvRecord.Moneda) || "UF",
+    country: toText(ndvRecord.Pa_s_Facturaci_n) || "Chile",
+    Hito_de_Facturaci_n: "Cargando...",
+    CAN_UPDATE_FIELDS: true,
+    ...(equipos.length > 0 ? { Equipos: equipos } : {}),
+    ...(servicios.length > 0 ? { Servicios: servicios } : {}),
+    MontoHW: Number(montoHw.toFixed(5)),
+    TOTAL_SERVICIOS_ASOCIADOS: Number(montoServicios.toFixed(5)),
+    Monto: Number((montoHw + montoServicios).toFixed(5)),
+  };
+}
+
+/**
  * Orquesta la creación de sub-formularios para un NDV recién creado.
  *
  * @param {string} ndvId  - ID numérico del registro ALL_DATA en Creator
@@ -278,7 +335,33 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
     }
   }
 
-  // 2. Crear Finalizar_Formulario (Form_Order ya poblado por CreateNextStep).
+  // 2. Formulario_de_Equipos: venta de equipos + servicios asociados. Va ANTES
+  //    de Finalizar_Formulario, porque ese dispara GeneratePDF y para entonces
+  //    todos los bloques tienen que existir.
+  let equiposId = "";
+  const lineasEquipos = chargeTables?.lineasEquipos || [];
+  const lineasServicios = chargeTables?.lineasServicios || [];
+  if (lineasEquipos.length > 0 || lineasServicios.length > 0) {
+    try {
+      const equiposRecord = buildFormularioEquiposRecord({
+        ndvId,
+        ndvRecord,
+        lineasEquipos,
+        lineasServicios,
+      });
+      equiposId = await createSubformRecord(creatorConfig, "Formulario_de_Equipos", equiposRecord);
+      console.log(
+        `[ndv-subforms] Formulario_de_Equipos → id=${equiposId} ` +
+          `equipos=${JSON.stringify(equiposRecord.Equipos || [])} ` +
+          `servicios=${JSON.stringify(equiposRecord.Servicios || [])}`
+      );
+    } catch (err) {
+      console.warn(`[ndv-subforms] Formulario_de_Equipos ERROR: ${err.message}`);
+      errors.push(`Formulario_de_Equipos: ${err.message}`);
+    }
+  }
+
+  // 3. Crear Finalizar_Formulario (Form_Order ya poblado por CreateNextStep).
   //    Dispara FinalizeForm (→ FORM_STATUS=CREATED) y GeneratePDF
   //    (→ RegeneratePdfJson → PDF_STRING).
   let finalizarId = "";
@@ -291,9 +374,13 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
     errors.push(`Finalizar_Formulario: ${err.message}`);
   }
 
-  console.log(`[ndv-subforms] done serviceCount=${serviceCount} finalizarId=${finalizarId} errors=${JSON.stringify(errors)}`);
+  console.log(
+    `[ndv-subforms] done serviceCount=${serviceCount} equiposId=${equiposId || "∅"} ` +
+      `finalizarId=${finalizarId} errors=${JSON.stringify(errors)}`
+  );
   return {
     serviceCount,
+    equiposId,
     finalizarId,
     errors,
   };
