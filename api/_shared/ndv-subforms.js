@@ -12,6 +12,39 @@
 const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
 const { toText } = require("./zoho-crm");
 
+/**
+ * Términos y condiciones que Creator imprime en el bloque del servicio.
+ *
+ * OJO: no confundir con PROPOSAL_TYC de proposal-constants.js — ese es el
+ * clausulado del PDF que Vicky le manda al cliente. Este es el del documento de
+ * Creator, y su redacción la fija el equipo comercial.
+ *
+ * Las cuatro últimas cláusulas son las que Creator ya imprimía por defecto (se
+ * ven en las notas de venta de referencia); la de "Inicio de Facturación" es la
+ * que faltaba.
+ */
+const TYC_CONTROL_ASISTENCIA = [
+  "• Inicio de Facturación: La facturación del servicio de asistencia comenzará una vez completada la carga de usuarios en la plataforma GeoVictoria.",
+  "Finalizado el primer año de facturación, el servicio pasará automáticamente a facturación mensual, calculada según la cantidad de usuarios activos del mes correspondiente.",
+  "La facturación del servicio de asistencia es independiente de la facturación por arriendo o instalación de equipos, las cuales se cobrarán según lo indicado en la propuesta comercial.",
+  "• Plazo de Implementación: El plazo estimado de implementación es de 2 a 3 semanas, contado desde la recepción de la planilla de usuarios completa y validada por parte del cliente.",
+  "El proceso considera las siguientes etapas:",
+  "Dentro de 24 horas hábiles: habilitación del portal GeoVictoria y creación de la empresa en la plataforma.",
+  "Dentro de 72 horas hábiles: contacto del equipo de implementación para coordinar inducción y capacitación online.",
+  "Entre 5 y 7 días hábiles: envío e instalación de equipos en la Región Metropolitana o regiones, según corresponda.",
+  "* Los plazos indicados aplican para empresas con hasta 300 usuarios, sin módulos adicionales ni desarrollos especiales. En caso de empresas con más de 300 usuarios, se le presentará al cliente una carta gantt.",
+  "• Mesa de Ayuda: El servicio incluye acceso a la Mesa de Ayuda GeoVictoria, disponible a través de: Chat interno de la plataforma, Atención telefónica, Correo electrónico y WhatsApp.",
+  "El horario de atención es de lunes a viernes, de 8:30 a 18:30 horas, en días hábiles.",
+  "• Seguridad y Mantenimiento de Datos: La información del cliente es almacenada y administrada en servidores Microsoft Azure, cumpliendo con estándares de seguridad y respaldo de nivel empresarial, y garantizando un uptime mínimo del 99,5%.",
+  "• Actualización de Precios: Los precios de los servicios serán revisados y ajustados anualmente, de acuerdo con el Índice de Precios al Consumidor (IPC) o su equivalente en UF, vigente a la fecha de facturación.",
+].join("\n");
+
+// Por servicio: cada bloque de la NDV lleva el clausulado que le corresponde.
+// Los que no estén acá se crean sin el campo, como hasta ahora.
+const TERMINOS_POR_SERVICIO = {
+  "Control de Asistencia": TYC_CONTROL_ASISTENCIA,
+};
+
 function toNumber(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -136,6 +169,9 @@ function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTa
     isSimpleService: false,
     CAN_UPDATE_FIELDS: true,
     Tabla_de_Cobro: tabla,
+    ...(TERMINOS_POR_SERVICIO[serviceName]
+      ? { Terminos_y_Condiciones: TERMINOS_POR_SERVICIO[serviceName] }
+      : {}),
   };
 }
 
@@ -211,10 +247,27 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables }) {
         chargeTable,
         descuentoPct: chargeTables?.descuentoPorServicio?.[serviceName],
       });
-      const serviceId = await createSubformRecord(creatorConfig, "Servicio_Recurrente", record);
+      let serviceId;
+      try {
+        serviceId = await createSubformRecord(creatorConfig, "Servicio_Recurrente", record);
+      } catch (errConTyc) {
+        // Terminos_y_Condiciones se confirmó en Formulario_de_Equipos, no en
+        // este formulario. Si Creator lo rechaza, se reintenta sin él: perder
+        // el clausulado es molesto, perder el bloque del servicio —y con él la
+        // sección principal del PDF— no es aceptable.
+        if (!record.Terminos_y_Condiciones) throw errConTyc;
+        console.warn(
+          `[ndv-subforms] ${serviceName} falló con Terminos_y_Condiciones (${errConTyc.message}); se reintenta sin el campo.`
+        );
+        const sinTyc = { ...record };
+        delete sinTyc.Terminos_y_Condiciones;
+        serviceId = await createSubformRecord(creatorConfig, "Servicio_Recurrente", sinTyc);
+        errors.push(`Terminos_y_Condiciones rechazado por Creator en ${serviceName}: ${errConTyc.message}`);
+      }
       console.log(
         `[ndv-subforms] Servicio_Recurrente(${serviceName}) → id=${serviceId} ` +
-          `dcto=${record.Descuento_Ejecutivo}% tabla=${JSON.stringify(record.Tabla_de_Cobro)}`
+          `dcto=${record.Descuento_Ejecutivo}% tyc=${record.Terminos_y_Condiciones ? "sí" : "no"} ` +
+          `tabla=${JSON.stringify(record.Tabla_de_Cobro)}`
       );
       if (serviceId) serviceCount++;
     } catch (err) {
