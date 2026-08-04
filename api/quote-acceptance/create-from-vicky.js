@@ -63,6 +63,13 @@ const EJEC_TELEFONO = "+56 9 3932 1687";
 const EJEC_WHATSAPP = "56939321687";
 const EJEC_OWNER_ID = "3525045000000211283";
 const EJEC_OWNER = { id: EJEC_OWNER_ID };
+// Los DEALS ya no nacen con la ejecutiva interina sino con el usuario VICKY
+// (Lalo 04-ago): la tómbola los sortea al instante, y si el sorteo falla el
+// deal queda visiblemente en Vicky — con Eddyluz-interina era imposible
+// distinguir "el sorteo cayó en Eddy" de "el sorteo nunca corrió". Cuentas y
+// contactos siguen naciendo con EJEC_OWNER (necesitan dueño humano) y luego
+// siguen al dueño sorteado del deal.
+const VICKY_BOT_OWNER = { id: "3525045000484500876" };
 
 // Regla de tómbola de Deals en Zoho para Chile ("Tómbola Deals 2026 Chile",
 // compartida por Lalo el 31-jul). Todo deal creado por Vicky se sortea con
@@ -1070,11 +1077,9 @@ module.exports = async function handler(req, res) {
           Tipo_de_Cobro: (Number(cliente.userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
           Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
           Lead_Source: VICKY_LEAD_SOURCE,
-          // Regla Lalo 30-jul: el deal SIEMPRE con el mismo owner que la
-          // cotización. Sin esto, el deal nacido por conversión hereda el
-          // owner del LEAD (Vicky) y queda en la bandeja de nadie — así se
-          // generaron 16 deals huérfanos entre el 17 y el 29 de julio.
-          Owner: EJEC_OWNER,
+          // El deal nace en Vicky y la tómbola de abajo lo sortea al tiro
+          // (Lalo 04-ago). Si el sorteo falla, "dueño=Vicky" es la señal.
+          Owner: VICKY_BOT_OWNER,
         };
         // Con deal cruzado el lead se convierte IGUAL (regla marketing: todo
         // deal nace de lead convertido — acá el deal existente ya nació así)
@@ -1102,7 +1107,7 @@ module.exports = async function handler(req, res) {
         stage = "update_deal_after_convert";
         if (!reuse.dealReused) {
           await updateRecord("Deals", dealId, {
-            Owner: EJEC_OWNER,
+            Owner: VICKY_BOT_OWNER,
             Territorio: VICKY_TERRITORIO,
             Tombola: VICKY_TOMBOLA,
             Monda_del_trato: VICKY_MONEDA,
@@ -1415,7 +1420,7 @@ module.exports = async function handler(req, res) {
           N_Empleados_que_marcan: cliente.userCount,
           Tipo_de_Cobro: (Number(cliente.userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
           Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
-          Owner: EJEC_OWNER,
+          Owner: VICKY_BOT_OWNER,
         }, true);
         dealId = toText(dealResult?.id);
         if (!dealId) throw new Error("No se obtuvo dealId");
