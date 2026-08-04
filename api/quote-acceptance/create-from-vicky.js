@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { createRecord, updateRecord, getRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
-const { claveIdempotencia, getIdempotente, setIdempotente } = require("../_shared/idempotencia");
+const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono } = require("../_shared/idempotencia");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
@@ -149,11 +149,13 @@ function splitFullName(fullName) {
 // apuntando a esos registros existentes (el lead se fusiona en ellos).
 async function convertLead(leadId, dealData, existingIds = {}) {
   const path = `/crm/v3/Leads/${encodeURIComponent(leadId)}/actions/convert`;
+  // dealData null → conversión SIN deal nuevo (candado cruzado: el deal ya
+  // existe, nacido del hito de conversación — solo se necesita Account/Contact).
   const payload = {
     overwrite: true,
     notify_lead_owner: true,
     notify_new_entity_owner: true,
-    Deals: dealData,
+    ...(dealData ? { Deals: dealData } : {}),
   };
   // Zoho espera jsonobject {id} (string pelado → INVALID_DATA, caso real 08-jul).
   if (existingIds.accountId) payload.Accounts = { id: existingIds.accountId };
@@ -197,7 +199,7 @@ async function convertLead(leadId, dealData, existingIds = {}) {
     contactId: idFrom(result.Contacts),
     dealId: idFrom(result.Deals),
   };
-  if (ids.accountId && ids.contactId && ids.dealId) return ids;
+  if (ids.accountId && ids.contactId && (ids.dealId || !dealData)) return ids;
   // La conversión puede COMPLETARSE en Zoho aunque la respuesta venga sin
   // todos los IDs (caso real 17-jul, Parroquia Santa Filomena: convert OK,
   // respuesta incompleta → el fallback duplicó cuenta/contacto/deal). Antes
@@ -943,6 +945,20 @@ module.exports = async function handler(req, res) {
       quoteReused: false,
     };
 
+    // Candado cruzado hito↔cotización: si crm-hitos (agente) acaba de crear
+    // un deal para este teléfono, la búsqueda de Zoho aún no lo ve — el
+    // candado en vic_kv sí. Se reusa ese deal en vez de parir un gemelo.
+    stage = "check_deal_kv";
+    let dealCruzado = null;
+    try {
+      dealCruzado = await getDealPorFono(cliente.contactoTelefono);
+      if (dealCruzado) {
+        console.warn(
+          `[create-from-vicky] candado kv: deal ${dealCruzado.dealId} recién creado (origen=${dealCruzado.origen || "?"}) para ${cliente.contactoTelefono} — se reusa, no se crea gemelo.`,
+        );
+      }
+    } catch { /* best-effort */ }
+
     // ── CAMINO A: Convertir Lead existente ──
     // Best-effort: si la conversión falla por cualquier motivo (blueprint,
     // permisos, datos), NO se pierde la venta — se loguea fuerte y se cae al
@@ -976,10 +992,14 @@ module.exports = async function handler(req, res) {
           // generaron 16 deals huérfanos entre el 17 y el 29 de julio.
           Owner: EJEC_OWNER,
         };
-        const convertResult = await convertLead(existing.leadId, dealDataForConvert);
+        // Con deal cruzado el lead se convierte IGUAL (regla marketing: todo
+        // deal nace de lead convertido — acá el deal existente ya nació así)
+        // pero SIN parir otro deal: solo Account/Contact.
+        const convertResult = await convertLead(existing.leadId, dealCruzado ? null : dealDataForConvert);
         accountId = convertResult.accountId;
         contactId = convertResult.contactId;
-        dealId = convertResult.dealId;
+        dealId = convertResult.dealId || (dealCruzado ? dealCruzado.dealId : undefined);
+        if (dealCruzado && dealId === dealCruzado.dealId) reuse.dealReused = true;
 
         if (!accountId || !contactId || !dealId) {
           throw new Error("Conversión de Lead no devolvió todos los IDs");
@@ -996,17 +1016,26 @@ module.exports = async function handler(req, res) {
         await updateRecord("Contacts", contactId, buildContactFullPayload(cliente), true);
 
         stage = "update_deal_after_convert";
-        await updateRecord("Deals", dealId, {
-          Owner: EJEC_OWNER,
-          Territorio: VICKY_TERRITORIO,
-          Tombola: VICKY_TOMBOLA,
-          Monda_del_trato: VICKY_MONEDA,
-          Sector: sectorParaZoho,
-          N_Empleados_que_marcan: cliente.userCount,
-          Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
-          Lead_Source: VICKY_LEAD_SOURCE,
-          Description: `Deal creado por Vicky desde Lead convertido.\nUsuarios: ${cliente.userCount}\nTotal: ${cotizacion.totalUF} UF / ${cotizacion.totalCLP} CLP\nSector: ${sectorParaZoho}`,
-        }, true);
+        if (!reuse.dealReused) {
+          await updateRecord("Deals", dealId, {
+            Owner: EJEC_OWNER,
+            Territorio: VICKY_TERRITORIO,
+            Tombola: VICKY_TOMBOLA,
+            Monda_del_trato: VICKY_MONEDA,
+            Sector: sectorParaZoho,
+            N_Empleados_que_marcan: cliente.userCount,
+            Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
+            Lead_Source: VICKY_LEAD_SOURCE,
+            Description: `Deal creado por Vicky desde Lead convertido.\nUsuarios: ${cliente.userCount}\nTotal: ${cotizacion.totalUF} UF / ${cotizacion.totalCLP} CLP\nSector: ${sectorParaZoho}`,
+          }, true);
+        } else {
+          // Deal preexistente (candado cruzado): conserva su dueño — puede
+          // venir sorteado por la tómbola de deals. Solo datos de la venta.
+          await updateRecord("Deals", dealId, {
+            Amount: cotizacion.totalCLP || undefined,
+            N_Empleados_que_marcan: cliente.userCount,
+          }, true);
+        }
       } catch (convErr) {
         console.error(
           `[create-from-vicky] CONVERT FALLÓ lead=${existing.leadId} (${toText(convErr?.message || convErr).slice(0, 250)})`,
@@ -1061,6 +1090,20 @@ module.exports = async function handler(req, res) {
           dealId = convertidos.dealId;
           // Deal preexistente: conserva su dueño (no se re-sortea).
           reuse.dealReused = true;
+        }
+        // La búsqueda no vio nada pero el candado kv sí: deal de hace
+        // segundos (índice de Zoho atrasado). Se reusa y se traen su
+        // cuenta/contacto para no crear duplicados de esos tampoco.
+        if (!dealId && dealCruzado) {
+          const dealKv = await getRecord("Deals", dealCruzado.dealId).catch(() => null);
+          if (dealKv) {
+            dealId = dealCruzado.dealId;
+            reuse.dealReused = true;
+            const accKv = toText(dealKv?.Account_Name?.id);
+            const ctKv = toText(dealKv?.Contact_Name?.id);
+            if (accKv && !existing.accountId) existing.accountId = accKv;
+            if (ctKv && !existing.contactId) existing.contactId = ctKv;
+          }
         }
       }
       // ── CAMINO B: Crear Account o reusar existente ──
@@ -1302,6 +1345,9 @@ module.exports = async function handler(req, res) {
           `La cotización continúa (accountId=${accountId || "∅"}, contactId=${contactId || "∅"}, dealId=${dealId || "∅"}).`,
       );
     }
+    // Candado cruzado: registrar el deal APENAS existe, para que crm-hitos
+    // (agente) lo reuse en vez de crear un gemelo por hito de conversación.
+    if (dealId) await setDealPorFono(cliente.contactoTelefono, dealId, "cotizacion").catch(() => {});
     if (!accountId || !contactId || !dealId) crmIncompleto = crmIncompleto || !accountId || !dealId;
 
     // ── DATOS REALES pisan PLACEHOLDERS (Lalo 31-jul, caso D'amore) ────────
