@@ -78,7 +78,7 @@
 
 const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
-const { claveIdempotencia, getIdempotente, setIdempotente } = require("../_shared/idempotencia");
+const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono } = require("../_shared/idempotencia");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
@@ -547,6 +547,18 @@ module.exports = async function handler(req, res) {
     if (convertidosPrevios.contactId) contactId = convertidosPrevios.contactId;
     if (convertidosPrevios.dealId) dealId = convertidosPrevios.dealId;
 
+    // Candado cruzado hito↔cotización (mismo fix CL 04-ago): si crm-hitos
+    // acaba de crear un deal para este teléfono (invisible aún para la
+    // búsqueda de Zoho por el lag del índice), se reusa en vez de crear un
+    // gemelo. Conserva su dueño.
+    if (!dealId) {
+      const dealCruzado = await getDealPorFono(contactoTelefono).catch(() => null);
+      if (dealCruzado && dealCruzado.dealId) {
+        dealId = dealCruzado.dealId;
+        console.warn(`[create-from-vicky-co] candado kv: se reusa deal ${dealId} (origen=${dealCruzado.origen || "?"}) — no se crea gemelo.`);
+      }
+    }
+
     // ── Account: dedup por NIT antes de crear ──
     stage = "find_account_by_nit";
     accountId = await findAccountIdByNit(nit, empresa);
@@ -668,6 +680,9 @@ module.exports = async function handler(req, res) {
     }, true);
     dealId = toText(dealResult?.id);
     if (!dealId) throw new Error("No se obtuvo dealId");
+    // Candado cruzado: registrar el deal apenas existe para que crm-hitos lo
+    // reuse en vez de crear un gemelo por hito de conversación.
+    await setDealPorFono(contactoTelefono, dealId, "cotizacion").catch(() => {});
     }
     } catch (plumbingError) {
       if (String(process.env.CRM_STRICT || "") === "1") throw plumbingError;
