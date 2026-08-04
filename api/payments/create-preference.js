@@ -75,13 +75,29 @@ export default async function handler(req, res) {
 
     const externalReference = buildExternalReference(quoteId, "oneshot");
 
+    // ETIQUETA PARA REPORTES (Lalo 04-ago): la "Descripción" de los reportes
+    // descargables de MP sale del TÍTULO del ítem del checkout — la metadata
+    // NO aparece en esos exports. Con el título genérico, finanzas no podía
+    // saber de qué empresa era cada pago. El título ahora lleva número de
+    // cotización + empresa + RUT/NIT; el cliente lo ve igual en el checkout
+    // (informativo, no molesta).
+    const idTributario = session.pais === "co" ? "NIT" : "RUT";
+    const etiquetaReporte = [
+      toText(session.quote?.Numero_Cotizacion) || `Cotizacion ${quoteId}`,
+      toText(session.quote?.Cuenta_Asociada?.name),
+      session.companyRut ? `${idTributario} ${session.companyRut}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ")
+      .slice(0, 200);
+
     // Lineas del checkout: servicios iniciales (una vez) + primer mes de
     // servicio prepagado (si corresponde). El total = amounts.oneShotClp.
     const items = [];
     if (amounts.oneShotItemsClp > 0) {
       items.push({
         id: `qa-${quoteId}-oneshot`,
-        title: mpConfig.oneShotTitle,
+        title: `${mpConfig.oneShotTitle} — ${etiquetaReporte}`.slice(0, 256),
         description: quoteName || `Cotizacion ${quoteId}`,
         quantity: 1,
         unit_price: amounts.oneShotItemsClp,
@@ -91,7 +107,7 @@ export default async function handler(req, res) {
     if (amounts.firstMonthClp > 0) {
       items.push({
         id: `qa-${quoteId}-firstmonth`,
-        title: "Primer mes de servicio (adelantado)",
+        title: `Primer mes de servicio (adelantado) — ${etiquetaReporte}`.slice(0, 256),
         description: quoteName || `Cotizacion ${quoteId}`,
         quantity: 1,
         unit_price: amounts.firstMonthClp,

@@ -11,7 +11,7 @@
  * sin duplicar registros.
  */
 
-const { getRecord, toText } = require("./zoho-crm");
+const { getRecord, toText, updateRecordBestEffort } = require("./zoho-crm");
 const { runOnboardingHandoff } = require("./onboarding-handoff");
 const {
   runNdvHandoff,
@@ -192,6 +192,36 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
       buildExternalReference(quoteId, "oneshot")
     );
     oneShotApproved = hasApprovedPayment(payments);
+    // QUIÉN PAGÓ (Lalo 04-ago): MP captura la identidad del pagador en cada
+    // pago con tarjeta — el titular puede ser otra persona que el contacto de
+    // la cotización (caso Grupo Dog Delivery). Se persiste en campos propios
+    // (Pagador_Nombre / Pagador_RUT) la PRIMERA vez que se ve el pago
+    // aprobado; nunca se pisa un valor ya escrito. Best-effort.
+    if (oneShotApproved) {
+      const aprobado = (payments || []).find(
+        (p) => String(p?.status || "").toLowerCase() === "approved"
+      );
+      const titular = aprobado?.card?.cardholder || {};
+      const nombrePagador =
+        toText(titular.name) ||
+        [toText(aprobado?.payer?.first_name), toText(aprobado?.payer?.last_name)]
+          .filter(Boolean)
+          .join(" ");
+      const rutPagador =
+        toText(titular?.identification?.number) ||
+        toText(aprobado?.payer?.identification?.number);
+      const sinPagadorPrevio =
+        !toText(quote?.Pagador_Nombre) && !toText(quote?.Pagador_RUT);
+      if ((nombrePagador || rutPagador) && sinPagadorPrevio) {
+        await updateRecordBestEffort(acceptanceConfig.quoteModule, quoteId, {
+          ...(nombrePagador ? { Pagador_Nombre: nombrePagador.slice(0, 255) } : {}),
+          ...(rutPagador ? { Pagador_RUT: rutPagador.slice(0, 50) } : {}),
+        }, true);
+        console.log(
+          `[finalize] pagador registrado en ${quoteId}: ${nombrePagador || "(sin nombre)"} · ${rutPagador || "(sin RUT)"}`
+        );
+      }
+    }
   }
 
   let subscriptionAuthorized = !hasSubscription;

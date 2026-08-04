@@ -92,8 +92,22 @@ export default async function handler(req, res) {
     }
 
     const externalReference = buildExternalReference(quoteId, "sub");
+    // ETIQUETA PARA REPORTES (Lalo 04-ago): el `reason` es la descripción que
+    // muestran los reportes de cobros recurrentes de MP — lleva cotización,
+    // empresa y RUT para que finanzas identifique cada cargo (misma regla que
+    // el título del checkout one-shot en create-preference).
+    const etiquetaReporte = [
+      toText(session.quote?.Numero_Cotizacion) || "",
+      toText(session.quote?.Cuenta_Asociada?.name),
+      session.companyRut ? `RUT ${session.companyRut}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ")
+      .slice(0, 180);
     const payload = {
-      reason: mpConfig.subscriptionReason,
+      reason: etiquetaReporte
+        ? `${mpConfig.subscriptionReason} — ${etiquetaReporte}`.slice(0, 256)
+        : mpConfig.subscriptionReason,
       external_reference: externalReference,
       payer_email: billingEmail,
       back_url: subscriptionBackUrl(mpConfig),
