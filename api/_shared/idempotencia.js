@@ -166,4 +166,22 @@ async function getLeadCandadoPorFono(fono) {
   }
 }
 
-module.exports = { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono };
+/** Lee un flag simple de vic_kv (para encender/apagar features al instante,
+ * sin redeploy). Devuelve el string crudo del value, o "" si no existe. */
+async function getKvFlag(key) {
+  const env = supaEnv();
+  if (!env || !key) return "";
+  try {
+    const r = await fetch(
+      `${env.url}/rest/v1/vic_kv?key=eq.${encodeURIComponent(key)}&select=value&limit=1`,
+      { headers: { apikey: env.key, Authorization: `Bearer ${env.key}` }, cache: "no-store" },
+    );
+    if (!r.ok) return "";
+    const filas = await r.json().catch(() => []);
+    return String((filas && filas[0] && filas[0].value) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+module.exports = { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono, getKvFlag };

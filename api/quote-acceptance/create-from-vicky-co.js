@@ -78,7 +78,7 @@
 
 const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
-const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono } = require("../_shared/idempotencia");
+const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono, getKvFlag } = require("../_shared/idempotencia");
 const { sendQuoteEmailViaZoho, buildEmailHtml } = require("./create-from-vicky");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
@@ -168,6 +168,137 @@ async function findConvertedIdsByPhone(telefono) {
       console.warn(`[lead-first] contacto ${fono} ya convertido — se reusa account=${ids.accountId || "-"} contact=${ids.contactId || "-"} deal=${ids.dealId || "-"}`);
     }
     return ids;
+  } catch {
+    return {};
+  }
+}
+
+// ── FLUJO CONVERT-FIRST (paridad con Chile, Lalo 04-ago) ────────────────────
+// Detrás de flag (env VICKY_CO_CONVERT_FIRST=on o kv co_convert_first=on),
+// APAGADO por defecto. Igual que Chile: el deal NACE de convertir el lead vivo
+// del contacto → cero leads huérfanos por diseño (no un cierre best-effort
+// después). Encender, observar una cotización CO real, apagar al instante si
+// algo no calza.
+async function coConvertFirstOn() {
+  if (String(process.env.VICKY_CO_CONVERT_FIRST || "").trim() === "on") return true;
+  try {
+    return (await getKvFlag("co_convert_first")) === "on";
+  } catch {
+    return false;
+  }
+}
+
+// Owners cuyo lead se ADOPTA y convierte (bot + interino + SDR CO): un lead de
+// dueño humano REAL no se toca. El deal nace a nombre del ejecutivo (OWNER_CO).
+const OWNERS_ADOPTABLES_CO = new Set([
+  "3525045000484500876", // Vicky GeoVictoria
+  "3525045000203758005", // Gordillo (interino)
+  "3525045000613817111", // Eddy Galindo (SDR)
+  "3525045000619732095", // Guerrero (SDR)
+  "3525045000639899035", // Quiroga (SDR)
+]);
+
+// Lead VIVO sin convertir del teléfono (candado kv del agente → búsqueda Zoho),
+// solo de dueño adoptable. Igual que findOpenLeadIdByPhone de Chile.
+async function findLeadVivoCO(telefono) {
+  const fono = toText(telefono).replace(/\D/g, "");
+  if (!fono) return "";
+  let candidato = "";
+  try { candidato = await getLeadCandadoPorFono(fono); } catch { /* best-effort */ }
+  if (!candidato) {
+    try {
+      const r = await zohoApiFetch(
+        `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
+      );
+      if (r.ok && r.status !== 204) {
+        const leads = (await r.json())?.data || [];
+        const abierto = leads.find(
+          (l) =>
+            !(
+              l?.Converted_Deal?.id ||
+              l?.Converted_Account?.id ||
+              l?.Converted_Contact?.id ||
+              l?.["$converted_detail"]?.deal
+            ),
+        );
+        candidato = toText(abierto?.id);
+      }
+    } catch { /* best-effort */ }
+  }
+  if (!candidato) return "";
+  try {
+    const g = await zohoApiFetch(`/crm/v3/Leads/${encodeURIComponent(candidato)}?fields=Owner`);
+    if (!g.ok) return "";
+    const ownerId = toText((((await g.json())?.data || [])[0] || {}).Owner?.id);
+    if (!OWNERS_ADOPTABLES_CO.has(ownerId)) return ""; // dueño humano real: no se toca
+    return candidato;
+  } catch {
+    return "";
+  }
+}
+
+// convertLeadCO: idéntico a convertLead de Chile (dedup DUPLICATE_DATA con
+// reintento fusionando, IDs en raíz o dentro de details). dealData null =
+// conversión SIN deal nuevo (reusa un deal ya creado por el hito).
+async function convertLeadCO(leadId, dealData, existingIds = {}) {
+  const path = `/crm/v3/Leads/${encodeURIComponent(leadId)}/actions/convert`;
+  const payload = {
+    overwrite: true,
+    notify_lead_owner: true,
+    notify_new_entity_owner: true,
+    ...(dealData ? { Deals: dealData } : {}),
+  };
+  if (existingIds.accountId) payload.Accounts = { id: existingIds.accountId };
+  if (existingIds.contactId) payload.Contacts = { id: existingIds.contactId };
+  const response = await zohoApiFetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: [payload] }),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    let dup = null;
+    try { dup = JSON.parse(text)?.data?.[0]; } catch { /* noop */ }
+    if (dup?.code === "DUPLICATE_DATA" && dup?.details?.duplicate_record?.id) {
+      const dupModule = toText(dup?.details?.duplicate_record?.module?.api_name);
+      const dupId = toText(dup.details.duplicate_record.id);
+      const puedeReintentar =
+        (dupModule === "Contacts" && !existingIds.contactId) ||
+        (dupModule !== "Contacts" && !existingIds.accountId);
+      if (puedeReintentar) {
+        const retryIds =
+          dupModule === "Contacts"
+            ? { ...existingIds, contactId: dupId }
+            : { ...existingIds, accountId: dupId };
+        return convertLeadCO(leadId, dealData, retryIds);
+      }
+    }
+    throw new Error(`Zoho convert Lead CO failed (${response.status}): ${text.slice(0, 300)}`);
+  }
+  const result = JSON.parse(text)?.data?.[0];
+  if (!result) throw new Error("Respuesta de convert Lead CO sin data");
+  const idFrom = (v) => toText(v && typeof v === "object" ? v.id : v);
+  const det = result.details || {};
+  return {
+    accountId: idFrom(result.Accounts) || idFrom(det.Accounts),
+    contactId: idFrom(result.Contacts) || idFrom(det.Contacts),
+    dealId: idFrom(result.Deals) || idFrom(det.Deals),
+  };
+}
+
+// Recupera los IDs de una conversión previa desde $converted_detail (el lead
+// ya estaba convertido por el hito). Igual que recoverConvertedIds de Chile.
+async function recoverConvertedIdsCO(leadId) {
+  try {
+    const r = await zohoApiFetch(
+      `/crm/v3/Leads?ids=${encodeURIComponent(leadId)}&converted=true&fields=id,$converted_detail`,
+    );
+    const detail = (await r.json())?.data?.[0]?.["$converted_detail"] || {};
+    return {
+      accountId: toText(detail.account),
+      contactId: toText(detail.contact),
+      dealId: toText(detail.deal),
+    };
   } catch {
     return {};
   }
@@ -611,6 +742,72 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    // ── CAMINO A (convert-first, paridad Chile — GATEADO) ──────────────────
+    // Adopta el lead vivo del contacto y lo convierte: el deal NACE del lead →
+    // cero huérfanos por diseño. Si el convert falla, recupera por
+    // $converted_detail; si aun así no hay ids, cae al Camino B (creación
+    // fresca) de siempre. Flag apagado por defecto.
+    let leadConverted = false;
+    if (!dealId && !accountId && !contactId && (await coConvertFirstOn())) {
+      const leadVivo = await findLeadVivoCO(contactoTelefono).catch(() => "");
+      if (leadVivo) {
+        stage = "convert_lead_co";
+        try {
+          const dealDataCO = {
+            Deal_Name: `${empresa} - Cotización Vicky`,
+            Stage: VICKY_CO_DEAL_STAGE,
+            Pipeline: "Standard (Standard)",
+            Lead_Source: VICKY_CO_LEAD_SOURCE,
+            Amount: totalCOP || undefined,
+            Territorio: VICKY_CO_TERRITORIO,
+            Tombola: VICKY_CO_TOMBOLA,
+            Monda_del_trato: VICKY_CO_MONEDA,
+            Sector: VICKY_CO_SECTOR,
+            N_Empleados_que_marcan: userCount,
+            Tipo_de_Cobro: (Number(userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
+            Producto_Soluci_n: VICKY_CO_PRODUCTO,
+            Owner: OWNER_CO, // deal → ejecutivo CO (Gordillo)
+          };
+          const conv = await convertLeadCO(leadVivo, dealDataCO);
+          accountId = conv.accountId;
+          contactId = conv.contactId;
+          dealId = conv.dealId;
+          if (accountId && contactId && dealId) {
+            leadConverted = true;
+            accountReused = true;
+            // Datos nuevos ganan sobre el lead viejo (cuenta/contacto).
+            await updateRecord("Accounts", accountId, {
+              Account_Name: empresa,
+              RUT_Empresa: nitParaGuardarCO(nit),
+              Territorio: VICKY_CO_TERRITORIO,
+              N_Empleados_dependientes: userCount,
+              Owner: OWNER_CO,
+            }, true).catch(() => {});
+            await updateRecord("Contacts", contactId, {
+              Email: contactoEmail,
+              Phone: contactoTelefono || undefined,
+              Owner: OWNER_CO,
+            }, true).catch(() => {});
+            await setDealPorFono(contactoTelefono, dealId, "cotizacion").catch(() => {});
+            console.warn(`[create-from-vicky-co] convert-first: lead ${leadVivo} → account=${accountId} contact=${contactId} deal=${dealId}`);
+          }
+        } catch (convErr) {
+          console.error(`[create-from-vicky-co] convert-first falló (${toText(convErr?.message || convErr).slice(0, 200)}) — recupero/creo fresco.`);
+          try {
+            const rec = await recoverConvertedIdsCO(leadVivo);
+            if (rec.dealId) {
+              accountId = rec.accountId || accountId;
+              contactId = rec.contactId || contactId;
+              dealId = rec.dealId;
+              leadConverted = Boolean(accountId && contactId && dealId);
+            }
+          } catch { /* cae a Camino B */ }
+        }
+      }
+    }
+
+    // ── CAMINO B (creación fresca con dedup) — solo si NO se convirtió ──
+    if (!leadConverted) {
     // ── Account: dedup por NIT antes de crear ──
     stage = "find_account_by_nit";
     accountId = await findAccountIdByNit(nit, empresa);
@@ -736,6 +933,7 @@ module.exports = async function handler(req, res) {
     // reuse en vez de crear un gemelo por hito de conversación.
     await setDealPorFono(contactoTelefono, dealId, "cotizacion").catch(() => {});
     }
+    } // fin Camino B (if !leadConverted)
     } catch (plumbingError) {
       if (String(process.env.CRM_STRICT || "") === "1") throw plumbingError;
       crmIncompleto = true;
