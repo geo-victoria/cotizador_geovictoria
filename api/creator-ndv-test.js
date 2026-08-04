@@ -14,7 +14,7 @@ const { getAcceptanceConfig } = require("./_shared/quote-acceptance-config");
 const { getRecord, toText } = require("./_shared/zoho-crm");
 const { getCreatorConfig, creatorApiFetch } = require("./_shared/zoho-creator-auth");
 const { runNdvHandoff } = require("./_shared/ndv-handoff");
-const { runNdvSubformSetup } = require("./_shared/ndv-subforms");
+const { runNdvSubformSetup, buildFinalizarFormularioRecord, createSubformRecord } = require("./_shared/ndv-subforms");
 const { buildAcceptanceDataFromQuote } = require("./_shared/post-payment-finalize");
 
 function parseBody(req) {
@@ -93,6 +93,93 @@ module.exports = async function handler(req, res) {
   const out = { ok: false, steps: {} };
   try {
     const body = parseBody(req);
+
+    // ── Modo "repairBigint": repara una NDV ya emitida que quedó con
+    //    IdDuplicatedMasterForm vacío (el bug arreglado en main por 3db403f).
+    //
+    //    Un PATCH sobre el Finalizar_Formulario existente NO sirve: dispara
+    //    FinalizeForm1 (record event = on edit), que llama a
+    //    nextUrl.EditNextStep — no a CreateNextStep — y EditNextStep solo
+    //    navega, no escribe Form_Order. Además currentEditIndex/maxIndex
+    //    también están vacíos en estos registros rotos, así que revienta con
+    //    el mismo "Null value" que ya vimos en el sondeo del bloque de
+    //    equipos. Y de paso pondría el maestro en FORM_STATUS=EDITED.
+    //
+    //    Lo que sí corresponde: crear un Finalizar_Formulario NUEVO (on add),
+    //    con el mismo código de producción (buildFinalizarFormularioRecord +
+    //    createSubformRecord) que ya trae IdDuplicatedMasterForm=0. Eso
+    //    dispara FinalizeForm → CreateNextStep, que SÍ escribe la fila
+    //    "Ultimo Paso" en Form_Order y regenera el PDF (documentos ya
+    //    enviados se rehacen; el contenido debería salir igual porque nace de
+    //    los mismos Servicio_Recurrente). El Finalizar_Formulario viejo queda
+    //    huérfano — no se puede borrar, el token no tiene permiso de DELETE
+    //    (ver modo cleanupProbe) — pero Form_Order pasa a apuntar al nuevo, así
+    //    que no afecta la conversión.
+    //
+    //    body: { repairBigint: true, ndvId: "<ID numérico del maestro ALL_DATA>" }
+    if (body.repairBigint === true) {
+      const creatorConfig = getCreatorConfig();
+      const ndvId = toText(body.ndvId);
+      if (!ndvId) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ ok: false, error: "Falta ndvId (el campo ID del maestro, no el ID_NDV)" }));
+        return;
+      }
+
+      // Antes: para dejar constancia del estado roto y no reparar por error
+      // algo que ya esté bien.
+      out.steps.antes = {
+        maestro: await fetchNdvRecord(creatorConfig, ndvId),
+        finalizarFormularioViejo: await fetchFinalizarRecord(creatorConfig, ndvId),
+      };
+      if (out.steps.antes.finalizarFormularioViejo?.IdDuplicatedMasterForm === "0") {
+        out.ok = true;
+        out.steps.omitido = "El Finalizar_Formulario ya tiene IdDuplicatedMasterForm=0; no parece estar roto por este bug.";
+        res.statusCode = 200;
+        res.end(JSON.stringify(out, null, 2));
+        return;
+      }
+
+      // Leer el maestro completo (no solo el resumen de fetchNdvRecord) para
+      // armar el registro con los mismos datos que usaría runNdvSubformSetup.
+      const masterPath = `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}/report/${encodeURIComponent(creatorConfig.reportLinkName)}/${encodeURIComponent(ndvId)}?field_config=all`;
+      const masterResp = await creatorApiFetch(masterPath, { method: "GET" });
+      const masterPayload = await readJson(masterResp);
+      const ndvRecord = masterPayload?.data || {};
+      if (!ndvRecord.ID) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ ...out, error: "No se pudo leer el maestro", masterPayload }, null, 2));
+        return;
+      }
+      out.steps.maestroLeido = { ID_NDV: ndvRecord.ID_NDV, Formulario: ndvRecord.Formulario, STATUS: ndvRecord.STATUS };
+
+      const finalizarRecord = buildFinalizarFormularioRecord({ ndvId, ndvRecord, notasPdf: "" });
+      let finalizarId = "";
+      try {
+        finalizarId = await createSubformRecord(creatorConfig, "Finalizar_Formulario", finalizarRecord);
+      } catch (e) {
+        out.error = `Creación de Finalizar_Formulario falló: ${e.message}`;
+        res.statusCode = 500;
+        res.end(JSON.stringify(out, null, 2));
+        return;
+      }
+      out.steps.finalizarCreado = finalizarId || "(sin id — puede haber sido timeout; Creator procesa en background)";
+
+      // Después, sin apuro: los workflows de Creator (CreateNextStep,
+      // RegeneratePdfJson) corren en background tras el POST.
+      out.steps.despues = {
+        maestro: await fetchNdvRecord(creatorConfig, ndvId),
+        finalizarFormularioNuevo: finalizarId ? await fetchFinalizarRecord(creatorConfig, ndvId) : undefined,
+      };
+      out.ok = true;
+      out.reviewHint =
+        "Compara steps.antes.maestro.Form_Order_len vs steps.despues.maestro.Form_Order_len. " +
+        "Si despues tiene una fila más con FormName=Finalizar_Formulario y Product_Name=Ultimo Paso, la reparación funcionó. " +
+        "Si Form_Order sigue igual, espera ~30s y vuelve a leer con &record=<ID_NDV>&full=1 antes de reintentar — los workflows pueden seguir en curso.";
+      res.statusCode = 200;
+      res.end(JSON.stringify(out, null, 2));
+      return;
+    }
 
     // ── Modo "cleanupProbe": borra lo que dejó el sondeo ──────────────────────
     // Cada ronda dejó un maestro de prueba en HuelleroCompany y sus bloques.

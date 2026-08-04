@@ -462,4 +462,11 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
   };
 }
 
-module.exports = { runNdvSubformSetup };
+module.exports = {
+  runNdvSubformSetup,
+  // Expuestos para el modo de reparación de creator-ndv-test.js: crear un
+  // Finalizar_Formulario nuevo sobre una NDV ya emitida y rota (BIGINT), sin
+  // reimplementar el armado del registro ni la llamada a Creator por separado.
+  buildFinalizarFormularioRecord,
+  createSubformRecord,
+};
