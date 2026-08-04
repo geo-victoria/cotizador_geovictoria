@@ -136,7 +136,13 @@ module.exports = async function handler(req, res) {
   if (req.query?.raw) {
     try {
       const [report, recId] = String(req.query.raw).split(":");
-      const path = `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}/report/${encodeURIComponent(report)}/${encodeURIComponent(recId)}`;
+      // field_config=all: sin esto Creator devuelve SOLO las columnas del layout
+      // del reporte, y los subformularios (Servicios, Equipos) casi nunca están
+      // ahí — HARDWARE_ALL_DATA y Formulario_de_Equipos_Report devuelven ambos
+      // una proyección de ~10 campos sin la grilla Servicios.
+      const path =
+        `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}` +
+        `/report/${encodeURIComponent(report)}/${encodeURIComponent(recId)}?field_config=all`;
       const resp = await creatorApiFetch(path, { method: "GET" });
       const payload = await readJson(resp);
       const data = payload?.data || {};
@@ -273,7 +279,9 @@ module.exports = async function handler(req, res) {
       const max = Math.min(Math.max(Number(req.query.max) || 3, 1), 200);
       const anticipo = Math.min(Math.max(Number(req.query.anticipo) || LIMITE_BLOB_POR_DEFECTO, 200), 60000);
       const criteria = String(req.query.criteria || "").trim();
-      const params = ["max_records=200"];
+      // field_config=all por el mismo motivo que en el modo raw: sin esto vuelve
+      // solo el layout del reporte, sin los subformularios.
+      const params = ["max_records=200", "field_config=all"];
       if (criteria) params.push(`criteria=${encodeURIComponent(criteria)}`);
       const path =
         `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}` +
