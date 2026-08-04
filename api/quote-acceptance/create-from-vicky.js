@@ -220,29 +220,59 @@ async function convertLead(leadId, dealData, existingIds = {}) {
 // convertir se adopta como existing.leadId: el deal nace CONVIRTIENDO ese
 // lead (regla marketing) en vez de nacer directo dejando el lead huérfano —
 // que era la otra mitad del patrón de gemelos hito-vs-cotización.
+// Dueños "del bot": el usuario Vicky y los interinos por país. SOLO leads de
+// estos dueños se adoptan — un lead de dueño HUMANO (SDR trabajando un
+// formulario, típico en outbound) no se toca: su gestión es intocable (regla
+// marketing) y la emisión sigue con el camino de siempre para él.
+const OWNERS_BOT_LEADS = new Set([
+  "3525045000484500876", // usuario Vicky
+  "3525045000000211283", // Eddyluz (interina CL)
+  "3525045000203758005", // Gordillo (interino CO)
+  "3525045000308323003", // Yahel (interina MX)
+]);
+
 async function findOpenLeadIdByPhone(telefono) {
   const fono = String(telefono || "").replace(/\D/g, "");
   if (!fono) return "";
+  let candidato = "";
   try {
-    const kvId = await getLeadCandadoPorFono(fono);
-    if (kvId) return kvId;
+    candidato = await getLeadCandadoPorFono(fono);
   } catch { /* best-effort */ }
+  if (!candidato) {
+    try {
+      const response = await zohoApiFetch(
+        `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
+      );
+      if (response.ok && response.status !== 204) {
+        const leads = (await response.json())?.data || [];
+        const abierto = leads.find(
+          (l) =>
+            !(
+              l?.Converted_Deal?.id ||
+              l?.Converted_Account?.id ||
+              l?.Converted_Contact?.id ||
+              l?.["$converted_detail"]?.deal
+            ),
+        );
+        candidato = toText(abierto?.id);
+      }
+    } catch { /* best-effort */ }
+  }
+  if (!candidato) return "";
+  // Verificación del candidato (venga del kv o de la búsqueda): dueño del
+  // bot y sin convertir. Si el GET falla, mejor no adoptar.
   try {
-    const response = await zohoApiFetch(
-      `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
-    );
-    if (!response.ok || response.status === 204) return "";
-    const leads = (await response.json())?.data || [];
-    const abierto = leads.find(
-      (l) =>
-        !(
-          l?.Converted_Deal?.id ||
-          l?.Converted_Account?.id ||
-          l?.Converted_Contact?.id ||
-          l?.["$converted_detail"]?.deal
-        ),
-    );
-    return toText(abierto?.id);
+    const g = await zohoApiFetch(`/crm/v3/Leads/${encodeURIComponent(candidato)}?fields=Owner`);
+    if (!g.ok) return "";
+    const lead = (await g.json())?.data?.[0];
+    const ownerId = toText(lead?.Owner?.id);
+    if (!OWNERS_BOT_LEADS.has(ownerId)) {
+      console.warn(
+        `[create-from-vicky] lead ${candidato} tiene dueño humano (${ownerId}) — no se adopta, gestión intocable.`,
+      );
+      return "";
+    }
+    return candidato;
   } catch {
     return "";
   }
