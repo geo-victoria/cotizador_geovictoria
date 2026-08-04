@@ -864,6 +864,11 @@ function buildNdvRecord({
     CRM_REFERENCE_ID: toSafeCreatorNumber(quote?.id),
     Moneda: moneda,
     Pa_s_Facturaci_n: toText(quote?.Pa_s_Facturaci_n) || "Chile",
+    // Los scripts de Creator lo consumen como BIGINT (nextUrl.CreateNextStep).
+    // Si va vacío, al convertir a Nota de Venta y finalizar el formulario revienta
+    // con "Mismatch of data type expression. Expected BIGINT but found STRING".
+    // Estaba solo en el camino del widget; el de Vicky lo dejaba sin poblar.
+    IdDuplicatedMasterForm: 0,
     Identificador_Tributario_Empresa:
       toText(acceptanceData?.companyRut || quote?.RUT_Cliente || quote?.RUT || quote?.Identificador_Tributario_Empresa) ||
       undefined,
@@ -1261,9 +1266,8 @@ async function runNdvHandoffFromDraft({
     },
   });
 
-  // Evita mismatch de tipo en scripts On Success de Creator:
-  // ese parámetro se consume como BIGINT en nextUrl.CreateNextStep.
-  ndvRecord.IdDuplicatedMasterForm = 0;
+  // IdDuplicatedMasterForm ya viene en 0 desde buildNdvRecord, para los dos
+  // caminos: antes se ponía solo acá y las cotizaciones de Vicky quedaban sin él.
 
   prevalidateNdvRecord(ndvRecord);
 
