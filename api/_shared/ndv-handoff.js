@@ -864,11 +864,11 @@ function buildNdvRecord({
     CRM_REFERENCE_ID: toSafeCreatorNumber(quote?.id),
     Moneda: moneda,
     Pa_s_Facturaci_n: toText(quote?.Pa_s_Facturaci_n) || "Chile",
-    // Los scripts de Creator lo consumen como BIGINT (nextUrl.CreateNextStep).
-    // Si va vacío, al convertir a Nota de Venta y finalizar el formulario revienta
-    // con "Mismatch of data type expression. Expected BIGINT but found STRING".
-    // Estaba solo en el camino del widget; el de Vicky lo dejaba sin poblar.
-    IdDuplicatedMasterForm: 0,
+    // IdDuplicatedMasterForm NO va acá: el formulario Nota_de_Venta no tiene ese
+    // campo (verificado en el fuente Deluge de la app). Mandarlo era escribir a
+    // un campo inexistente, y por eso el error de BIGINT siguió apareciendo
+    // después de 46f87b5. Vive en Finalizar_Formulario, que sí lo declara y es
+    // quien se lo pasa a nextUrl.CreateNextStep — ver ndv-subforms.js.
     Identificador_Tributario_Empresa:
       toText(acceptanceData?.companyRut || quote?.RUT_Cliente || quote?.RUT || quote?.Identificador_Tributario_Empresa) ||
       undefined,
