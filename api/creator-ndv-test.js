@@ -30,6 +30,31 @@ async function readJson(response) {
   try { return JSON.parse(text); } catch (_e) { return { raw: text.slice(0, 500) }; }
 }
 
+// Busca el Finalizar_Formulario de un maestro y devuelve los campos que deciden
+// si el fix del BIGINT quedó aplicado. IdDuplicatedMasterForm vacío es la causa
+// de "Expected BIGINT but found STRING" al convertir: FinalizeForm se lo pasa a
+// nextUrl.CreateNextStep, cuya firma lo declara int.
+async function fetchFinalizarRecord(creatorConfig, ndvId) {
+  const criteria = encodeURIComponent(`ID_Formulario==${toText(ndvId)}`);
+  const path =
+    `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}` +
+    `/report/${encodeURIComponent("FINALIZE_FORM_ALL_DATA")}?criteria=${criteria}&max_records=200&field_config=all`;
+  const resp = await creatorApiFetch(path, { method: "GET" });
+  const payload = await readJson(resp);
+  const rec = Array.isArray(payload?.data) ? payload.data[0] : null;
+  if (!rec) return { status: resp.status, encontrado: false, respuesta: payload };
+  return {
+    status: resp.status,
+    encontrado: true,
+    ID: rec.ID,
+    // El que importa. "" = el fix NO llegó; "0" = sí.
+    IdDuplicatedMasterForm: rec.IdDuplicatedMasterForm,
+    FORM_STATUS: rec.FORM_STATUS,
+    currentEditIndex: rec.currentEditIndex,
+    maxIndex: rec.maxIndex,
+  };
+}
+
 // Trae el registro maestro ALL_DATA por su ID numérico para inspeccionar Form_Order.
 async function fetchNdvRecord(creatorConfig, ndvId) {
   const path = `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}/report/${encodeURIComponent(creatorConfig.reportLinkName)}/${encodeURIComponent(toText(ndvId))}`;
@@ -331,9 +356,14 @@ module.exports = async function handler(req, res) {
       // ndvRecord mínimo que consumen buildServicioRecurrenteRecord/Finalizar y
       // que reproduce lo que produciría runNdvHandoff para Huellero (caso simple).
       const ndvRecord = {
-        Formulario: "Nota de Venta",
+        // Cotización, NO "Nota de Venta": Vicky emite cotizaciones y ese es el
+        // flujo que estamos verificando. La versión anterior creaba una NDV con
+        // Linea_de_Negocio "Telemarketing" y el resultado no era comparable con
+        // COT-58504 / COT-58566. Estos valores son los del dump de COT-58566.
+        Formulario: "Cotización",
         FORM_STATUS: "CREATED",
-        STATUS: "PENDIENTE",
+        STATUS: "BORRADOR",
+        ESTADO_COT: "Vigente",
         Nombre_del_documento: `TEST Form_Order fix / ${yyyy}-${mm}-${dd}`,
         // HuelleroCompany, la cuenta autorizada para pruebas. Antes apuntaba a
         // "Huellero company" (3525045000633660939), que es otra cuenta con otro RUT.
@@ -343,7 +373,7 @@ module.exports = async function handler(req, res) {
         Pa_s_Facturaci_n: "Chile",
         Identificador_Tributario_Empresa: "76622058-4",
         Moneda: "UF",
-        Linea_de_Negocio: "Telemarketing",
+        Linea_de_Negocio: "Estándar",
         Servicio_Recurrente: "Control de Asistencia",
         Servicios_Recurrentes: ["Control de Asistencia"],
         Hito_de_Facturaci_n: "Cargando...",
@@ -381,6 +411,11 @@ module.exports = async function handler(req, res) {
 
       // Estado del registro tras el fix
       out.steps.ndvRecordAfter = await fetchNdvRecord(creatorConfig, ndvId);
+      // Lo decisivo: ¿quedó escrito IdDuplicatedMasterForm? Es independiente del
+      // timing de los workflows — Form_Order y JsonPdf los escribe Creator en
+      // background y pueden verse vacíos si se lee enseguida, pero este campo lo
+      // mandamos nosotros en el alta y tiene que estar de inmediato.
+      out.steps.finalizarRecord = await fetchFinalizarRecord(creatorConfig, ndvId);
       out.ok = true;
       out.reviewHint = `Revisa en Creator → Reporte NDV el ID_NDV=${out.steps.ndvRecordAfter?.ID_NDV || "(ver arriba)"}`;
       res.statusCode = 200;
