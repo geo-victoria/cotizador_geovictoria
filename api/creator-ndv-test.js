@@ -98,6 +98,9 @@ module.exports = async function handler(req, res) {
           Nombre_del_documento: `PROBE EQUIPOS / ${creatorDate}`,
           CRM_Account: "3525045000208660206", CRM_ACCOUNT_NAME: "HuelleroCompany",
           Identificador_Tributario_Empresa: "76622058-4",
+          // Obligatorio: sin él Creator rechaza el alta con code 3002
+          // ("Enter a value for Correo Ejecutivo Comercial").
+          Correo_Vendedor: toText(body.correoVendedor) || "adiazg@geovictoria.com",
           Pa_s_Facturaci_n: "Chile", Moneda: "UF", Linea_de_Negocio: "Estándar",
           Servicio_Recurrente: "Control de Asistencia", Servicios_Recurrentes: ["Control de Asistencia"],
           N_Empleados_Compometidos: 10, Cantidad_de_Usuarios: 10, Cantidad_de_Usuarios_PDF: 10,
