@@ -335,11 +335,13 @@ module.exports = async function handler(req, res) {
         FORM_STATUS: "CREATED",
         STATUS: "PENDIENTE",
         Nombre_del_documento: `TEST Form_Order fix / ${yyyy}-${mm}-${dd}`,
-        CRM_Account: "3525045000633660939",
-        CRM_ACCOUNT_NAME: "Huellero company",
+        // HuelleroCompany, la cuenta autorizada para pruebas. Antes apuntaba a
+        // "Huellero company" (3525045000633660939), que es otra cuenta con otro RUT.
+        CRM_Account: "3525045000208660206",
+        CRM_ACCOUNT_NAME: "HuelleroCompany",
         Correo_Vendedor: "adiazg@geovictoria.com",
         Pa_s_Facturaci_n: "Chile",
-        Identificador_Tributario_Empresa: "20.788.061-2",
+        Identificador_Tributario_Empresa: "76622058-4",
         Moneda: "UF",
         Linea_de_Negocio: "Telemarketing",
         Servicio_Recurrente: "Control de Asistencia",
@@ -534,11 +536,13 @@ module.exports = async function handler(req, res) {
         STATUS: "BORRADOR",
         ESTADO_COT: "Vigente",
         Nombre_del_documento: `TEST freshCot / ${yyyy}-${mm}-${dd}`,
-        CRM_Account: "3525045000633660939",
-        CRM_ACCOUNT_NAME: "Huellero company",
+        // HuelleroCompany, la cuenta autorizada para pruebas. Antes apuntaba a
+        // "Huellero company" (3525045000633660939), que es otra cuenta con otro RUT.
+        CRM_Account: "3525045000208660206",
+        CRM_ACCOUNT_NAME: "HuelleroCompany",
         Correo_Vendedor: "adiazg@geovictoria.com",
         Pa_s_Facturaci_n: "Chile",
-        Identificador_Tributario_Empresa: "20.788.061-2",
+        Identificador_Tributario_Empresa: "76622058-4",
         Moneda: "UF",
         Linea_de_Negocio: "Telemarketing",
         Servicio_Recurrente: "Control de Asistencia",
@@ -602,7 +606,7 @@ module.exports = async function handler(req, res) {
       const finalizarRecord = {
         ID_Formulario: ndvId,
         Empresa: "Creada en Plataforma",
-        Identificador_Tributario_Empresa: "20.788.061-2",
+        Identificador_Tributario_Empresa: "76622058-4",
         country: "Chile",
         CAN_UPDATE_FIELDS: true,
         FORM_STATUS: "BEING EDITED",
