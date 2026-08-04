@@ -267,23 +267,29 @@ module.exports = async function handler(req, res) {
   if (req.query?.rows) {
     try {
       const report = String(req.query.rows);
-      const max = Math.min(Math.max(Number(req.query.max) || 3, 1), 50);
+      // Creator solo acepta max_records ∈ {200, 500, 1000}; cualquier otro valor
+      // es un 400 (code 9250). Se pide siempre el tramo más chico y se recorta
+      // acá: &max es cuántos registros quiero LEER, no cuántos traer.
+      const max = Math.min(Math.max(Number(req.query.max) || 3, 1), 200);
       const anticipo = Math.min(Math.max(Number(req.query.anticipo) || LIMITE_BLOB_POR_DEFECTO, 200), 60000);
       const criteria = String(req.query.criteria || "").trim();
-      const params = [`max_records=${max}`];
+      const params = ["max_records=200"];
       if (criteria) params.push(`criteria=${encodeURIComponent(criteria)}`);
       const path =
         `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}` +
         `/report/${encodeURIComponent(report)}?${params.join("&")}`;
       const resp = await creatorApiFetch(path, { method: "GET" });
       const payload = await readJson(resp);
-      const rows = Array.isArray(payload?.data) ? payload.data : [];
+      const todas = Array.isArray(payload?.data) ? payload.data : [];
+      const rows = todas.slice(0, max);
       out.ok = true;
       out.rows = {
         report,
         criteria: criteria || undefined,
         status: resp.status,
         count: rows.length,
+        // Cuántos cumplían el criterio, más allá de los que se devuelven.
+        disponibles: todas.length,
         // Sin registros la respuesta de Creator trae el motivo (reporte
         // inexistente, criterio inválido); se devuelve cruda para no perderlo.
         data: rows.length === 0 ? payload : rows.map((r) => (req.query?.full ? r : resumirRegistro(r, anticipo))),
