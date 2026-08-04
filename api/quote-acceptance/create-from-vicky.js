@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { createRecord, updateRecord, getRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
+const { claveIdempotencia, getIdempotente, setIdempotente } = require("../_shared/idempotencia");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
@@ -893,6 +894,46 @@ module.exports = async function handler(req, res) {
     const config = getAcceptanceConfig(req);
     const sectorParaZoho = validarSector(cliente.sectorEmpresa);
 
+    // ── IDEMPOTENCIA (caso Inversiones Automatic, 04-ago) ──
+    // El tool reintenta con el MISMO body; si un intento anterior ya creó los
+    // registros (aunque su respuesta haya muerto después), acá se devuelven
+    // ESOS ids en vez de crear un segundo deal. Solo aplica a la emisión real
+    // (el modo draft itera legítimamente con cuerpos distintos por escalón).
+    const idemClave = claveIdempotencia(body);
+    if (!draft) {
+      const previo = await getIdempotente(idemClave);
+      if (previo && previo.quoteId) {
+        console.warn(
+          `[create-from-vicky] reintento idempotente: mismo body ya creó quote ${previo.quoteId} / deal ${previo.dealId || "-"} — no se duplica.`,
+        );
+        const expMsIdem = Date.now() + config.validityDays * 24 * 60 * 60 * 1000;
+        const tokenIdem = signAcceptancePayload({
+          quoteId: previo.quoteId, dealId: previo.dealId || "",
+          iat: Date.now(), exp: expMsIdem,
+          nonce: crypto.randomBytes(8).toString("hex"),
+          v: 1,
+        });
+        const acceptanceUrlIdem = `${config.baseUrl}/quote-acceptance.html?token=${encodeURIComponent(tokenIdem)}`;
+        // El paso que pudo haber quedado a medias en el intento anterior.
+        await updateRecord(config.quoteModule, previo.quoteId, {
+          [config.quoteAcceptanceUrlField]: acceptanceUrlIdem,
+          [config.quoteStatusField]: "Enviada",
+        }, true).catch(() => {});
+        return sendJson(res, 200, {
+          ok: true,
+          quoteId: previo.quoteId,
+          dealId: previo.dealId || "",
+          accountId: previo.accountId || "",
+          contactId: previo.contactId || "",
+          acceptanceUrl: acceptanceUrlIdem,
+          pdfUrl: "",
+          pdfPendiente: true,
+          reuse: { retryIdempotente: true },
+          expiresAt: new Date(expMsIdem).toISOString(),
+        });
+      }
+    }
+
     let accountId, contactId, dealId;
     const reuse = {
       accountReused: false,
@@ -1535,6 +1576,11 @@ module.exports = async function handler(req, res) {
       quoteId = toText(quoteResult?.id);
       if (!quoteId) throw new Error("No se obtuvo quoteId");
     }
+
+    // Marcador de idempotencia APENAS existen los registros: si el resto del
+    // request muere (update a Enviada, red, timeout), el reintento del tool
+    // recibirá estos MISMOS ids en vez de crear un segundo deal.
+    if (!draft) await setIdempotente(idemClave, { quoteId, dealId, accountId, contactId });
 
     // ── Modo Borrador: detenerse aquí (sin PDF/correo) ──
     // El escalón ya quedó en Zoho con su quote_id. La finalización ocurre
