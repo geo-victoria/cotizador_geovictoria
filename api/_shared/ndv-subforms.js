@@ -184,6 +184,19 @@ function buildFinalizarFormularioRecord({ ndvId, ndvRecord, notasPdf }) {
     CAN_UPDATE_FIELDS: true,
     FORM_STATUS: "BEING EDITED",
     NDV_STATUS: toText(ndvRecord.STATUS) || "BORRADOR",
+    // ESTE es el que importa para el error de BIGINT. FinalizeForm (workflow
+    // "on add" de este formulario) hace:
+    //
+    //   url = thisapp.nextUrl.CreateNextStep(..., input.IdDuplicatedMasterForm);
+    //
+    // y la firma es nextUrl.CreateNextStep(..., int duplicateMainFormID). Si el
+    // campo va nulo, Deluge revienta con "Mismatch of data type expression.
+    // Expected BIGINT but found STRING" — el error que ve el ejecutivo al
+    // convertir a Nota de Venta, mucho después de la emisión.
+    //
+    // 46f87b5 intentó arreglarlo poniéndolo en el registro maestro, pero el
+    // formulario Nota_de_Venta no declara ese campo: era un no-op. Va acá.
+    IdDuplicatedMasterForm: 0,
     // Ejecutivo, vigencia y valor de la UF. Se arma en ndv-notas.js con el dueño
     // real del deal y la UF del día, no con valores fijos.
     Notas_PDF: toText(notasPdf),
@@ -237,7 +250,17 @@ function buildFormularioEquiposRecord({ ndvId, ndvRecord, lineasEquipos, lineasS
   return {
     ID_Formulario: ndvId,
     Formulario: "Cotización",
-    FORM_STATUS: "CREATED",
+    // "BEING CREATED" y no "CREATED", a diferencia de Servicio_Recurrente. Los
+    // dos formularios ramifican distinto en su workflow "on add":
+    //
+    //   Servicio_Recurrente   → if (FORM_STATUS.contains("CREATED"))
+    //   Formulario_de_Equipos → if (FORM_STATUS.contains("BEING CREATED"))
+    //
+    // Con "CREATED" este cae al else, que llama EditNextStep(..., currentEditIndex,
+    // maxIndex) — campos que no mandamos — y falla con "Null value occurred while
+    // performing Addition operation" en su primera línea (nextIndex = currentIndex + 1).
+    // Todos los registros hechos a mano traen "BEING CREATED".
+    FORM_STATUS: "BEING CREATED",
     IdDuplicatedMasterForm: 0,
     Linea_de_Negocio: "Estándar",
     Moneda: toText(ndvRecord.Moneda) || "UF",
