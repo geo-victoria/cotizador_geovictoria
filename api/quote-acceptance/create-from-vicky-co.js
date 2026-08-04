@@ -78,6 +78,7 @@
 
 const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
+const { claveIdempotencia, getIdempotente, setIdempotente } = require("../_shared/idempotencia");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
@@ -486,6 +487,41 @@ module.exports = async function handler(req, res) {
 
     const config = getAcceptanceConfig(req);
 
+    // ── IDEMPOTENCIA (réplica del fix CL 04-ago, caso Inversiones Automatic) ──
+    // El tool reintenta con el MISMO body; si un intento anterior ya creó los
+    // registros (aunque su respuesta haya muerto después), acá se devuelven
+    // ESOS ids en vez de crear un segundo deal.
+    const idemClave = claveIdempotencia(body);
+    const previoIdem = await getIdempotente(idemClave);
+    if (previoIdem && previoIdem.quoteId) {
+      console.warn(
+        `[create-from-vicky-co] reintento idempotente: mismo body ya creó quote ${previoIdem.quoteId} / deal ${previoIdem.dealId || "-"} — no se duplica.`,
+      );
+      const expMsIdem = Date.now() + config.validityDays * 24 * 60 * 60 * 1000;
+      const tokenIdem = signAcceptancePayload({
+        quoteId: previoIdem.quoteId, dealId: previoIdem.dealId || "",
+        pais: "co",
+        iat: Date.now(), exp: expMsIdem,
+        nonce: crypto.randomBytes(8).toString("hex"),
+        v: 1,
+      });
+      const acceptanceUrlIdem = `${config.baseUrl}/quote-acceptance.html?token=${encodeURIComponent(tokenIdem)}`;
+      // El paso que pudo quedar a medias en el intento anterior.
+      await updateRecord(config.quoteModule, previoIdem.quoteId, {
+        [config.quoteAcceptanceUrlField]: acceptanceUrlIdem,
+        [config.quoteStatusField]: "Enviada",
+      }, true).catch(() => {});
+      return sendJson(res, 200, {
+        ok: true,
+        quoteId: previoIdem.quoteId, dealId: previoIdem.dealId || "",
+        accountId: previoIdem.accountId || "", contactId: previoIdem.contactId || "",
+        acceptanceUrl: acceptanceUrlIdem,
+        pdfUrl: "", pdfPendiente: true,
+        reuse: { retryIdempotente: true },
+        expiresAt: new Date(expMsIdem).toISOString(),
+      });
+    }
+
     // La fila de Activación va SIEMPRE (pago inicial CO): en Zoho, en el PDF y
     // en la página de aceptación, así los tres muestran los mismos números.
     const items = ensureActivacion(body.items);
@@ -663,6 +699,9 @@ module.exports = async function handler(req, res) {
     }, true);
     const quoteId = toText(quoteResult?.id);
     if (!quoteId) throw new Error("No se obtuvo quoteId");
+    // Marcador de idempotencia APENAS existen los registros: si el resto del
+    // flujo muere, el reintento devuelve estos ids en vez de duplicar.
+    await setIdempotente(idemClave, { quoteId, dealId, accountId, contactId });
 
     // ── acceptanceUrl (token firmado con pais:"co" — así session.js marca la
     // sesión como Colombia sin necesitar campos nuevos en Zoho) ──
