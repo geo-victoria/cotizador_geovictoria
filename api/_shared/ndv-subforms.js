@@ -339,6 +339,7 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
   //    de Finalizar_Formulario, porque ese dispara GeneratePDF y para entonces
   //    todos los bloques tienen que existir.
   let equiposId = "";
+  let equiposRechazado = false;
   const lineasEquipos = chargeTables?.lineasEquipos || [];
   const lineasServicios = chargeTables?.lineasServicios || [];
   if (lineasEquipos.length > 0 || lineasServicios.length > 0) {
@@ -356,8 +357,60 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
           `servicios=${JSON.stringify(equiposRecord.Servicios || [])}`
       );
     } catch (err) {
+      // Solo un RECHAZO cuenta como fallo. createSubformRecord también devuelve
+      // "" por timeout, y ahí Creator sí recibió el registro y lo crea en
+      // background: limpiar en ese caso borraría la declaración de un bloque que
+      // sí va a existir.
+      equiposRechazado = true;
       console.warn(`[ndv-subforms] Formulario_de_Equipos ERROR: ${err.message}`);
       errors.push(`Formulario_de_Equipos: ${err.message}`);
+    }
+  }
+
+  // 2.b Si Creator rechazó el bloque de equipos, el maestro quedó declarando
+  //     servicios no recurrentes que no tienen formulario detrás. Al convertir a
+  //     Nota de Venta, los scripts de Creator recorren lo declarado buscando el
+  //     Form_ID (BIGINT) de cada uno y encuentran vacío:
+  //       "Error at line : 7, Mismatch of data type expression.
+  //        Expected BIGINT but found STRING"  (caso COT-58566)
+  //     El error no aparece al emitir sino mucho después, en el paso humano de
+  //     conversión, con la cotización ya en manos del cliente.
+  //
+  //     Se retiran las declaraciones huérfanas ANTES de Finalizar_Formulario,
+  //     que es el que dispara GeneratePDF. La cotización sale sin el bloque de
+  //     equipos —degradada, y el error queda en errors[]— pero convertible.
+  //     Abortar la emisión entera dejaría al cliente sin cotización y sin PDF
+  //     por un bloque accesorio.
+  if (equiposRechazado) {
+    const sinRespaldo = {
+      Servicios_No_Recurrentes: [],
+      Servicio_No_Recurrente_Configurado: [],
+    };
+    try {
+      const path =
+        `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}` +
+        `/report/${encodeURIComponent(creatorConfig.reportLinkName)}/${encodeURIComponent(toText(ndvId))}`;
+      const resp = await creatorApiFetch(path, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: sinRespaldo }),
+      });
+      const payload = await readJsonSafe(resp);
+      if (!resp.ok || isCreatorError(payload)) {
+        throw new Error(`(${resp.status}): ${JSON.stringify(payload).slice(0, 300)}`);
+      }
+      console.warn(
+        `[ndv-subforms] Formulario_de_Equipos rechazado; se retiran las declaraciones sin respaldo ` +
+          `del maestro ${ndvId} para que la NDV siga siendo convertible ` +
+          `(retirado: ${JSON.stringify(ndvRecord.Servicios_No_Recurrentes || [])}).`
+      );
+    } catch (err) {
+      // Si ni la limpieza se pudo hacer, la NDV queda inconvertible igual. Se
+      // deja constancia explícita para que se note al emitir y no en Zoho.
+      console.error(`[ndv-subforms] LIMPIEZA FALLÓ en el maestro ${ndvId}: ${err.message}`);
+      errors.push(
+        `Declaraciones sin respaldo NO retiradas del maestro (la NDV puede fallar al convertirse): ${err.message}`
+      );
     }
   }
 
