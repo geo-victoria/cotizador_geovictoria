@@ -8,7 +8,7 @@ const {
 } = require("./zoho-crm");
 const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
 const { buildChargeTables } = require("./ndv-charge-table");
-const { construirNotasPdf } = require("./ndv-notas");
+const { construirNotasPdf, resolverEjecutivo } = require("./ndv-notas");
 const { ejecutivoPorOwner } = require("./ejecutivo-cl");
 const { articuloDeHardware } = require("./creator-articulos");
 
@@ -1056,7 +1056,7 @@ async function runNdvHandoff({
       // Dotación que la emisión conoce de primera mano. Sin esto habría que
       // deducirla del subform, donde una tarifa fija dice "cantidad 1".
       userCount,
-      vendedor: ejecutivoPorOwner(ownerId).nombre,
+      vendedor: resolverEjecutivo(ownerId, ownerUser).nombre,
       creador: "vicky_geovictoria",
     },
   });
@@ -1140,7 +1140,7 @@ async function runNdvHandoff({
     chargeTables,
     // Bloque de Notas del PDF: se arma acá porque es donde se conoce el dueño
     // del deal, que decide qué ejecutivo se presenta al cliente.
-    notasPdf: await construirNotasPdf({ config, ownerId }).catch((error) => {
+    notasPdf: await construirNotasPdf({ config, ownerId, ownerUser }).catch((error) => {
       console.warn(`[ndv-handoff] Notas_PDF no se pudo armar: ${toText(error?.message || error)}`);
       return "";
     }),
