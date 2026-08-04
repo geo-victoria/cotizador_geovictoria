@@ -7,6 +7,7 @@
 //   GET /api/creator-meta?secret=...&form=Servicio_Recurrente   (un solo form)
 //   GET /api/creator-meta?secret=...&forms=1                    (solo lista de forms)
 //   GET /api/creator-meta?secret=...&form=X&full=1              (campos SIN resumir)
+//   GET /api/creator-meta?secret=...&record=COT-58504&full=1   (registro ALL_DATA completo)
 //
 // Es TEMPORAL: bórralo una vez extraída la estructura.
 const { getCreatorConfig, creatorApiFetch } = require("./_shared/zoho-creator-auth");
@@ -145,6 +146,24 @@ module.exports = async function handler(req, res) {
       if (!rec) {
         out.ok = true;
         out.record = { status: resp.status, found: false, raw: payload };
+      } else if (req.query?.full) {
+        // Volcado completo del registro de ALL_DATA (el mismo reporte que se ve
+        // en la app de Creator), para diagnosticar sin ir campo por campo.
+        // PDF_STRING y JsonPdf se resumen: son base64 y JSON de varios MB que
+        // harían la respuesta inmanejable. Se informa su tamaño y un anticipo.
+        const resumirBlob = (valor, anticipo) => {
+          const texto = typeof valor === "string" ? valor : valor ? JSON.stringify(valor) : "";
+          if (!texto) return { presente: false, largo: 0 };
+          return { presente: true, largo: texto.length, inicio: texto.slice(0, anticipo) };
+        };
+        const completo = { ...rec };
+        completo.PDF_STRING = resumirBlob(rec.PDF_STRING, 120);
+        completo.JsonPdf = resumirBlob(rec.JsonPdf, 4000);
+        out.ok = true;
+        out.record = { status: resp.status, found: true, full: true, data: completo };
+        res.statusCode = 200;
+        res.end(JSON.stringify(out, null, 2));
+        return;
       } else {
         out.ok = true;
         out.record = {
