@@ -87,6 +87,57 @@ const { zohoApiFetch } = require("../_shared/zoho-auth");
 // LEAD-FIRST (Lalo 30-jul): si el contacto ya tiene un lead CONVERTIDO (la
 // sincronización de hitos convierte al ver el preform), la formal se cuelga
 // de ESE deal — no se crea otro (patrón Odalisca). Descarta Cierre Perdido.
+// Dueños "del bot" en CO: usuario Vicky + interino Gordillo. Solo estos leads
+// se convierten como huérfanos (un lead de dueño humano no se toca).
+const OWNERS_BOT_CO = new Set([
+  "3525045000484500876", // Vicky GeoVictoria
+  "3525045000203758005", // Alejandro Gordillo (interino CO)
+]);
+
+/**
+ * Cierra el LEAD HUÉRFANO del flujo SDR (caso Globe Air Fuel / Juan 04-ago).
+ * PARCHE mientras CO no tenga el flujo convert-first de Chile: la emisión CO
+ * crea el deal SIN convertir el lead vivo del contacto, así que ese lead queda
+ * en la cola "cliente para contactar" del SDR mientras Vicky ya tiene el deal
+ * en negociación — los dos flujos se cruzan. Este helper convierte el lead
+ * apuntando a la CUENTA y CONTACTO ya creados (sin deal nuevo): lo marca
+ * Converted y lo saca de la cola del SDR, sin duplicar nada. Best-effort.
+ */
+async function cerrarLeadHuerfanoCO(telefono, accountId, contactId) {
+  const fono = String(telefono || "").replace(/\D/g, "");
+  if (!fono || (!accountId && !contactId)) return;
+  try {
+    const r = await zohoApiFetch(
+      `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
+    );
+    if (!r.ok || r.status === 204) return;
+    const leads = (await r.json())?.data || [];
+    const vivo = leads.find(
+      (l) =>
+        !(
+          l?.Converted_Deal?.id ||
+          l?.Converted_Account?.id ||
+          l?.Converted_Contact?.id ||
+          l?.["$converted_detail"]?.deal
+        ) && OWNERS_BOT_CO.has(toText(l?.Owner?.id)),
+    );
+    if (!vivo?.id) return;
+    const payload = { overwrite: false, notify_lead_owner: false, notify_new_entity_owner: false };
+    if (accountId) payload.Accounts = { id: accountId };
+    if (contactId) payload.Contacts = { id: contactId };
+    await zohoApiFetch(`/crm/v3/Leads/${encodeURIComponent(vivo.id)}/actions/convert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: [payload] }),
+    });
+    console.warn(
+      `[create-from-vicky-co] lead huérfano ${vivo.id} convertido a la cuenta/contacto del deal — sale de la cola del SDR.`,
+    );
+  } catch (e) {
+    console.warn(`[create-from-vicky-co] cerrarLeadHuerfano falló: ${toText(e?.message || e).slice(0, 120)}`);
+  }
+}
+
 async function findConvertedIdsByPhone(telefono) {
   const fono = toText(telefono).replace(/\D/g, "");
   if (!fono) return {};
@@ -694,6 +745,13 @@ module.exports = async function handler(req, res) {
       );
     }
     if (!accountId || !dealId) crmIncompleto = true;
+
+    // Cierra el lead huérfano del flujo SDR (caso Globe Air Fuel): el lead vivo
+    // del contacto sale de la cola "cliente para contactar" convirtiéndose a la
+    // cuenta/contacto del deal recién creado. Best-effort, jamás bloquea.
+    if (contactId || accountId) {
+      await cerrarLeadHuerfanoCO(contactoTelefono, accountId, contactId).catch(() => {});
+    }
 
     // ── Cotización con subform (convención COP en campos UF/CLP) ──
     stage = "create_quote";

@@ -95,6 +95,53 @@ const { zohoApiFetch } = require("../_shared/zoho-auth");
 // LEAD-FIRST (Lalo 30-jul): si el contacto ya tiene un lead CONVERTIDO (la
 // sincronización de hitos convierte al ver el preform), la formal se cuelga
 // de ESE deal — no se crea otro (patrón Odalisca). Descarta Cierre Perdido.
+// Dueños "del bot" en MX: usuario Vicky + interina Yahel. Solo estos leads se
+// convierten como huérfanos (un lead de dueño humano no se toca).
+const OWNERS_BOT_MX = new Set([
+  "3525045000484500876", // Vicky GeoVictoria
+  "3525045000308323003", // Yahel Segura (interina MX)
+]);
+
+/**
+ * Cierra el LEAD HUÉRFANO del flujo SDR (mismo parche que CO, caso Globe Air
+ * Fuel / Juan 04-ago): la emisión MX crea el deal sin convertir el lead vivo
+ * del contacto, dejándolo en la cola del SDR mientras Vicky ya tiene el deal.
+ * Se convierte el lead a la cuenta/contacto ya creados (sin deal nuevo): sale
+ * de la cola sin duplicar. Best-effort.
+ */
+async function cerrarLeadHuerfanoMX(telefono, accountId, contactId) {
+  const fono = String(telefono || "").replace(/\D/g, "");
+  if (!fono || (!accountId && !contactId)) return;
+  try {
+    const r = await zohoApiFetch(
+      `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
+    );
+    if (!r.ok || r.status === 204) return;
+    const leads = (await r.json())?.data || [];
+    const vivo = leads.find(
+      (l) =>
+        !(
+          l?.Converted_Deal?.id ||
+          l?.Converted_Account?.id ||
+          l?.Converted_Contact?.id ||
+          l?.["$converted_detail"]?.deal
+        ) && OWNERS_BOT_MX.has(toText(l?.Owner?.id)),
+    );
+    if (!vivo?.id) return;
+    const payload = { overwrite: false, notify_lead_owner: false, notify_new_entity_owner: false };
+    if (accountId) payload.Accounts = { id: accountId };
+    if (contactId) payload.Contacts = { id: contactId };
+    await zohoApiFetch(`/crm/v3/Leads/${encodeURIComponent(vivo.id)}/actions/convert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: [payload] }),
+    });
+    console.warn(`[create-from-vicky-mx] lead huérfano ${vivo.id} convertido a la cuenta/contacto del deal.`);
+  } catch (e) {
+    console.warn(`[create-from-vicky-mx] cerrarLeadHuerfano falló: ${toText(e?.message || e).slice(0, 120)}`);
+  }
+}
+
 async function findConvertedIdsByPhone(telefono) {
   const fono = toText(telefono).replace(/\D/g, "");
   if (!fono) return {};
@@ -814,6 +861,11 @@ module.exports = async function handler(req, res) {
       );
     }
     if (!accountId || !dealId) crmIncompleto = true;
+
+    // Cierra el lead huérfano del flujo SDR (mismo parche que CO). Best-effort.
+    if (contactId || accountId) {
+      await cerrarLeadHuerfanoMX(contactoTelefono, accountId, contactId).catch(() => {});
+    }
 
     // ── Cotización con subform (convención MXN en campos UF/CLP) ──
     stage = "create_quote";
