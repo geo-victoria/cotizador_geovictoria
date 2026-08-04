@@ -8,11 +8,39 @@
 //   GET /api/creator-meta?secret=...&forms=1                    (solo lista de forms)
 //   GET /api/creator-meta?secret=...&form=X&full=1              (campos SIN resumir)
 //   GET /api/creator-meta?secret=...&record=COT-58504&full=1   (registro ALL_DATA completo)
+//   GET /api/creator-meta?secret=...&reports=1                  (reportes de la app)
+//   GET /api/creator-meta?secret=...&rows=REPORTE               (registros de cualquier reporte)
 //
 // Es TEMPORAL: bórralo una vez extraída la estructura.
 const { getCreatorConfig, creatorApiFetch } = require("./_shared/zoho-creator-auth");
 
 const DEFAULT_FORMS = ["Nota_de_Venta", "Servicio_Recurrente", "Finalizar_Formulario", "Formulario_de_Equipos"];
+
+// Hasta dónde se muestra un campo de texto largo antes de resumirlo.
+const LIMITE_BLOB_POR_DEFECTO = 4000;
+
+function resumirBlob(valor, anticipo) {
+  const texto = typeof valor === "string" ? valor : valor ? JSON.stringify(valor) : "";
+  if (!texto) return { presente: false, largo: 0 };
+  return { presente: true, largo: texto.length, inicio: texto.slice(0, anticipo) };
+}
+
+/**
+ * Recorta SOLO lo que no entra en el límite, sin lista de campos a mano.
+ *
+ * Los catálogos que alimentan los dropdowns dinámicos —QuotationServicesList,
+ * QuotationDelItemList, QuotationHwItemList— son justamente lo que se viene a
+ * leer acá, y cuáles son los pesados cambia según el formulario. Resumir por
+ * tamaño y no por nombre evita tener que tocar el código cada vez: si uno queda
+ * cortado, se sube el techo con &anticipo=N.
+ */
+function resumirRegistro(rec, limite) {
+  const out = {};
+  for (const [clave, valor] of Object.entries(rec || {})) {
+    out[clave] = typeof valor === "string" && valor.length > limite ? resumirBlob(valor, limite) : valor;
+  }
+  return out;
+}
 
 async function readJson(response) {
   const text = await response.text();
@@ -151,11 +179,6 @@ module.exports = async function handler(req, res) {
         // en la app de Creator), para diagnosticar sin ir campo por campo.
         // PDF_STRING y JsonPdf se resumen: son base64 y JSON de varios MB que
         // harían la respuesta inmanejable. Se informa su tamaño y un anticipo.
-        const resumirBlob = (valor, anticipo) => {
-          const texto = typeof valor === "string" ? valor : valor ? JSON.stringify(valor) : "";
-          if (!texto) return { presente: false, largo: 0 };
-          return { presente: true, largo: texto.length, inicio: texto.slice(0, anticipo) };
-        };
         const completo = { ...rec };
         completo.PDF_STRING = resumirBlob(rec.PDF_STRING, 120);
         completo.JsonPdf = resumirBlob(rec.JsonPdf, 4000);
@@ -198,6 +221,77 @@ module.exports = async function handler(req, res) {
       res.statusCode = 500;
       res.end(JSON.stringify(out, null, 2));
       return;
+    }
+  }
+
+  // Reportes de la app: ?reports=1
+  // Los registros de un formulario solo se leen a través de SU reporte, y el
+  // link name del reporte no tiene por qué parecerse al del formulario. Sin esta
+  // lista había que adivinarlo.
+  if (req.query?.reports) {
+    try {
+      const resp = await creatorApiFetch(`${base}/reports`, { method: "GET" });
+      const payload = await readJson(resp);
+      const reports = payload?.reports || payload?.data;
+      out.ok = true;
+      out.reportsList = {
+        status: resp.status,
+        reports: Array.isArray(reports)
+          ? reports.map((r) => ({
+              link_name: r.link_name || r.report_link_name,
+              display: r.display_name,
+              form: r.form_link_name || undefined,
+              type: r.type || undefined,
+            }))
+          : payload,
+      };
+      res.statusCode = 200; res.end(JSON.stringify(out, null, 2)); return;
+    } catch (e) {
+      out.error = String((e && e.stack) || (e && e.message) || e);
+      res.statusCode = 500; res.end(JSON.stringify(out, null, 2)); return;
+    }
+  }
+
+  // Volcado de registros de CUALQUIER reporte:
+  //   ?rows=REPORTE[&criteria=...][&max=N][&anticipo=N][&full=1]
+  //
+  // Nace para leer Formulario_de_Equipos. La columna Items de la grilla
+  // "Servicios Asociados" es un dropdown DINÁMICO: lo arma scriptLoadDeliveriesItems
+  // en runtime desde QuotationDelItemList / QuotationServicesList, así que la Meta
+  // API devuelve el campo sin choices y la única fuente de verdad sobre qué valor
+  // acepta es un registro REAL —creado a mano o por el widget— junto al catálogo
+  // que ese registro trae adentro.
+  //
+  // Para encontrar uno con servicios asociados:
+  //   ?rows=<reporte>&criteria=TOTAL_SERVICIOS_ASOCIADOS>0&max=3
+  if (req.query?.rows) {
+    try {
+      const report = String(req.query.rows);
+      const max = Math.min(Math.max(Number(req.query.max) || 3, 1), 50);
+      const anticipo = Math.min(Math.max(Number(req.query.anticipo) || LIMITE_BLOB_POR_DEFECTO, 200), 60000);
+      const criteria = String(req.query.criteria || "").trim();
+      const params = [`max_records=${max}`];
+      if (criteria) params.push(`criteria=${encodeURIComponent(criteria)}`);
+      const path =
+        `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}` +
+        `/report/${encodeURIComponent(report)}?${params.join("&")}`;
+      const resp = await creatorApiFetch(path, { method: "GET" });
+      const payload = await readJson(resp);
+      const rows = Array.isArray(payload?.data) ? payload.data : [];
+      out.ok = true;
+      out.rows = {
+        report,
+        criteria: criteria || undefined,
+        status: resp.status,
+        count: rows.length,
+        // Sin registros la respuesta de Creator trae el motivo (reporte
+        // inexistente, criterio inválido); se devuelve cruda para no perderlo.
+        data: rows.length === 0 ? payload : rows.map((r) => (req.query?.full ? r : resumirRegistro(r, anticipo))),
+      };
+      res.statusCode = 200; res.end(JSON.stringify(out, null, 2)); return;
+    } catch (e) {
+      out.error = String((e && e.stack) || (e && e.message) || e);
+      res.statusCode = 500; res.end(JSON.stringify(out, null, 2)); return;
     }
   }
 
