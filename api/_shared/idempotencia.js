@@ -139,4 +139,31 @@ async function setDealPorFono(fono, dealId, origen) {
   }
 }
 
-module.exports = { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono };
+/**
+ * Candado de LEADS del agente (lib/zoho-leads.ts): vic_kv `zoho_lead_<fono>`
+ * guarda el id del lead que Vicky creó para ese teléfono (o "creando:<ts>"
+ * mientras está en vuelo). Leerlo acá permite que la emisión ADOPTE ese lead
+ * y lo convierta, en vez de crear el deal directo dejando el lead huérfano.
+ */
+async function getLeadCandadoPorFono(fono) {
+  const env = supaEnv();
+  const digits = String(fono || "").replace(/\D/g, "");
+  if (!env || !digits) return "";
+  try {
+    const r = await fetch(
+      `${env.url}/rest/v1/vic_kv?key=eq.${encodeURIComponent(`zoho_lead_${digits}`)}&select=value&limit=1`,
+      {
+        headers: { apikey: env.key, Authorization: `Bearer ${env.key}` },
+        cache: "no-store",
+      },
+    );
+    if (!r.ok) return "";
+    const filas = await r.json().catch(() => []);
+    const valor = String((filas && filas[0] && filas[0].value) || "").trim();
+    return /^\d{5,}$/.test(valor) ? valor : "";
+  } catch {
+    return "";
+  }
+}
+
+module.exports = { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono };

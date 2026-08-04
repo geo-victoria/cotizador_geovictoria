@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { createRecord, updateRecord, getRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
-const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono } = require("../_shared/idempotencia");
+const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono } = require("../_shared/idempotencia");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
@@ -211,6 +211,41 @@ async function convertLead(leadId, dealData, existingIds = {}) {
     contactId: ids.contactId || recovered.contactId,
     dealId: ids.dealId || recovered.dealId,
   };
+}
+
+// LEAD VIVO por teléfono (escenario Lalo 04-ago: "Vicky creó un lead durante
+// la conversación y luego otro para convertirlo cuando hubo cotización").
+// El agente registra su lead en vic_kv zoho_lead_<fono> (consistencia
+// inmediata); fallback a la búsqueda de Zoho (índice ~2 min). El lead SIN
+// convertir se adopta como existing.leadId: el deal nace CONVIRTIENDO ese
+// lead (regla marketing) en vez de nacer directo dejando el lead huérfano —
+// que era la otra mitad del patrón de gemelos hito-vs-cotización.
+async function findOpenLeadIdByPhone(telefono) {
+  const fono = String(telefono || "").replace(/\D/g, "");
+  if (!fono) return "";
+  try {
+    const kvId = await getLeadCandadoPorFono(fono);
+    if (kvId) return kvId;
+  } catch { /* best-effort */ }
+  try {
+    const response = await zohoApiFetch(
+      `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
+    );
+    if (!response.ok || response.status === 204) return "";
+    const leads = (await response.json())?.data || [];
+    const abierto = leads.find(
+      (l) =>
+        !(
+          l?.Converted_Deal?.id ||
+          l?.Converted_Account?.id ||
+          l?.Converted_Contact?.id ||
+          l?.["$converted_detail"]?.deal
+        ),
+    );
+    return toText(abierto?.id);
+  } catch {
+    return "";
+  }
 }
 
 // LEAD-FIRST (Lalo 30-jul, cierre del patrón Odalisca): si el contacto ya
@@ -958,6 +993,21 @@ module.exports = async function handler(req, res) {
         );
       }
     } catch { /* best-effort */ }
+
+    // Adopción del lead vivo: el agente normalmente NO pasa leadId (solo en
+    // outbound con formulario), pero casi siempre existe un lead de la
+    // conversación (hito, callback, reunión). Adoptarlo garantiza que el deal
+    // nazca de SU conversión — cero leads huérfanos, cero deals gemelos. Si
+    // el candado apunta a un lead ya convertido, el convert falla y la
+    // recuperación de $converted_detail reusa todo, como siempre.
+    if (!existing.leadId && !existing.accountId && !existing.contactId && !existing.dealId) {
+      stage = "adopt_lead_by_phone";
+      const leadVivo = await findOpenLeadIdByPhone(cliente.contactoTelefono).catch(() => "");
+      if (leadVivo) {
+        existing.leadId = leadVivo;
+        console.warn(`[create-from-vicky] lead vivo ${leadVivo} adoptado por teléfono ${cliente.contactoTelefono} — el deal nace de su conversión.`);
+      }
+    }
 
     // ── CAMINO A: Convertir Lead existente ──
     // Best-effort: si la conversión falla por cualquier motivo (blueprint,
