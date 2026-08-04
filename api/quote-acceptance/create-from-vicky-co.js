@@ -79,6 +79,7 @@
 const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono } = require("../_shared/idempotencia");
+const { sendQuoteEmailViaZoho, buildEmailHtml } = require("./create-from-vicky");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
@@ -761,7 +762,7 @@ module.exports = async function handler(req, res) {
       expiresAt: new Date(expMs).toISOString(),
     });
 
-    // ── PDF en segundo plano (sin correo en v1) ──
+    // ── PDF + correo en segundo plano ──
     waitUntil(
       (async () => {
         const numeroCotizacion = await getRecordWithFields(config.quoteModule, quoteId, ["Numero_Cotizacion"])
@@ -783,6 +784,33 @@ module.exports = async function handler(req, res) {
         await updateRecord(config.quoteModule, quoteId, {
           [config.quotePdfUrlField]: pdfUrl,
         }, true);
+        // Correo con el PDF (v2 — caso Globe Air Fuel, 04-ago: Vicky le
+        // prometía al cliente un correo que este flujo jamás enviaba, la v1
+        // era "PDF sin correo"). Mismo helper y plantilla que Chile; CC y
+        // reply-to al ejecutivo CO para que vea lo que recibió su cliente.
+        if (contactoEmail) {
+          const CC_CO = toText(process.env.VICKY_CO_QUOTE_CC || "agordillo@geovictoria.com")
+            .split(",").map((s) => s.trim()).filter(Boolean);
+          await sendQuoteEmailViaZoho({
+            quoteModule: config.quoteModule,
+            quoteId,
+            fromEmail: toText(process.env.VICKY_FROM_EMAIL) || "vicky@geovictoria.com",
+            replyToEmail: CC_CO[0],
+            ccEmails: CC_CO,
+            toEmail: contactoEmail,
+            toName: contacto,
+            subject: `Tu cotización GeoVictoria — ${empresa}`,
+            htmlBody: buildEmailHtml({
+              contacto,
+              empresa,
+              pdfUrl,
+              tieneReloj: false,
+              ejecutivo: { nombre: "Alejandro Gordillo", email: "agordillo@geovictoria.com" },
+            }),
+          }).catch((mailErr) =>
+            console.error("[create-from-vicky-co] correo de cotización falló:", mailErr?.message || mailErr),
+          );
+        }
       })().catch((bgErr) =>
         console.error(
           "[create-from-vicky-co] PDF en segundo plano falló:",
