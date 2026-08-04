@@ -69,6 +69,38 @@ module.exports = async function handler(req, res) {
   try {
     const body = parseBody(req);
 
+    // ── Modo "cleanupProbe": borra lo que dejó el sondeo ──────────────────────
+    // Cada ronda dejó un maestro de prueba en HuelleroCompany y sus bloques.
+    // Se borran primero los bloques y después los maestros, para no dejar
+    // formularios colgando de un maestro inexistente.
+    //   body: { cleanupProbe: true, bloques: [...], maestros: [...] }
+    if (body.cleanupProbe === true) {
+      const creatorConfig = getCreatorConfig();
+      const dataBase = `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}`;
+      const borrar = async (reporte, ids) => {
+        const res = {};
+        for (const id of ids || []) {
+          try {
+            const resp = await creatorApiFetch(
+              `${dataBase}/report/${encodeURIComponent(reporte)}/${encodeURIComponent(toText(id))}`,
+              { method: "DELETE" }
+            );
+            const payload = await readJson(resp);
+            res[id] = { status: resp.status, code: payload?.code, error: payload?.error };
+          } catch (e) {
+            res[id] = { excepcion: String((e && e.message) || e) };
+          }
+        }
+        return res;
+      };
+      out.steps.bloques = await borrar("HARDWARE_ALL_DATA", body.bloques);
+      out.steps.maestros = await borrar(creatorConfig.reportLinkName, body.maestros);
+      out.ok = true;
+      res.statusCode = 200;
+      res.end(JSON.stringify(out, null, 2));
+      return;
+    }
+
     // ── Modo "probeEquipos": ¿qué forma de Formulario_de_Equipos acepta Creator? ──
     //
     // COT-58566 murió con {"code":3001,"error":["Servicios, Row No : 1, Invalid
