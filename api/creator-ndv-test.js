@@ -134,32 +134,42 @@ module.exports = async function handler(req, res) {
         CAN_UPDATE_FIELDS: true,
         Servicio_Producto: "Visitas y Servicios Técnicos",
         SERVICE_TYPE: "No Recurrente",
-        Hito_de_Facturaci_n: "Término Gestión",
+        // "Cargando..." y NO un valor real. La ronda 1 probó "Término Gestión"
+        // —que es lo que traen los registros hechos a mano— y Creator lo rechazó
+        // con "Invalid column value for Hito_de_Facturaci_n" en las cuatro
+        // variantes: el picklist también es dinámico y por API solo tolera el
+        // placeholder. COT-58566 lo confirma por el otro lado: mandaba
+        // "Cargando..." y su único error fue el de Items.
+        Hito_de_Facturaci_n: "Cargando...",
       };
 
+      // ── Ronda 1 (descartada) ──────────────────────────────────────────────
+      // Las cuatro formas que aparecen en los registros reales —Servicios con
+      // precios, Servicios con IdItemService, Equipos con Category, y la fila
+      // mínima— fueron TODAS rechazadas con "Invalid column value for Items"
+      // (o "for Item" en la grilla Equipos). Es decir: por REST no se puede
+      // poblar la columna de artículo en NINGUNA de las dos grillas, ni siquiera
+      // con el string exacto que esos mismos registros tienen guardado.
+      //
+      // ── Ronda 2 ───────────────────────────────────────────────────────────
+      // Se busca por dónde sí entra:
+      //  - el control, para separar el encabezado de las grillas;
+      //  - mandar el ID del artículo en vez del nombre;
+      //  - y crear primero y agregar la fila después por PATCH, por si la
+      //    validación del dropdown solo corre en el alta.
       const variantes = {
-        // Lo que manda el código hoy: grilla Servicios con precios, sin IdItemService.
-        A_servicios_actual: {
+        // CONTROL: sin ninguna grilla. Si esta pasa, el encabezado está bien
+        // (incluidos Servicio_Producto y SERVICE_TYPE) y el problema es 100% de
+        // las grillas. Si falla, el problema está más arriba y hay que mirar ahí.
+        E_control_sin_grillas: { ...base },
+        // El ID del artículo en vez del nombre, en cada grilla.
+        F_servicios_solo_id: {
           ...base,
-          Servicios: [{ Items: INSTALACION, Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0 }],
+          Servicios: [{ IdItemService: ID_INSTALACION, Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0 }],
         },
-        // Igual, más IdItemService y Category (forma de COT-58617 / COT-58537).
-        B_servicios_con_id: {
+        G_equipos_solo_id: {
           ...base,
-          Servicios: [{
-            Items: INSTALACION, IdItemService: ID_INSTALACION, Category: "Servicio",
-            Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0,
-          }],
-        },
-        // El servicio en la grilla Equipos con Category="Servicio" (forma de COT-58621).
-        C_equipos_categoria: {
-          ...base,
-          Equipos: [{ Item: INSTALACION, Category: "Servicio", Valor: 1.5, Cantidad: 1, Valor_Final: 1.5 }],
-        },
-        // Fila mínima: solo Items, sin precios ni ids (forma de COT-58578 / COT-58600).
-        D_servicios_minima: {
-          ...base,
-          Servicios: [{ Items: INSTALACION }],
+          Equipos: [{ ID_item: ID_INSTALACION, Category: "Servicio", Valor: 1.5, Cantidad: 1, Valor_Final: 1.5 }],
         },
       };
 
@@ -180,6 +190,34 @@ module.exports = async function handler(req, res) {
           };
         } catch (e) {
           resultados[nombre] = { aceptada: false, excepcion: String((e && e.message) || e) };
+        }
+      }
+
+      // H: si el control pasó, intentar AGREGAR la fila por PATCH sobre el
+      // registro ya creado. La validación del dropdown podría correr solo en el
+      // alta; si el PATCH entra, el camino es crear el bloque vacío y poblarlo
+      // en un segundo paso.
+      const idControl = resultados.E_control_sin_grillas?.id;
+      if (idControl) {
+        try {
+          const patchPath = `${dataBase}/report/${encodeURIComponent("HARDWARE_ALL_DATA")}/${encodeURIComponent(idControl)}`;
+          const resp = await creatorApiFetch(patchPath, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              data: { Servicios: [{ Items: INSTALACION, Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0 }] },
+            }),
+          });
+          const payload = await readJson(resp);
+          resultados.H_patch_tras_crear = {
+            aceptada: resp.ok && !payload?.error,
+            sobre: idControl,
+            status: resp.status,
+            code: payload?.code,
+            error: payload?.error,
+          };
+        } catch (e) {
+          resultados.H_patch_tras_crear = { aceptada: false, excepcion: String((e && e.message) || e) };
         }
       }
 
