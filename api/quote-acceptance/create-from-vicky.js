@@ -194,10 +194,14 @@ async function convertLead(leadId, dealData, existingIds = {}) {
   // viejas). Parsear solo el string hacía "fallar" conversiones EXITOSAS y el
   // fallback duplicaba cuenta/deal (caso real 08-jul).
   const idFrom = (v) => toText(v && typeof v === "object" ? v.id : v);
+  // Zoho también entrega los IDs DENTRO de details (hallazgo 04-ago, mismo
+  // bug que dejó sin tómbola a los deals de crm-hitos): mirar ambos lados
+  // evita el roundtrip de recuperación por $converted_detail.
+  const det = result.details || {};
   const ids = {
-    accountId: idFrom(result.Accounts),
-    contactId: idFrom(result.Contacts),
-    dealId: idFrom(result.Deals),
+    accountId: idFrom(result.Accounts) || idFrom(det.Accounts),
+    contactId: idFrom(result.Contacts) || idFrom(det.Contacts),
+    dealId: idFrom(result.Deals) || idFrom(det.Deals),
   };
   if (ids.accountId && ids.contactId && (ids.dealId || !dealData)) return ids;
   // La conversión puede COMPLETARSE en Zoho aunque la respuesta venga sin
