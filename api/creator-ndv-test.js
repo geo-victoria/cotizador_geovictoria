@@ -69,6 +69,128 @@ module.exports = async function handler(req, res) {
   try {
     const body = parseBody(req);
 
+    // ── Modo "probeEquipos": ¿qué forma de Formulario_de_Equipos acepta Creator? ──
+    //
+    // COT-58566 murió con {"code":3001,"error":["Servicios, Row No : 1, Invalid
+    // column value for Items"]}, y el string que mandábamos —"901 - [CHI]
+    // Instalación RM"— resultó ser EXACTO: aparece igual en COT-58617, COT-58537
+    // y COT-58621. O sea que el rechazo no es del catálogo.
+    //
+    // Hipótesis principal: Items es un dropdown que scriptLoadDeliveriesItems
+    // puebla en runtime; por API ese script no corre, la lista queda vacía y
+    // cualquier valor es inválido. La grilla Equipos no depende de ese script y
+    // en COT-58621 acepta ESE MISMO artículo con Category="Servicio".
+    //
+    // En vez de elegir a dedo, se prueban las cuatro formas que aparecen en los
+    // registros reales y gana la que Creator acepte. Cada variante que pase deja
+    // un registro de prueba; sus IDs van en la respuesta para poder borrarlos.
+    if (body.probeEquipos === true) {
+      const creatorConfig = getCreatorConfig();
+      const dataBase = `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}`;
+
+      // Maestro de prueba: HuelleroCompany, la única empresa autorizada para esto.
+      let masterId = toText(body.masterId);
+      if (!masterId) {
+        const now = new Date();
+        const creatorDate = `${String(now.getDate()).padStart(2, "0")}-${String(now.getMonth() + 1).padStart(2, "0")}-${now.getFullYear()}`;
+        const master = {
+          Formulario: "Cotización", FORM_STATUS: "BEING EDITED", STATUS: "BORRADOR", ESTADO_COT: "Vigente",
+          Nombre_del_documento: `PROBE EQUIPOS / ${creatorDate}`,
+          CRM_Account: "3525045000208660206", CRM_ACCOUNT_NAME: "HuelleroCompany",
+          Identificador_Tributario_Empresa: "76622058-4",
+          Pa_s_Facturaci_n: "Chile", Moneda: "UF", Linea_de_Negocio: "Estándar",
+          Servicio_Recurrente: "Control de Asistencia", Servicios_Recurrentes: ["Control de Asistencia"],
+          N_Empleados_Compometidos: 10, Cantidad_de_Usuarios: 10, Cantidad_de_Usuarios_PDF: 10,
+          Plantilla_Tabla_de_Cobro: "Sin Plantilla",
+        };
+        const mresp = await creatorApiFetch(`${dataBase}/form/${encodeURIComponent("Nota_de_Venta")}`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: master }),
+        });
+        const mpayload = await readJson(mresp);
+        masterId = toText(mpayload?.data?.ID);
+        out.steps.masterCreate = { status: mresp.status, code: mpayload?.code, masterId, error: mpayload?.error };
+        if (!masterId) { res.statusCode = 200; res.end(JSON.stringify(out, null, 2)); return; }
+      }
+
+      // Artículo de instalación: el que rechazó COT-58566. Su IdItemService sale
+      // de los registros reales (COT-58617, COT-58537).
+      const INSTALACION = "901 - [CHI] Instalación RM";
+      const ID_INSTALACION = "1758661000038441163";
+
+      // Campos que los registros reales SÍ traen y nosotros nunca mandábamos.
+      // Hito_de_Facturación va con un valor real ("Término Gestión" en los no
+      // recurrentes) y no con el placeholder "Cargando..." que usa el código hoy.
+      const base = {
+        ID_Formulario: masterId,
+        Formulario: "Cotización",
+        FORM_STATUS: "CREATED",
+        IdDuplicatedMasterForm: 0,
+        Linea_de_Negocio: "Estándar",
+        Moneda: "UF",
+        country: "Chile",
+        CAN_UPDATE_FIELDS: true,
+        Servicio_Producto: "Visitas y Servicios Técnicos",
+        SERVICE_TYPE: "No Recurrente",
+        Hito_de_Facturaci_n: "Término Gestión",
+      };
+
+      const variantes = {
+        // Lo que manda el código hoy: grilla Servicios con precios, sin IdItemService.
+        A_servicios_actual: {
+          ...base,
+          Servicios: [{ Items: INSTALACION, Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0 }],
+        },
+        // Igual, más IdItemService y Category (forma de COT-58617 / COT-58537).
+        B_servicios_con_id: {
+          ...base,
+          Servicios: [{
+            Items: INSTALACION, IdItemService: ID_INSTALACION, Category: "Servicio",
+            Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0,
+          }],
+        },
+        // El servicio en la grilla Equipos con Category="Servicio" (forma de COT-58621).
+        C_equipos_categoria: {
+          ...base,
+          Equipos: [{ Item: INSTALACION, Category: "Servicio", Valor: 1.5, Cantidad: 1, Valor_Final: 1.5 }],
+        },
+        // Fila mínima: solo Items, sin precios ni ids (forma de COT-58578 / COT-58600).
+        D_servicios_minima: {
+          ...base,
+          Servicios: [{ Items: INSTALACION }],
+        },
+      };
+
+      const resultados = {};
+      for (const [nombre, record] of Object.entries(variantes)) {
+        try {
+          const resp = await creatorApiFetch(`${dataBase}/form/${encodeURIComponent("Formulario_de_Equipos")}`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: record }),
+          });
+          const payload = await readJson(resp);
+          const id = toText(payload?.data?.ID);
+          resultados[nombre] = {
+            aceptada: Boolean(id) && !payload?.error,
+            status: resp.status,
+            code: payload?.code,
+            id: id || undefined,
+            error: payload?.error,
+          };
+        } catch (e) {
+          resultados[nombre] = { aceptada: false, excepcion: String((e && e.message) || e) };
+        }
+      }
+
+      out.ok = true;
+      out.steps.masterId = masterId;
+      out.steps.variantes = resultados;
+      out.reviewHint =
+        "aceptada:true = Creator la tomó. Los registros creados quedan colgando del maestro " +
+        `${masterId} (HuelleroCompany) y hay que borrarlos a mano.`;
+      res.statusCode = 200;
+      res.end(JSON.stringify(out, null, 2));
+      return;
+    }
+
     // ── Modo "fresh": crea un NDV maestro directo (sin CRM quote) y corre el
     //    código REAL de runNdvSubformSetup para validar el fix de Form_Order. ──
     if (body.fresh === true) {
