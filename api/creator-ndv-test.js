@@ -77,9 +77,17 @@ module.exports = async function handler(req, res) {
     if (body.cleanupProbe === true) {
       const creatorConfig = getCreatorConfig();
       const dataBase = `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}`;
+      // Se ABORTA al primer 401. creatorApiFetch reintenta cada 401 forzando un
+      // refresh del token, así que una tanda de borrados sin permiso dispara un
+      // refresh por cada id — y Zoho limita los refresh por ventana de tiempo.
+      // La primera versión de esto encadenó once y terminó en "token refresh
+      // failed: Access Denied", con el riesgo de dejar sin token a producción,
+      // que usa el MISMO refresh token. Un 401 no mejora en el siguiente id.
+      let abortado = "";
       const borrar = async (reporte, ids) => {
         const res = {};
         for (const id of ids || []) {
+          if (abortado) { res[id] = { omitido: abortado }; continue; }
           try {
             const resp = await creatorApiFetch(
               `${dataBase}/report/${encodeURIComponent(reporte)}/${encodeURIComponent(toText(id))}`,
@@ -87,8 +95,12 @@ module.exports = async function handler(req, res) {
             );
             const payload = await readJson(resp);
             res[id] = { status: resp.status, code: payload?.code, error: payload?.error };
+            if (resp.status === 401 || resp.status === 403) {
+              abortado = `Sin permiso para borrar (HTTP ${resp.status}, code ${payload?.code}). Se detiene para no quemar el refresh token.`;
+            }
           } catch (e) {
             res[id] = { excepcion: String((e && e.message) || e) };
+            abortado = "Excepción al borrar; se detiene para no encadenar reintentos.";
           }
         }
         return res;
