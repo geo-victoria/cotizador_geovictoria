@@ -103,6 +103,14 @@ module.exports = async function handler(req, res) {
           Correo_Vendedor: toText(body.correoVendedor) || "adiazg@geovictoria.com",
           Pa_s_Facturaci_n: "Chile", Moneda: "UF", Linea_de_Negocio: "Estándar",
           Servicio_Recurrente: "Control de Asistencia", Servicios_Recurrentes: ["Control de Asistencia"],
+          // El maestro DECLARA el servicio no recurrente que el bloque va a
+          // llevar. En las rondas anteriores no lo hacía, y el bloque quedaba
+          // huérfano al revés que en COT-58566: allá la declaración no tenía
+          // formulario, acá el formulario no tiene declaración. Si el
+          // "EditNextStep ... Null value" se apaga con esto, es la misma familia
+          // de scripts fallando por el mismo motivo desde el otro lado.
+          Servicios_No_Recurrentes: ["Visitas y Servicios Técnicos"],
+          Servicio_No_Recurrente_Configurado: ["Visitas y Servicios Técnicos"],
           N_Empleados_Compometidos: 10, Cantidad_de_Usuarios: 10, Cantidad_de_Usuarios_PDF: 10,
           Plantilla_Tabla_de_Cobro: "Sin Plantilla",
         };
@@ -174,12 +182,26 @@ module.exports = async function handler(req, res) {
       //    del encabezado: faltaban los montos, ya agregados arriba.
       // Queda confirmar que la fila no solo entre, sino que quede BIEN
       // guardada — que Creator resuelva el ID al artículo correcto.
+      // ── Ronda 4 ───────────────────────────────────────────────────────────
+      // La ronda 3 mostró que el ID entra y persiste, pero Creator NO resuelve
+      // el artículo: Items / Item quedan en "". Un bloque así saldría en el PDF
+      // como una línea con precio y sin descripción. Y el error de EditNextStep
+      // siguió apareciendo CON los montos puestos, así que no era eso.
+      //
+      // Se prueban las dos cosas que quedan:
+      //  - el maestro ahora declara el servicio (arriba), por si el null del
+      //    script era el bloque sin declaración;
+      //  - Category en la fila, que en los registros reales viene "Servicio" y
+      //    podría ser lo que dispara la resolución del artículo.
       const variantes = {
-        I_servicios_por_id: {
+        K_servicios_id_y_categoria: {
           ...base,
-          Servicios: [{ IdItemService: ID_INSTALACION, Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0 }],
+          Servicios: [{
+            IdItemService: ID_INSTALACION, Category: "Servicio",
+            Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0,
+          }],
         },
-        J_equipos_por_id: {
+        L_equipos_id_y_categoria: {
           ...base,
           MontoHW: 1.5,
           TOTAL_SERVICIOS_ASOCIADOS: 0,
