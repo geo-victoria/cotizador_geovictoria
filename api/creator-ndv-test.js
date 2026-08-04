@@ -141,6 +141,13 @@ module.exports = async function handler(req, res) {
         // placeholder. COT-58566 lo confirma por el otro lado: mandaba
         // "Cargando..." y su único error fue el de Items.
         Hito_de_Facturaci_n: "Cargando...",
+        // La ronda 2 los omitió y las TRES altas —incluido el control sin
+        // grillas— devolvieron "EditNextStep ... Null value occurred while
+        // performing Addition operation". Un script que suma montos contra null
+        // da justo eso, y los registros reales siempre los traen.
+        MontoHW: 0,
+        TOTAL_SERVICIOS_ASOCIADOS: 1.5,
+        Monto: 1.5,
       };
 
       // ── Ronda 1 (descartada) ──────────────────────────────────────────────
@@ -157,18 +164,25 @@ module.exports = async function handler(req, res) {
       //  - mandar el ID del artículo en vez del nombre;
       //  - y crear primero y agregar la fila después por PATCH, por si la
       //    validación del dropdown solo corre en el alta.
+      // ── Ronda 3 ───────────────────────────────────────────────────────────
+      // La ronda 2 dejó dos cosas claras:
+      //  - F y G SE CREARON (code 3000 + id). Mandar el ID del artículo en vez
+      //    del nombre esquiva el "Invalid column value". H, que hizo PATCH con
+      //    el nombre, volvió a fallar: la columna de display no es escribible
+      //    por API ni al crear ni al actualizar.
+      //  - El error de EditNextStep salía también en el control, o sea que era
+      //    del encabezado: faltaban los montos, ya agregados arriba.
+      // Queda confirmar que la fila no solo entre, sino que quede BIEN
+      // guardada — que Creator resuelva el ID al artículo correcto.
       const variantes = {
-        // CONTROL: sin ninguna grilla. Si esta pasa, el encabezado está bien
-        // (incluidos Servicio_Producto y SERVICE_TYPE) y el problema es 100% de
-        // las grillas. Si falla, el problema está más arriba y hay que mirar ahí.
-        E_control_sin_grillas: { ...base },
-        // El ID del artículo en vez del nombre, en cada grilla.
-        F_servicios_solo_id: {
+        I_servicios_por_id: {
           ...base,
           Servicios: [{ IdItemService: ID_INSTALACION, Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0 }],
         },
-        G_equipos_solo_id: {
+        J_equipos_por_id: {
           ...base,
+          MontoHW: 1.5,
+          TOTAL_SERVICIOS_ASOCIADOS: 0,
           Equipos: [{ ID_item: ID_INSTALACION, Category: "Servicio", Valor: 1.5, Cantidad: 1, Valor_Final: 1.5 }],
         },
       };
@@ -181,44 +195,50 @@ module.exports = async function handler(req, res) {
           });
           const payload = await readJson(resp);
           const id = toText(payload?.data?.ID);
+          // El alta y los workflows posteriores fallan por separado: code 3000 +
+          // id significa que la fila entró, aunque el script "On Add - On
+          // Success" reviente después. Confundirlos fue lo que me hizo leer mal
+          // la ronda 2.
           resultados[nombre] = {
-            aceptada: Boolean(id) && !payload?.error,
+            creado: Boolean(id),
+            errorDeScript: payload?.error,
             status: resp.status,
             code: payload?.code,
             id: id || undefined,
-            error: payload?.error,
           };
         } catch (e) {
           resultados[nombre] = { aceptada: false, excepcion: String((e && e.message) || e) };
         }
       }
 
-      // H: si el control pasó, intentar AGREGAR la fila por PATCH sobre el
-      // registro ya creado. La validación del dropdown podría correr solo en el
-      // alta; si el PATCH entra, el camino es crear el bloque vacío y poblarlo
-      // en un segundo paso.
-      const idControl = resultados.E_control_sin_grillas?.id;
-      if (idControl) {
+      // Releer lo creado: que la fila entre no significa que quedara bien. Acá
+      // se ve si Creator resolvió el ID al artículo correcto —o sea si la
+      // columna de display se pobló sola— y con qué precios quedó.
+      for (const [nombre, r] of Object.entries(resultados)) {
+        if (!r.id) continue;
         try {
-          const patchPath = `${dataBase}/report/${encodeURIComponent("HARDWARE_ALL_DATA")}/${encodeURIComponent(idControl)}`;
-          const resp = await creatorApiFetch(patchPath, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              data: { Servicios: [{ Items: INSTALACION, Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0 }] },
-            }),
-          });
+          const leerPath =
+            `${dataBase}/report/${encodeURIComponent("HARDWARE_ALL_DATA")}/${encodeURIComponent(r.id)}?field_config=all`;
+          const resp = await creatorApiFetch(leerPath, { method: "GET" });
           const payload = await readJson(resp);
-          resultados.H_patch_tras_crear = {
-            aceptada: resp.ok && !payload?.error,
-            sobre: idControl,
+          const rec = payload?.data || {};
+          r.releido = {
             status: resp.status,
-            code: payload?.code,
-            error: payload?.error,
+            // Si Creator resolvió bien el ID, la columna de display debería
+            // quedar con este texto sin que nosotros lo hayamos mandado.
+            articuloEsperado: INSTALACION,
+            Servicio_Producto: rec.Servicio_Producto,
+            Hito_de_Facturaci_n: rec.Hito_de_Facturaci_n,
+            Monto: rec.Monto,
+            MontoHW: rec.MontoHW,
+            TOTAL_SERVICIOS_ASOCIADOS: rec.TOTAL_SERVICIOS_ASOCIADOS,
+            Equipos: rec.Equipos,
+            Servicios: rec.Servicios,
           };
         } catch (e) {
-          resultados.H_patch_tras_crear = { aceptada: false, excepcion: String((e && e.message) || e) };
+          r.releido = { excepcion: String((e && e.message) || e) };
         }
+        console.log(`[probe-equipos] ${nombre} → ${JSON.stringify(r.releido)}`);
       }
 
       out.ok = true;
