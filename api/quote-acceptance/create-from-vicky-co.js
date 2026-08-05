@@ -87,12 +87,10 @@ const { zohoApiFetch } = require("../_shared/zoho-auth");
 // LEAD-FIRST (Lalo 30-jul): si el contacto ya tiene un lead CONVERTIDO (la
 // sincronización de hitos convierte al ver el preform), la formal se cuelga
 // de ESE deal — no se crea otro (patrón Odalisca). Descarta Cierre Perdido.
-// Dueños "del bot" en CO: usuario Vicky + interino Gordillo. Solo estos leads
-// se convierten como huérfanos (un lead de dueño humano no se toca).
-const OWNERS_BOT_CO = new Set([
-  "3525045000484500876", // Vicky GeoVictoria
-  "3525045000203758005", // Alejandro Gordillo (interino CO)
-]);
+// El cierre de huérfanos usa OWNERS_ADOPTABLES_CO (fix 05-ago): en CO el lead
+// sin cotización es del SDR Inbound por diseño, así que el set anterior
+// {Vicky, Gordillo} descartaba justo los leads que había que cerrar (caso
+// Globe Air Fuel: el lead SDR seguía en la cola con el deal ya en negociación).
 
 /**
  * Cierra el LEAD HUÉRFANO del flujo SDR (caso Globe Air Fuel / Juan 04-ago).
@@ -119,7 +117,7 @@ async function cerrarLeadHuerfanoCO(telefono, accountId, contactId) {
           l?.Converted_Account?.id ||
           l?.Converted_Contact?.id ||
           l?.["$converted_detail"]?.deal
-        ) && OWNERS_BOT_CO.has(toText(l?.Owner?.id)),
+        ) && OWNERS_ADOPTABLES_CO.has(toText(l?.Owner?.id)),
     );
     if (!vivo?.id) return;
     const payload = { overwrite: false, notify_lead_owner: false, notify_new_entity_owner: false };
@@ -772,6 +770,22 @@ module.exports = async function handler(req, res) {
           accountId = conv.accountId;
           contactId = conv.contactId;
           dealId = conv.dealId;
+          // Convert OK pero respuesta PARCIAL (Zoho a veces omite Deals/ids en
+          // el body aunque la conversión completó — caso Parroquia Santa
+          // Filomena en CL): recuperar por $converted_detail ANTES de darlo
+          // por fallido. Sin esto, leadConverted quedaba false y el Camino B
+          // creaba un deal GEMELO del que la conversión ya había creado.
+          if (!accountId || !contactId || !dealId) {
+            const rec = await recoverConvertedIdsCO(leadVivo).catch(() => ({}));
+            accountId = accountId || rec.accountId;
+            contactId = contactId || rec.contactId;
+            dealId = dealId || rec.dealId;
+            if (rec.accountId || rec.contactId || rec.dealId) {
+              console.warn(
+                `[create-from-vicky-co] convert parcial recuperado por $converted_detail: account=${accountId || "∅"} contact=${contactId || "∅"} deal=${dealId || "∅"}`,
+              );
+            }
+          }
           if (accountId && contactId && dealId) {
             leadConverted = true;
             accountReused = true;
