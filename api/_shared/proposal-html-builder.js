@@ -157,19 +157,27 @@ const CODIGOS_INSTALACION_PDF = new Set(["instalacion_reloj"]);
 // ───────────────────────────────────────────────────────────────────────────
 // Descripciones por tipo de ítem (oferta actual: asistencia + relojes control)
 // ───────────────────────────────────────────────────────────────────────────
+// Tramo en el NOMBRE del producto, entre paréntesis (aprobado por Lalo
+// 05-ago, caso Grey/COT347): "Control de Asistencia (3 a 10 usuarios)".
+// El rango viene como "3-10 usuarios" (tierAplicado) → se legibiliza a
+// "3 a 10 usuarios". Sin rango (relojes, servicios), el nombre queda igual.
+function nombreConTramo(s) {
+  const rango = String(s.rango || "").trim();
+  if (!rango) return s.nombre;
+  const legible = rango.replace(/^(\d+)-(\d+)/, "$1 a $2");
+  return `${s.nombre} (${legible})`;
+}
+
 function descServicio(s) {
   const nom = String(s.nombre || "").toLowerCase();
   // Módulo Vacaciones y Permisos (add-on pagado desde 21-jul): descripción
   // propia — sin esto heredaba el texto de asistencia (que además mencionaba
   // "vacaciones" como incluido, contradiciendo el cobro del módulo).
+  // El tramo ya NO va acá: vive en el nombre del producto (nombreConTramo).
   if (nom.includes("vacacion") || nom.includes("permiso")) {
-    const base =
-      "Solicitud y aprobación digital de vacaciones, días administrativos, licencias y permisos desde la app. Saldos de días calculados automáticamente, con trazabilidad completa.";
-    return s.rango ? `${base} Tramo ${s.rango}.` : base;
+    return "Solicitud y aprobación digital de vacaciones, días administrativos, licencias y permisos desde la app. Saldos de días calculados automáticamente, con trazabilidad completa.";
   }
-  const base =
-    "Marcaje web, app móvil con GPS y biometría. Gestión de turnos y horas extra. Reportería en línea.";
-  return s.rango ? `${base} Tramo ${s.rango}.` : base;
+  return "Marcaje web, app móvil con GPS y biometría. Gestión de turnos y horas extra. Reportería en línea.";
 }
 const DESC_EQUIPO =
   "Reloj biométrico de control de asistencia (facial y huella), con conexión WiFi y Ethernet. Autorizado por la Dirección del Trabajo.";
@@ -387,7 +395,7 @@ function buildProposalHtml({
   // comercial. El desglose es la única fuente del descuento.
   const optRec = descRecPct > 0 ? { factorLinea: factorRec, descLineaPct: descRecPct } : {};
   servicios.forEach((s) =>
-    pushFila(s.nombre, "Pago mensual", descServicio(s), s.precioUnit, s.cantidad, s.subtotalUF, true, optRec),
+    pushFila(nombreConTramo(s), "Pago mensual", descServicio(s), s.precioUnit, s.cantidad, s.subtotalUF, true, optRec),
   );
   equipos.forEach((e) => {
     const rec = e.tipo === "Arriendo";
