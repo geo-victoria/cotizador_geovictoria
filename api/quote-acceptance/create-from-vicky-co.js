@@ -965,6 +965,26 @@ module.exports = async function handler(req, res) {
       await cerrarLeadHuerfanoCO(contactoTelefono, accountId, contactId).catch(() => {});
     }
 
+    // REGLA EQUIPO CO (Lalo 05-ago): hitos no-formales → Eddy Galindo (SDR
+    // fijo); la COTIZACIÓN FORMAL y TODOS sus registros (deal, cotización,
+    // cuenta, contacto) → Alejandro Gordillo. Los registros CREADOS acá ya
+    // nacen con OWNER_CO; los REUSADOS (deal del hito, cuenta/contacto de una
+    // conversión previa) pueden venir del SDR — la formal los traspasa a
+    // Gordillo. Un dueño humano real (fuera del set bot/SDR) NO se toca.
+    // Best-effort: jamás bloquea la emisión.
+    for (const [mod, id] of [["Deals", dealId], ["Accounts", accountId], ["Contacts", contactId]]) {
+      if (!id || !OWNER_CO || !OWNER_CO.id) continue;
+      try {
+        const g = await zohoApiFetch(`/crm/v3/${mod}/${id}?fields=Owner`);
+        if (!g.ok) continue;
+        const ownerActual = toText((((await g.json())?.data || [])[0] || {}).Owner?.id);
+        if (!ownerActual || ownerActual === toText(OWNER_CO.id)) continue;
+        if (!OWNERS_ADOPTABLES_CO.has(ownerActual)) continue; // humano real: no se toca
+        await updateRecord(mod, id, { Owner: { id: toText(OWNER_CO.id) } }, true);
+        console.warn(`[create-from-vicky-co] formal: ${mod} ${id} traspasado del SDR ${ownerActual} a Gordillo (regla equipo CO).`);
+      } catch { /* best-effort */ }
+    }
+
     // ── Cotización con subform (convención COP en campos UF/CLP) ──
     stage = "create_quote";
     const subformItems = buildSubformItemsCO(items);
