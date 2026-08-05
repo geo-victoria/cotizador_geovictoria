@@ -75,6 +75,72 @@ module.exports = async function handler(req, res) {
 
   const base = `/creator/v2.1/meta/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}`;
 
+  // Reparación: una Cotización queda atascada en ESTADO_COT="Convertida a NDV"
+  // cuando su Nota de Venta se ELIMINÓ en vez de anularse (el botón "Anular"
+  // correcto — workflow VoidNdv en el fuente Deluge — hace dos cosas: marca la
+  // NDV como STATUS=ANULADA y, aparte, hace un updateRecord sobre la Cotización
+  // de origen con ESTADO_COT="Vigente" + UpdateCotStatus=false; al borrar el
+  // registro en vez de anularlo, ese segundo paso nunca corre). Sin eso la
+  // Cotización queda "convertida" a una NDV que ya no existe, y DenyEditions.ds
+  // bloquea cualquier edición mientras ESTADO_COT="Convertida a NDV" —salvo
+  // para administradores, que es la identidad bajo la que corre este backend.
+  //
+  // Replica EXACTAMENTE el segundo bloque de VoidNdv, sin necesitar el registro
+  // de la NDV (que ya no existe):
+  //   GET  /api/creator-meta?secret=...&unstickCotizacion=<ID_del_maestro>
+  //        (solo lectura: muestra ESTADO_COT/UpdateCotStatus actuales)
+  //   GET  /api/creator-meta?secret=...&unstickCotizacion=<ID>&confirm=1
+  //        (aplica el PATCH)
+  if (req.query?.unstickCotizacion) {
+    try {
+      const idCot = String(req.query.unstickCotizacion);
+      const dataBase = `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}/report/${encodeURIComponent(config.reportLinkName)}`;
+      const beforeResp = await creatorApiFetch(`${dataBase}/${encodeURIComponent(idCot)}?field_config=all`, { method: "GET" });
+      const beforePayload = await readJson(beforeResp);
+      const before = beforePayload?.data || {};
+      out.antes = {
+        status: beforeResp.status,
+        ID_NDV: before.ID_NDV,
+        Formulario: before.Formulario,
+        ESTADO_COT: before.ESTADO_COT,
+        UpdateCotStatus: before.UpdateCotStatus,
+      };
+      if (before.Formulario !== "Cotización") {
+        out.ok = false;
+        out.error = `ID ${idCot} no es una Cotización (Formulario="${before.Formulario}"); no se toca.`;
+        res.statusCode = 400; res.end(JSON.stringify(out, null, 2)); return;
+      }
+      if (before.ESTADO_COT !== "Convertida a NDV") {
+        out.ok = true;
+        out.omitido = `ESTADO_COT ya es "${before.ESTADO_COT}", no "Convertida a NDV"; no hay nada que reparar.`;
+        res.statusCode = 200; res.end(JSON.stringify(out, null, 2)); return;
+      }
+      if (!req.query?.confirm) {
+        out.ok = true;
+        out.dryRun = "Agrega &confirm=1 a la URL para aplicar el PATCH (ESTADO_COT=Vigente, UpdateCotStatus=false).";
+        res.statusCode = 200; res.end(JSON.stringify(out, null, 2)); return;
+      }
+      const patchResp = await creatorApiFetch(`${dataBase}/${encodeURIComponent(idCot)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: { ESTADO_COT: "Vigente", UpdateCotStatus: false, dontUpdateUfDate: true },
+        }),
+      });
+      const patchPayload = await readJson(patchResp);
+      out.patch = { status: patchResp.status, code: patchPayload?.code, error: patchPayload?.error };
+      const afterResp = await creatorApiFetch(`${dataBase}/${encodeURIComponent(idCot)}?field_config=all`, { method: "GET" });
+      const afterPayload = await readJson(afterResp);
+      const after = afterPayload?.data || {};
+      out.despues = { ESTADO_COT: after.ESTADO_COT, UpdateCotStatus: after.UpdateCotStatus };
+      out.ok = patchResp.ok && out.despues.ESTADO_COT === "Vigente";
+      res.statusCode = 200; res.end(JSON.stringify(out, null, 2)); return;
+    } catch (e) {
+      out.error = String((e && e.stack) || (e && e.message) || e);
+      res.statusCode = 500; res.end(JSON.stringify(out, null, 2)); return;
+    }
+  }
+
   // Búsqueda por criterio: ?search=REPORT:FIELD:VALUE → cuenta + resumen
   if (req.query?.search) {
     try {
@@ -108,7 +174,12 @@ module.exports = async function handler(req, res) {
   if (req.query?.raw) {
     try {
       const [report, recId] = String(req.query.raw).split(":");
-      const path = `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}/report/${encodeURIComponent(report)}/${encodeURIComponent(recId)}`;
+      // field_config=all: sin esto Creator devuelve solo las columnas del
+      // layout del reporte, y campos como ESTADO_COT quedan afuera sin dar
+      // ningún error — simplemente no aparecen en la respuesta.
+      const path =
+        `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}` +
+        `/report/${encodeURIComponent(report)}/${encodeURIComponent(recId)}?field_config=all`;
       const resp = await creatorApiFetch(path, { method: "GET" });
       const payload = await readJson(resp);
       const data = payload?.data || {};
@@ -140,7 +211,9 @@ module.exports = async function handler(req, res) {
       const idNdv = String(req.query.record);
       const dataBase = `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}/report/${encodeURIComponent(config.reportLinkName)}`;
       const criteria = encodeURIComponent(`ID_NDV=="${idNdv}"`);
-      const resp = await creatorApiFetch(`${dataBase}?criteria=${criteria}&max_records=200`, { method: "GET" });
+      // field_config=all: mismo motivo que en el modo raw — sin esto, campos
+      // como ESTADO_COT quedan fuera de la respuesta sin ningún aviso.
+      const resp = await creatorApiFetch(`${dataBase}?criteria=${criteria}&max_records=200&field_config=all`, { method: "GET" });
       const payload = await readJson(resp);
       const rec = Array.isArray(payload?.data) ? payload.data[0] : payload?.data;
       if (!rec) {
