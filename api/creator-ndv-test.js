@@ -363,6 +363,29 @@ module.exports = async function handler(req, res) {
           TOTAL_SERVICIOS_ASOCIADOS: 0,
           Equipos: [{ ID_item: ID_INSTALACION, Category: "Servicio", Valor: 1.5, Cantidad: 1, Valor_Final: 1.5 }],
         },
+
+        // ── Ronda 5: el experimento de control que faltaba ────────────────────
+        // Las rondas 1-4 mandaron valores REALES de Items/Item —copiados literal
+        // de registros que Creator mismo creó (COT-58617, COT-58537)— y fallaron
+        // igual. Eso no prueba que el campo rechace TODO valor: solo prueba que
+        // rechaza esos valores. La consulta a creator-meta (?form=Formulario_de_
+        // Equipos) confirma en vivo que la Meta API declara Items/Item como
+        // picklist con choices=[{"value":"Cargando...","key":"Cargando..."}] —
+        // un solo valor autorizado. M prueba exactamente ese valor, el único que
+        // la plataforma declara como válido. Si M pasa y las rondas 1-4 (con
+        // valores reales) siguen fallando, confirma sin ambigüedad que la
+        // validación es contra esta lista estática y no contra ningún dato que
+        // nos falte mandar (ItemsJSON, contexto de sesión, etc.).
+        M_servicios_valor_declarado: {
+          ...base,
+          Servicios: [{ Items: "Cargando...", Valor_Unidad: 1.5, Cantidad: 1, Total: 1.5, Descuento: 0 }],
+        },
+        N_equipos_valor_declarado: {
+          ...base,
+          MontoHW: 1.5,
+          TOTAL_SERVICIOS_ASOCIADOS: 0,
+          Equipos: [{ Item: "Cargando...", Category: "Servicio", Valor: 1.5, Cantidad: 1, Valor_Final: 1.5 }],
+        },
       };
 
       const resultados = {};
