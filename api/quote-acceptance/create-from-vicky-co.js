@@ -281,6 +281,11 @@ async function convertLeadCO(leadId, dealData, existingIds = {}) {
     accountId: idFrom(result.Accounts) || idFrom(det.Accounts),
     contactId: idFrom(result.Contacts) || idFrom(det.Contacts),
     dealId: idFrom(result.Deals) || idFrom(det.Deals),
+    // true cuando el convert FUSIONÓ contra un registro que ya existía
+    // (retry DUPLICATE_DATA): su dueño NO se toca (regla CO: el primer
+    // dueño se lo queda hasta el final).
+    accountReusada: Boolean(existingIds.accountId),
+    contactReusado: Boolean(existingIds.contactId),
   };
 }
 
@@ -789,18 +794,22 @@ module.exports = async function handler(req, res) {
           if (accountId && contactId && dealId) {
             leadConverted = true;
             accountReused = true;
-            // Datos nuevos ganan sobre el lead viejo (cuenta/contacto).
+            // Datos nuevos ganan sobre el lead viejo (cuenta/contacto). El
+            // Owner solo se fija en registros CREADOS por este convert (nacen
+            // en la formal → Gordillo); si el convert fusionó contra uno que
+            // YA existía, su dueño se conserva (regla CO: sin cambios de
+            // propietario — el primero se lo queda hasta el final).
             await updateRecord("Accounts", accountId, {
               Account_Name: empresa,
               RUT_Empresa: nitParaGuardarCO(nit),
               Territorio: VICKY_CO_TERRITORIO,
               N_Empleados_dependientes: userCount,
-              Owner: OWNER_CO,
+              ...(conv.accountReusada ? {} : { Owner: OWNER_CO }),
             }, true).catch(() => {});
             await updateRecord("Contacts", contactId, {
               Email: contactoEmail,
               Phone: contactoTelefono || undefined,
-              Owner: OWNER_CO,
+              ...(conv.contactReusado ? {} : { Owner: OWNER_CO }),
             }, true).catch(() => {});
             await setDealPorFono(contactoTelefono, dealId, "cotizacion").catch(() => {});
             console.warn(`[create-from-vicky-co] convert-first: lead ${leadVivo} → account=${accountId} contact=${contactId} deal=${dealId}`);
@@ -965,25 +974,11 @@ module.exports = async function handler(req, res) {
       await cerrarLeadHuerfanoCO(contactoTelefono, accountId, contactId).catch(() => {});
     }
 
-    // REGLA EQUIPO CO (Lalo 05-ago): hitos no-formales → Eddy Galindo (SDR
-    // fijo); la COTIZACIÓN FORMAL y TODOS sus registros (deal, cotización,
-    // cuenta, contacto) → Alejandro Gordillo. Los registros CREADOS acá ya
-    // nacen con OWNER_CO; los REUSADOS (deal del hito, cuenta/contacto de una
-    // conversión previa) pueden venir del SDR — la formal los traspasa a
-    // Gordillo. Un dueño humano real (fuera del set bot/SDR) NO se toca.
-    // Best-effort: jamás bloquea la emisión.
-    for (const [mod, id] of [["Deals", dealId], ["Accounts", accountId], ["Contacts", contactId]]) {
-      if (!id || !OWNER_CO || !OWNER_CO.id) continue;
-      try {
-        const g = await zohoApiFetch(`/crm/v3/${mod}/${id}?fields=Owner`);
-        if (!g.ok) continue;
-        const ownerActual = toText((((await g.json())?.data || [])[0] || {}).Owner?.id);
-        if (!ownerActual || ownerActual === toText(OWNER_CO.id)) continue;
-        if (!OWNERS_ADOPTABLES_CO.has(ownerActual)) continue; // humano real: no se toca
-        await updateRecord(mod, id, { Owner: { id: toText(OWNER_CO.id) } }, true);
-        console.warn(`[create-from-vicky-co] formal: ${mod} ${id} traspasado del SDR ${ownerActual} a Gordillo (regla equipo CO).`);
-      } catch { /* best-effort */ }
-    }
+    // REGLA EQUIPO CO (Lalo 05-ago, precisión final): NO hay cambios de
+    // propietario — el PRIMER dueño asignado se queda con el registro hasta el
+    // final. Los registros que la formal CREA nacen con OWNER_CO (Gordillo);
+    // los REUSADOS (deal del hito, cuenta/contacto de una conversión previa,
+    // dueño Galindo) CONSERVAN su dueño — acá no se traspasa nada.
 
     // ── Cotización con subform (convención COP en campos UF/CLP) ──
     stage = "create_quote";
