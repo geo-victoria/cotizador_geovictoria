@@ -118,6 +118,10 @@ function adaptarItemsVicky(items) {
         descripcion: String(it.descripcion || "").trim(),
         precioUnit: Number(it.precioUnitarioUF || 0),
         subtotalUF: Number(it.subtotalUF || 0),
+        // Descuento por LÍNEA (Descuento_Pct del subform): el envío bonificado
+        // llega como hardware/Venta al regenerar desde Zoho (caso Mesa
+        // Incógnita 05-ago) y también debe mostrar el tachado −N%.
+        descuentoPct: Number(it.descuentoPct || 0),
       });
     } else if (it.tipo === "servicio") {
       // El nombre suele venir como "Instalación reloj (Comuna)" — extraemos
@@ -400,13 +404,27 @@ function buildProposalHtml({
   servicios.forEach((s) =>
     pushFila(nombreConTramo(s), "Pago mensual", descServicio(s), s.precioUnit, s.cantidad, s.subtotalUF, true, optRec),
   );
+  // Bonificación por línea en hardware/accesorios (Descuento_Pct del subform):
+  // el subform bonificado lleva Subtotal 0 (la página de aceptación suma
+  // Subtotal_UF tal cual), así que el bruto tachado se reconstruye con
+  // precioUnit × cantidad — mismo patrón que serviciosAsoc.
+  const optsHw = (x) => {
+    if (!(Number(x.descuentoPct) > 0)) return { bruto: x.subtotalUF, opts: {} };
+    const bruto = x.subtotalUF > 0 ? x.subtotalUF : x.precioUnit * x.cantidad;
+    return {
+      bruto,
+      opts: { factorLinea: 1 - x.descuentoPct / 100, descLineaPct: x.descuentoPct },
+    };
+  };
   equipos.forEach((e) => {
     const rec = e.tipo === "Arriendo";
-    pushFila(e.nombre, rec ? "Pago mensual" : "Pago único", descManualValida(e.descripcion) || descEquipo(e), e.precioUnit, e.cantidad, e.subtotalUF, rec, {});
+    const { bruto, opts } = optsHw(e);
+    pushFila(e.nombre, rec ? "Pago mensual" : "Pago único", descManualValida(e.descripcion) || descEquipo(e), e.precioUnit, e.cantidad, bruto, rec, opts);
   });
   accesorios.forEach((a) => {
     const rec = a.tipo === "Arriendo";
-    pushFila(a.nombre, rec ? "Pago mensual" : "Pago único", descManualValida(a.descripcion) || descEquipo(a), a.precioUnit, a.cantidad, a.subtotalUF, rec, {});
+    const { bruto, opts } = optsHw(a);
+    pushFila(a.nombre, rec ? "Pago mensual" : "Pago único", descManualValida(a.descripcion) || descEquipo(a), a.precioUnit, a.cantidad, bruto, rec, opts);
   });
   serviciosAsoc.forEach((s) => {
     const nombre = s.zona ? `${s.nombre} (${s.zona})` : s.nombre;
