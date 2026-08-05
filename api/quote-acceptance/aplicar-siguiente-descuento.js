@@ -188,6 +188,8 @@ function subformACotizacionItems(quote, config) {
       precioUnitarioUF: Number(row?.Precio_Unitario_UF || 0),
       subtotalUF: Number(row?.Subtotal_UF || 0),
       zonaTarifa: String(row?.[config.quoteItemZonaTarifaField] || ""),
+      // Descuento por línea (bonificaciones acordadas, ej. envío −100%).
+      descuentoPct: Number(row?.Descuento_Pct || 0),
       // Tramo del módulo, DERIVADO (caso Grey/COT347 05-ago): el subform no
       // persiste tierAplicado y el PDF regenerado perdía el "Tramo X-Y".
       tierAplicado:

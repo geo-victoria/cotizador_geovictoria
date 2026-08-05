@@ -142,6 +142,9 @@ function adaptarItemsVicky(items) {
         codigo: String(it.id || it.codigo || "").toLowerCase(),
         precioUnit: Number(it.precioUnit || it.precioUnitarioUF || 0),
         subtotalUF: Number(it.subtotalUF || 0),
+        // Descuento por LÍNEA del subform (Descuento_Pct) — caso "envío
+        // bonificado" (Lalo 05-ago): mismo tachado −N% de la Capacitación.
+        descuentoPct: Number(it.descuentoPct || 0),
       });
     }
   }
@@ -412,6 +415,20 @@ function buildProposalHtml({
     const esInstalacion = CODIGOS_INSTALACION_PDF.has(String(s.codigo || ""));
     let factorLinea = 1;
     let descLineaPct = 0;
+    // Descuento explícito de la línea (Descuento_Pct del subform) MANDA sobre
+    // las reglas por zona — es el canal para bonificaciones acordadas por la
+    // ejecutiva (ej. envío −100%, caso Mesa Incógnita 05-ago). La página de
+    // aceptación suma Subtotal_UF tal cual (no conoce Descuento_Pct), así que
+    // el subform bonificado lleva Subtotal 0 y acá se reconstruye el precio de
+    // lista (precioUnit × cantidad) para el tachado.
+    if (s.descuentoPct > 0) {
+      const bruto = s.subtotalUF > 0 ? s.subtotalUF : s.precioUnit * s.cantidad;
+      pushFila(nombre, "Pago único", DESC_SERVICIO_ASOC, s.precioUnit, s.cantidad, bruto, false, {
+        factorLinea: 1 - s.descuentoPct / 100,
+        descLineaPct: s.descuentoPct,
+      });
+      return;
+    }
     if (esInstalacion) {
       if (s.zonaTarifa === "RM" && descInstRMPct > 0) {
         factorLinea = factorInstRM;
