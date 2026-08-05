@@ -98,11 +98,18 @@ module.exports = async function handler(req, res) {
       const beforeResp = await creatorApiFetch(`${dataBase}/${encodeURIComponent(idCot)}?field_config=all`, { method: "GET" });
       const beforePayload = await readJson(beforeResp);
       const before = beforePayload?.data || {};
+      // ESTADO_COT no viene en el reporte ALL_DATA —ni con field_config=all—,
+      // en NINGÚN registro (verificado contra una cotización sana del mismo
+      // día): el reporte simplemente no lo proyecta, no es un síntoma del
+      // incidente. UpdateCotStatus sí es legible, y es el booleano que
+      // lockEditionAndUpdateStatu.ds usa para decidir el mismo valor
+      // (if(UpdateCotStatus) ESTADO_COT="Convertida a NDV"; else "Vigente"),
+      // así que sirve igual de bien para diagnosticar sin depender de un campo
+      // que este endpoint no puede leer.
       out.antes = {
         status: beforeResp.status,
         ID_NDV: before.ID_NDV,
         Formulario: before.Formulario,
-        ESTADO_COT: before.ESTADO_COT,
         UpdateCotStatus: before.UpdateCotStatus,
       };
       if (before.Formulario !== "Cotización") {
@@ -110,9 +117,9 @@ module.exports = async function handler(req, res) {
         out.error = `ID ${idCot} no es una Cotización (Formulario="${before.Formulario}"); no se toca.`;
         res.statusCode = 400; res.end(JSON.stringify(out, null, 2)); return;
       }
-      if (before.ESTADO_COT !== "Convertida a NDV") {
+      if (String(before.UpdateCotStatus) !== "true") {
         out.ok = true;
-        out.omitido = `ESTADO_COT ya es "${before.ESTADO_COT}", no "Convertida a NDV"; no hay nada que reparar.`;
+        out.omitido = `UpdateCotStatus="${before.UpdateCotStatus}" (no "true"); no parece estar atascada en Convertida a NDV.`;
         res.statusCode = 200; res.end(JSON.stringify(out, null, 2)); return;
       }
       if (!req.query?.confirm) {
@@ -132,8 +139,8 @@ module.exports = async function handler(req, res) {
       const afterResp = await creatorApiFetch(`${dataBase}/${encodeURIComponent(idCot)}?field_config=all`, { method: "GET" });
       const afterPayload = await readJson(afterResp);
       const after = afterPayload?.data || {};
-      out.despues = { ESTADO_COT: after.ESTADO_COT, UpdateCotStatus: after.UpdateCotStatus };
-      out.ok = patchResp.ok && out.despues.ESTADO_COT === "Vigente";
+      out.despues = { UpdateCotStatus: after.UpdateCotStatus };
+      out.ok = patchResp.ok && String(out.despues.UpdateCotStatus) === "false";
       res.statusCode = 200; res.end(JSON.stringify(out, null, 2)); return;
     } catch (e) {
       out.error = String((e && e.stack) || (e && e.message) || e);
