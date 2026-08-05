@@ -54,6 +54,46 @@ const EJECUTIVOS_CL_POR_ID = {
     telefono: "+56 9 6647 4270",
     whatsapp: "56966474270",
   },
+  // Ejecutivas de la tómbola que FALTABAN (caso Grey/COT347, 05-ago): el PDF
+  // regenerado de una cotización suya presentaba a Eddyluz por el fallback.
+  // Fichas verificadas contra /crm/v3/users el 05-ago.
+  "3525045000146108001": {
+    nombre: "Grey Meléndez",
+    cargo: "Ejecutiva Comercial",
+    email: "gmelendez@geovictoria.com",
+    telefono: "+56 9 3937 2060",
+    whatsapp: "56939372060",
+  },
+  "3525045000124240013": {
+    nombre: "Daniela Gálvez",
+    cargo: "Ejecutiva Comercial",
+    email: "dgalvez@geovictoria.com",
+    telefono: "+56 9 2958 7913",
+    whatsapp: "56929587913",
+  },
+  "3525045000000211651": {
+    nombre: "Paola Díaz",
+    cargo: "Ejecutiva Comercial",
+    email: "pdiaz@geovictoria.com",
+    telefono: "+56 9 3932 1686",
+    whatsapp: "56939321686",
+  },
+  "3525045000308323003": {
+    nombre: "Yahel Segura",
+    cargo: "Ejecutiva Comercial",
+    email: "ysegura@geovictoria.com",
+    telefono: "+52 55 3763 6604",
+    whatsapp: "525537636604",
+  },
+  // Aleydis Araque — dueña de la venta autónoma (Lalo 04-ago): sus
+  // cotizaciones post-pago la presentan a ella.
+  "3525045000583802005": {
+    nombre: "Aleydis Araque",
+    cargo: "Ejecutiva Comercial",
+    email: "aaraque@geovictoria.com",
+    telefono: "+56 9 8291 6868",
+    whatsapp: "56982916868",
+  },
 };
 
 const EJECUTIVO_CL_DEFAULT = EJECUTIVOS_CL_POR_ID["3525045000000211283"];

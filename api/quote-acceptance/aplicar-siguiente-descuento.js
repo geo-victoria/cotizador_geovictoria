@@ -37,6 +37,7 @@ const {
   toText,
 } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
+const { tramoModuloCL } = require("../_shared/tramos-cl");
 const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
 const {
   normalizarIndiceGuardado,
@@ -187,6 +188,19 @@ function subformACotizacionItems(quote, config) {
       precioUnitarioUF: Number(row?.Precio_Unitario_UF || 0),
       subtotalUF: Number(row?.Subtotal_UF || 0),
       zonaTarifa: String(row?.[config.quoteItemZonaTarifaField] || ""),
+      // Tramo del módulo, DERIVADO (caso Grey/COT347 05-ago): el subform no
+      // persiste tierAplicado y el PDF regenerado perdía el "Tramo X-Y".
+      tierAplicado:
+        tipo === "modulo"
+          ? tramoModuloCL({
+              modalidad:
+                modalidadZoho === "Recurrente" || modalidadZoho === "Por usuario"
+                  ? "Por usuario"
+                  : "Fijo",
+              cantidad: Number(row?.Cantidad || 0),
+              precioUnitarioUF: Number(row?.Precio_Unitario_UF || 0),
+            })
+          : undefined,
     };
   });
 }
