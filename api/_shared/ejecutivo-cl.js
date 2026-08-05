@@ -102,4 +102,50 @@ function ejecutivoPorOwner(ownerId) {
   return EJECUTIVOS_CL_POR_ID[String(ownerId || "").trim()] || EJECUTIVO_CL_DEFAULT;
 }
 
-module.exports = { ejecutivoPorOwner, EJECUTIVO_CL_DEFAULT };
+/**
+ * Resolución ASYNC con ficha de Zoho (caso Lotus Pet/COT315, 05-ago): el mapa
+ * estático se queda corto cada vez que aparece un dueño nuevo (Grey, Luna...)
+ * y el PDF presentaba a Eddyluz por el fallback. Orden:
+ *   1. Recorre los ownerIds en orden de preferencia (deal primero, cotización
+ *      después — la página de aceptación presenta al dueño del DEAL, y el PDF
+ *      debe mostrar a la MISMA persona).
+ *   2. Id en el mapa estático → esa ficha (sin red).
+ *   3. Id desconocido → ficha de usuario en Zoho (/crm/v3/users/{id}).
+ *   4. Nada resolvió → default (Eddyluz).
+ * Best-effort: cualquier error de red cae al comportamiento de siempre.
+ */
+async function resolverEjecutivoCL(ownerIds) {
+  const ids = (Array.isArray(ownerIds) ? ownerIds : [ownerIds])
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+  for (const id of ids) {
+    if (EJECUTIVOS_CL_POR_ID[id]) return EJECUTIVOS_CL_POR_ID[id];
+  }
+  try {
+    const { zohoApiFetch } = require("./zoho-auth");
+    for (const id of ids) {
+      const r = await zohoApiFetch(`/crm/v3/users/${encodeURIComponent(id)}`);
+      if (!r.ok) continue;
+      const u = ((await r.json().catch(() => ({})))?.users || [])[0];
+      const nombre = String(u?.full_name || "").trim();
+      const email = String(u?.email || "").trim();
+      if (!nombre || !email) continue;
+      // Cuentas bot/genéricas jamás se presentan como ejecutivo.
+      if (/vicky@|info@geovictoria/i.test(email)) continue;
+      const telefono = String(u?.phone || u?.mobile || "").trim();
+      const ficha = {
+        nombre,
+        cargo: "Ejecutivo Comercial",
+        email,
+        telefono,
+        whatsapp: telefono.replace(/\D/g, ""),
+      };
+      // Cache en memoria del proceso: la próxima resolución no va a la red.
+      EJECUTIVOS_CL_POR_ID[id] = ficha;
+      return ficha;
+    }
+  } catch { /* best-effort */ }
+  return EJECUTIVO_CL_DEFAULT;
+}
+
+module.exports = { ejecutivoPorOwner, resolverEjecutivoCL, EJECUTIVO_CL_DEFAULT };

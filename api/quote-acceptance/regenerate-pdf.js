@@ -27,7 +27,7 @@ const { tramoModuloCL } = require("../_shared/tramos-cl");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
-const { ejecutivoPorOwner } = require("../_shared/ejecutivo-cl");
+const { ejecutivoPorOwner, resolverEjecutivoCL } = require("../_shared/ejecutivo-cl");
 const { getUFActualSafe } = require("../_shared/uf-actual");
 
 function sendJson(res, status, payload) {
@@ -86,16 +86,27 @@ async function buildClienteParaHtml(quote, config) {
     ? await getRecordWithFields("Contacts", contactId, ["First_Name", "Last_Name"])
     : null;
   const contactoFullName = [contact?.First_Name, contact?.Last_Name].filter(Boolean).join(" ").trim();
+  // El ejecutivo del PDF es el DUEÑO DEL DEAL primero (caso Lotus Pet/COT315,
+  // 05-ago: la página de aceptación presenta al dueño del deal y el PDF debe
+  // mostrar a la MISMA persona), dueño de la cotización de fallback. Dueños
+  // fuera del mapa se resuelven contra su ficha de Zoho (adiós fallback
+  // Eddyluz para dueñas nuevas).
+  const dealId = toText(quote?.[config.quoteDealLookupField]?.id || quote?.Deal_Asociado?.id);
+  const dealOwner = dealId
+    ? await getRecordWithFields("Deals", dealId, ["Owner"]).catch(() => null)
+    : null;
+  const ejec = await resolverEjecutivoCL([
+    toText(dealOwner?.Owner?.id),
+    toText(quote?.Owner?.id),
+  ]);
   return {
     empresa: toText(account?.Account_Name) || toText(quote?.Name) || "EMPRESA",
     contacto: contactoFullName || "",
     contactoEmail: toText(quote?.[config.contactEmailField]),
     rutEmpresa: toText(quote?.[config.companyRutField]) || toText(account?.RUT_Empresa),
-    // El ejecutivo del PDF es el HUMANO dueño de la cotización (Rodrigo
-    // 27-jul): Eddyluz en las nuevas, Anderson en las anteriores al relevo.
-    ejecutivo: ejecutivoPorOwner(quote?.Owner?.id).nombre,
-    ejecutivoEmail: ejecutivoPorOwner(quote?.Owner?.id).email,
-    ejecutivoTelefono: ejecutivoPorOwner(quote?.Owner?.id).telefono,
+    ejecutivo: ejec.nombre,
+    ejecutivoEmail: ejec.email,
+    ejecutivoTelefono: ejec.telefono,
   };
 }
 
