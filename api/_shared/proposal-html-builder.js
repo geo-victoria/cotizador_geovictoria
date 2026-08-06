@@ -428,6 +428,12 @@ function buildProposalHtml({
   });
   serviciosAsoc.forEach((s) => {
     const nombre = s.zona ? `${s.nombre} (${s.zona})` : s.nombre;
+    // El envío puede venir como "servicio" en la emisión (caso Supermercado
+    // Belén/COT385 06-ago): con la descripción fija de instalación el PDF
+    // decía "Instalación en terreno..." en la línea del despacho.
+    const descServicioAsoc = /env[ií]o|despacho/i.test(`${s.codigo || ""} ${s.nombre || ""}`)
+      ? DESC_ENVIO_RELOJ
+      : DESC_SERVICIO_ASOC;
     // Descuento de instalación aplica solo a items reconocidos como instalación
     // y según la zona tarifa (RM vs regiones).
     const esInstalacion = CODIGOS_INSTALACION_PDF.has(String(s.codigo || ""));
@@ -441,7 +447,7 @@ function buildProposalHtml({
     // lista (precioUnit × cantidad) para el tachado.
     if (s.descuentoPct > 0) {
       const bruto = s.subtotalUF > 0 ? s.subtotalUF : s.precioUnit * s.cantidad;
-      pushFila(nombre, "Pago único", DESC_SERVICIO_ASOC, s.precioUnit, s.cantidad, bruto, false, {
+      pushFila(nombre, "Pago único", descServicioAsoc, s.precioUnit, s.cantidad, bruto, false, {
         factorLinea: 1 - s.descuentoPct / 100,
         descLineaPct: s.descuentoPct,
       });
@@ -456,7 +462,7 @@ function buildProposalHtml({
         descLineaPct = descInstRegionPct;
       }
     }
-    pushFila(nombre, "Pago único", DESC_SERVICIO_ASOC, s.precioUnit, s.cantidad, s.subtotalUF, false, {
+    pushFila(nombre, "Pago único", descServicioAsoc, s.precioUnit, s.cantidad, s.subtotalUF, false, {
       factorLinea,
       descLineaPct,
     });
