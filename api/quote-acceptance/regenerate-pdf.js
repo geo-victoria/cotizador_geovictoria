@@ -219,7 +219,12 @@ module.exports = async function handler(req, res) {
 
     stage = "render_pdf";
     const cliente = await buildClienteParaHtml(quote, config);
-    const ufActual = await getUFActualSafe();
+    // UF explícita para regenerar con la UF ORIGINAL de la cotización (caso
+    // COT334/Ñuñoa 06-ago: el cliente aceptó con los pesos del 03-ago y la
+    // regeneración los recalculaba con la UF del día). Solo llega por el
+    // canal admin; sin el campo, se usa la UF del día como siempre.
+    const ufOverride = Number(body.ufOverride || 0);
+    const ufActual = ufOverride > 0 ? ufOverride : await getUFActualSafe();
     if (!(ufActual > 0)) {
       // Sin UF, todos los montos CLP del PDF saldrían en $0: mejor fallar.
       return sendJson(res, 502, {
