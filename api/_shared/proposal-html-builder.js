@@ -619,7 +619,10 @@ function buildProposalHtml({
 
   const ctaHref = escapeHtml(acceptanceUrl || "#");
   const notaUf = ufValue > 0 ? formatCLP(ufValue) : "—";
-  const notaTexto = `Valores en CLP con referencia en la UF del día de la cotización (${fecha}): ${notaUf}.`;
+  // Con UF explícita (regeneración fiel a la cotización original) la fecha
+  // mostrada es la de ESA cotización, no la de hoy (caso COT334, 06-ago).
+  const fechaUF = String(cotizacion.ufFecha || "").trim() || fecha;
+  const notaTexto = `Valores en CLP con referencia en la UF del día de la cotización (${fechaUF}): ${notaUf}.`;
 
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">

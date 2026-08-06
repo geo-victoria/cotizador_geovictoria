@@ -240,7 +240,16 @@ module.exports = async function handler(req, res) {
 
     const html = buildProposalHtml({
       cliente,
-      cotizacion: { items, ufActual },
+      cotizacion: {
+        items,
+        ufActual,
+        // Con ufOverride, la línea de la UF muestra la fecha original de la
+        // cotización (Fecha_Cotizacion) en vez de la fecha de regeneración.
+        ufFecha:
+          ufOverride > 0 && toText(quote?.[config.quoteDateField])
+            ? toText(quote?.[config.quoteDateField]).split("-").reverse().join("/")
+            : "",
+      },
       acceptanceUrl,
       cotizacionId: numeroParaPdf(quote && quote.Numero_Cotizacion, quoteId),
       validezHasta: new Date(Date.now() + config.validityDays * 24 * 60 * 60 * 1000).toISOString(),
