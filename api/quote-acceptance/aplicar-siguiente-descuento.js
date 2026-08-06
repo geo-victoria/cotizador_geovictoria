@@ -208,6 +208,7 @@ function subformACotizacionItems(quote, config) {
 }
 
 const { getUFActualSafe } = require("../_shared/uf-actual");
+const { ufDeCotizacion } = require("../_shared/uf-cotizacion");
 
 // Número de cotización para el PDF: correlativo de Zoho sin el prefijo "COT".
 function numeroParaPdf(numeroCotizacion, quoteId) {
@@ -343,7 +344,10 @@ module.exports = async function handler(req, res) {
     // 4. Regenerar el PDF.
     stage = "render_pdf";
     const cliente = await buildClienteParaHtml(quote, config);
-    const ufActual = await getUFActualSafe();
+    // UF de la cotización primero (campo UF_Valor / derivada del subform);
+    // UF del día solo como último recurso (pedido Lalo 06-ago).
+    const ufQuote = ufDeCotizacion(quote, config.quoteItemsSubformField);
+    const ufActual = ufQuote.uf > 0 ? ufQuote.uf : await getUFActualSafe();
     const items = subformACotizacionItems(quote, config);
 
     // acceptanceUrl: regeneramos el token con la misma data, expiración fresca

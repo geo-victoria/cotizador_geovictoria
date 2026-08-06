@@ -1702,6 +1702,17 @@ module.exports = async function handler(req, res) {
         // Estado inicial de descuentos y versionado (aplicar_siguiente_descuento
         // los actualiza después).
         [config.quoteVersionPdfField]: 1,
+        // UF congelada de la emisión (Lalo 06-ago): visible y EDITABLE en
+        // Zoho — regeneraciones y descuentos la respetan en vez de la UF del
+        // día. Si la ejecutiva la cambia + Regenerar PDF, esa UF manda.
+        ...(ufActual > 0
+          ? {
+              UF_Valor: ufActual,
+              UF_Fecha: new Date().toISOString().slice(0, 10),
+              UF_Fuente: "emision",
+              UF_Fecha_Hora_Captura: new Date().toISOString(),
+            }
+          : {}),
         ...quoteDiscountFields,
         ...(config.quotePriceLadderField && Object.keys(escalerasPrecio).length > 0
           ? { [config.quotePriceLadderField]: JSON.stringify(escalerasPrecio) }

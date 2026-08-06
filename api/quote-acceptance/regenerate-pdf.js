@@ -29,6 +29,7 @@ const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
 const { ejecutivoPorOwner, resolverEjecutivoCL } = require("../_shared/ejecutivo-cl");
 const { getUFActualSafe } = require("../_shared/uf-actual");
+const { ufDeCotizacion } = require("../_shared/uf-cotizacion");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -224,7 +225,11 @@ module.exports = async function handler(req, res) {
     // regeneración los recalculaba con la UF del día). Solo llega por el
     // canal admin; sin el campo, se usa la UF del día como siempre.
     const ufOverride = Number(body.ufOverride || 0);
-    const ufActual = ufOverride > 0 ? ufOverride : await getUFActualSafe();
+    // Sin override explícito, manda la UF DE LA COTIZACIÓN (campo UF_Valor,
+    // editable en Zoho; derivada del subform para cotizaciones antiguas).
+    // Solo sin ninguna de las dos se cae a la UF del día.
+    const ufQuote = ufDeCotizacion(quote, config.quoteItemsSubformField);
+    const ufActual = ufOverride > 0 ? ufOverride : ufQuote.uf > 0 ? ufQuote.uf : await getUFActualSafe();
     if (!(ufActual > 0)) {
       // Sin UF, todos los montos CLP del PDF saldrían en $0: mejor fallar.
       return sendJson(res, 502, {
@@ -248,7 +253,9 @@ module.exports = async function handler(req, res) {
         ufFecha:
           ufOverride > 0 && toText(quote?.[config.quoteDateField])
             ? toText(quote?.[config.quoteDateField]).split("-").reverse().join("/")
-            : "",
+            : ufQuote.uf > 0
+              ? ufQuote.fecha
+              : "",
       },
       acceptanceUrl,
       cotizacionId: numeroParaPdf(quote && quote.Numero_Cotizacion, quoteId),
