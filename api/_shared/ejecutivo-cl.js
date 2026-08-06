@@ -96,7 +96,20 @@ const EJECUTIVOS_CL_POR_ID = {
   },
 };
 
-const EJECUTIVO_CL_DEFAULT = EJECUTIVOS_CL_POR_ID["3525045000000211283"];
+// Vicky como firma (Lalo 06-ago, reemplaza el default Eddyluz y matiza la
+// observación de Rodrigo del 27-jul): mientras el deal ESPERA en Vicky
+// (interina oficial) no existe ejecutivo humano que mostrar — el PDF y el
+// correo firman como Vicky/Equipo Comercial. Cuando el traspaso asigne al
+// dueño real, el PDF regenerado lo presenta a él (mapa de arriba).
+const VICKY_FIRMA = {
+  nombre: "Vicky — Equipo Comercial",
+  cargo: "Asistente Comercial",
+  email: "vicky@geovictoria.com",
+  telefono: "",
+  whatsapp: "",
+};
+
+const EJECUTIVO_CL_DEFAULT = VICKY_FIRMA;
 
 function ejecutivoPorOwner(ownerId) {
   return EJECUTIVOS_CL_POR_ID[String(ownerId || "").trim()] || EJECUTIVO_CL_DEFAULT;

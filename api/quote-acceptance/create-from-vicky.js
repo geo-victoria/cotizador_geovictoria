@@ -63,12 +63,14 @@ const EJEC_TELEFONO = "+56 9 3932 1687";
 const EJEC_WHATSAPP = "56939321687";
 const EJEC_OWNER_ID = "3525045000000211283";
 const EJEC_OWNER = { id: EJEC_OWNER_ID };
-// Los DEALS ya no nacen con la ejecutiva interina sino con el usuario VICKY
-// (Lalo 04-ago): la tómbola los sortea al instante, y si el sorteo falla el
-// deal queda visiblemente en Vicky — con Eddyluz-interina era imposible
-// distinguir "el sorteo cayó en Eddy" de "el sorteo nunca corrió". Cuentas y
-// contactos siguen naciendo con EJEC_OWNER (necesitan dueño humano) y luego
-// siguen al dueño sorteado del deal.
+// VICKY ES LA INTERINA OFICIAL (Lalo 06-ago): deals, cuentas, contactos y
+// cotizaciones nacen con el usuario VICKY y ESPERAN ahí — la emisión ya no
+// sortea. La asignación al vendedor y su notificación van de la mano con los
+// relojes de traspaso (120/15/10 min hábiles, vic-ptv-cron): recién cuando la
+// conversación se traspasa corre la tómbola. Excepciones con dueño inmediato:
+// asignación manual admin, herencia de dueño humano real, reunión (host) y
+// >50 (deal + tómbola en el acto, sin relojes). EJEC_* queda solo como
+// detección de interina histórica en registros viejos.
 const VICKY_BOT_OWNER = { id: "3525045000484500876" };
 
 // Regla de tómbola de Deals en Zoho para Chile ("Tómbola Deals 2026 Chile",
@@ -446,20 +448,28 @@ function buildEmailHtml({ contacto, empresa, pdfUrl, tieneReloj, ejecutivo }) {
   // El bloque "Te presento a tu ejecutivo" usa al DUEÑO REAL sorteado por la
   // tómbola (caso Grey, 31-jul: el correo decía Eddyluz fija mientras el deal
   // era de Grey). Sin dato, cae al ejecutivo por defecto de siempre.
-  const ej = ejecutivo && toText(ejecutivo.email)
-    ? {
+  // Sin dueño humano real (deal esperando en Vicky, modelo 06-ago) el correo
+  // lo firma VICKY — nunca una ejecutiva fija (caso Grey 31-jul): el vendedor
+  // se presenta recién cuando el traspaso lo asigna de verdad.
+  const esVicky = !(ejecutivo && toText(ejecutivo.email));
+  const ej = esVicky
+    ? { nombre: "Vicky", cargo: "Asistente Comercial", email: VICKY_FROM_EMAIL, telefono: "" }
+    : {
         nombre: toText(ejecutivo.nombre) || toText(ejecutivo.email).split("@")[0],
         cargo: toText(ejecutivo.cargo) || "Ejecutivo Comercial",
         email: toText(ejecutivo.email),
         // Sin teléfono conocido NO se hereda el de otra persona: el bloque
         // sale solo con nombre y correo.
         telefono: toText(ejecutivo.telefono),
-      }
-    : { nombre: EJEC_NOMBRE, cargo: EJEC_CARGO, email: EJEC_EMAIL, telefono: EJEC_TELEFONO };
+      };
   ej.whatsapp = ej.telefono.replace(/\D/g, "");
   const telHtml = ej.telefono
     ? ` &nbsp;·&nbsp; 📱 <a href="https://wa.me/${ej.whatsapp}" style="color:#1a73e8;text-decoration:none;">${ej.telefono}</a>`
     : "";
+  const tituloEjecutivo = esVicky ? "Sigo aquí contigo 💬" : "Te presento a tu ejecutivo 🤝";
+  const textoEjecutivo = esVicky
+    ? `Cualquier duda o ajuste que necesites, <strong>responde este correo</strong> o escríbeme por el mismo WhatsApp donde ya estamos conversando — te acompaño en todo el proceso. 😊`
+    : `De aquí en adelante, <strong>__EJ_NOMBRE__</strong> te acompaña en todo el proceso. Cualquier duda o ajuste que necesites, <strong>responde este correo</strong> o escríbele directo por WhatsApp — está para ayudarte. 😊`.replace("__EJ_NOMBRE__", ej.nombre);
   const primerNombre = String(contacto || "").trim().split(/\s+/)[0] || "";
   const saludo = primerNombre ? `Hola ${primerNombre} 👋` : "Hola 👋";
   const fichaFila = tieneReloj
@@ -499,8 +509,8 @@ function buildEmailHtml({ contacto, empresa, pdfUrl, tieneReloj, ejecutivo }) {
       </table>
     </td></tr>
     <tr><td style="padding:28px 32px 0 32px;">
-      <h3 style="margin:0 0 8px 0;font-size:15px;color:#1a202c;">Te presento a tu ejecutivo 🤝</h3>
-      <p style="margin:0 0 16px 0;font-size:14px;color:#4a5568;line-height:1.6;">De aquí en adelante, <strong>${ej.nombre}</strong> te acompaña en todo el proceso. Cualquier duda o ajuste que necesites, <strong>responde este correo</strong> o escríbele directo por WhatsApp — está para ayudarte. 😊</p>
+      <h3 style="margin:0 0 8px 0;font-size:15px;color:#1a202c;">${tituloEjecutivo}</h3>
+      <p style="margin:0 0 16px 0;font-size:14px;color:#4a5568;line-height:1.6;">${textoEjecutivo}</p>
       <table role="presentation" width="100%" style="background:#f7f9fc;border:1px solid #e2e8f0;border-radius:10px;"><tr><td style="padding:16px 20px;">
         <p style="margin:0 0 4px 0;font-size:14px;color:#1a202c;font-weight:600;">${ej.nombre}</p>
         <p style="margin:0 0 8px 0;font-size:13px;color:#718096;">${ej.cargo} · GeoVictoria</p>
@@ -1276,7 +1286,7 @@ module.exports = async function handler(req, res) {
           Territorio: VICKY_TERRITORIO,
           N_Empleados_dependientes: cliente.userCount,
           Tiene_potencial_de_expansi_n_Regional: VICKY_EXPANSION_REGIONAL,
-          Owner: EJEC_OWNER,
+          Owner: VICKY_BOT_OWNER,
         };
         try {
           const accountResult = await createRecord("Accounts", createAccountPayload, true);
@@ -1405,7 +1415,7 @@ module.exports = async function handler(req, res) {
           Account_Name: { id: accountId },
           Lead_Source: VICKY_LEAD_SOURCE,
           Territorio: VICKY_TERRITORIO,
-          Owner: EJEC_OWNER,
+          Owner: VICKY_BOT_OWNER,
         };
         try {
           const contactResult = await createRecord("Contacts", createContactPayload, true);
@@ -1540,22 +1550,21 @@ module.exports = async function handler(req, res) {
       );
     }
 
-    // ── REGLA DE ASIGNACIÓN (Lalo, 31-jul) ─────────────────────────────────
-    // Todo deal que Vicky CREA pasa por la tómbola de Deals de Zoho
-    // ("Tómbola Deals 2026 Chile", lar_id) y la COTIZACIÓN se asigna al dueño
-    // que salga sorteado. Un deal REUSADO (Borrador en curso o lead-first)
-    // conserva su dueño y la cotización lo sigue igual. Best-effort: si el
-    // sorteo o la lectura fallan, todo queda con el ejecutivo por defecto.
+    // ── REGLA DE ASIGNACIÓN (Lalo, 06-ago — reemplaza el sorteo del 31-jul) ─
+    // La emisión NO sortea: el deal ESPERA con el usuario VICKY (la interina
+    // oficial). La asignación al vendedor y su notificación van DE LA MANO con
+    // los relojes de traspaso (120/15/10 min hábiles en vic-ptv-cron): recién
+    // cuando la conversación se traspasa, la tómbola corre y el vendedor se
+    // entera (caso Rodrigo/Neumasport: el sorteo en caliente lo alertaba
+    // apenas el cliente veía el precio). Sí conservan asignación inmediata:
+    // el dueño humano REAL de un deal reusado (herencia/ptv) y la asignación
+    // MANUAL de un admin. Si el dueño es interino, el correo al cliente lo
+    // firma Vicky — nunca una ejecutiva fija.
     stage = "tombola_deal";
-    let quoteOwner = EJEC_OWNER;
-    // El correo del dueño sorteado: reply-to y CC del correo al cliente van a
-    // ÉL (Lalo 31-jul) — el ejecutivo asignado ve la cotización que le llegó
-    // a su cliente y el cliente que responde el correo le responde a él. Y el
-    // bloque "Te presento a tu ejecutivo" del correo presenta AL MISMO dueño
-    // (caso Grey: decía Eddyluz fija mientras el deal era de Grey).
-    let quoteOwnerEmail = EJEC_EMAIL;
-    let quoteOwnerNombre = EJEC_NOMBRE;
-    let quoteOwnerTelefono = EJEC_TELEFONO;
+    let quoteOwner = VICKY_BOT_OWNER;
+    let quoteOwnerEmail = "";
+    let quoteOwnerNombre = "";
+    let quoteOwnerTelefono = "";
     // Asignación MANUAL (admin, sin sorteo): un ejecutivo con gestión previa
     // pidió la cotización a su nombre (teléfono/presencial antes de la formal).
     // Viene en existing.ownerId — solo lo inyectan los flujos admin, nunca el
@@ -1563,24 +1572,13 @@ module.exports = async function handler(req, res) {
     // convención 31-jul) y el correo/PDF lo presentan a él.
     const ownerManualId = toText(existing.ownerId);
     if (dealId) {
-      const dealNuevo = reuse.leadConverted || !reuse.dealReused;
       try {
-        // Un deal REUSADO con dueño INTERINO también se sortea (fix gemelos
-        // 03-ago): el deal del hito del agente nace con Eddyluz-interina (o
-        // Vicky robot) — eso es un marcador de "sin dueño real", no gestión.
-        // Un dueño humano REAL (sorteado o con cartera) jamás se pisa. Edge
-        // asumido: si un PTV alcanzó a presentar a la interina antes de la
-        // formal, el sorteo cambia el nombre — caso raro (el TTV no vence
-        // mientras el cliente conversa) y preferible al Eddyluz-para-todo.
+        // Interinos = marcadores de "sin dueño real": el usuario Vicky y la
+        // ejecutiva interina histórica. Un deal cuyo dueño es interino se
+        // queda ESPERANDO en Vicky (el cron de traspaso lo sorteará con los
+        // relojes); un dueño humano REAL (herencia, ptv, sorteo previo) se
+        // respeta y el correo/PDF lo presentan a él.
         const DUENOS_INTERINOS = new Set([EJEC_OWNER_ID, "3525045000484500876"]);
-        let sorteo = !ownerManualId && dealNuevo;
-        if (!sorteo && !ownerManualId) {
-          const rPre = await zohoApiFetch(`/crm/v3/Deals/${dealId}?fields=Owner`);
-          if (rPre.ok) {
-            const ownerPre = (((await rPre.json())?.data || [])[0] || {}).Owner;
-            if (ownerPre && DUENOS_INTERINOS.has(toText(ownerPre.id))) sorteo = true;
-          }
-        }
         if (ownerManualId) {
           await zohoApiFetch(`/crm/v3/Deals`, {
             method: "PUT",
@@ -1589,16 +1587,11 @@ module.exports = async function handler(req, res) {
               skip_feature_execution: [{ name: "assignment_rules" }],
             }),
           });
-        } else if (sorteo && TOMBOLA_DEALS_RULE_CL) {
-          await zohoApiFetch(`/crm/v3/Deals`, {
-            method: "PUT",
-            body: JSON.stringify({ data: [{ id: dealId }], lar_id: TOMBOLA_DEALS_RULE_CL }),
-          });
         }
         const rOwner = await zohoApiFetch(`/crm/v3/Deals/${dealId}?fields=Owner`);
         if (rOwner.ok) {
           const ownerDeal = (((await rOwner.json())?.data || [])[0] || {}).Owner;
-          if (ownerDeal && ownerDeal.id) {
+          if (ownerDeal && ownerDeal.id && !DUENOS_INTERINOS.has(toText(ownerDeal.id))) {
             quoteOwner = { id: toText(ownerDeal.id) };
             if (ownerDeal.email) quoteOwnerEmail = toText(ownerDeal.email);
             if (ownerDeal.name) quoteOwnerNombre = toText(ownerDeal.name);
@@ -1609,32 +1602,16 @@ module.exports = async function handler(req, res) {
               if (rU.ok) {
                 const u = (((await rU.json())?.users || [])[0] || {});
                 const tel = toText(u.phone) || toText(u.mobile);
-                if (tel) quoteOwnerTelefono = tel;
-                else if (quoteOwnerEmail !== EJEC_EMAIL) quoteOwnerTelefono = "";
+                quoteOwnerTelefono = tel || "";
               }
             } catch (_e) { /* best-effort */ }
           }
-          // Notificación de traspaso al dueño sorteado + CC Victoria Luna
-          // (template "Traspaso Deal Global 2024"; el workflow on-create de
-          // Zoho no la manda porque el sorteo llega después del create).
-          if (sorteo && ownerDeal && ownerDeal.email) {
-            await zohoApiFetch(`/crm/v3/Deals/${dealId}/actions/send_mail`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                data: [{
-                  from: { email: VICKY_FROM_EMAIL },
-                  to: [{ email: toText(ownerDeal.email) }],
-                  cc: [{ email: (process.env.VICKY_TRASPASO_CC || "vluna@geovictoria.com").trim() }],
-                  template: { id: (process.env.VICKY_TPL_TRASPASO_DEAL || "3525045000389574614").trim() },
-                }],
-              }),
-            }).catch((e) => console.warn(`[create-from-vicky] notificación de traspaso falló: ${toText(e?.message || e).slice(0, 120)}`));
-          }
+          // Dueño interino: sin sorteo y SIN notificación — el vendedor se
+          // entera recién en el traspaso (relojes del cron), no en caliente.
         }
       } catch (tombolaErr) {
         console.warn(
-          `[create-from-vicky] tómbola/lectura de owner falló para deal=${dealId}: ${toText(tombolaErr?.message || tombolaErr).slice(0, 150)} — cotización queda con el ejecutivo por defecto.`,
+          `[create-from-vicky] lectura de owner falló para deal=${dealId}: ${toText(tombolaErr?.message || tombolaErr).slice(0, 150)} — cotización queda con Vicky (interina).`,
         );
       }
       // La cuenta y el contacto CREADOS en este request siguen al dueño del
@@ -1643,7 +1620,7 @@ module.exports = async function handler(req, res) {
       // REUSADOS no se tocan: pueden traer gestión de un SDR. Con skip de
       // assignment_rules (convención: los updates de owner que no pasan por la
       // regla no la disparan). Best-effort.
-      if (quoteOwner.id !== EJEC_OWNER_ID) {
+      if (toText(quoteOwner.id) && quoteOwner.id !== VICKY_BOT_OWNER.id && quoteOwner.id !== EJEC_OWNER_ID) {
         const seguirDueno = async (mod, id) => {
           try {
             await zohoApiFetch(`/crm/v3/${mod}`, {
