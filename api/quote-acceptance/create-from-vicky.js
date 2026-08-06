@@ -905,6 +905,28 @@ async function tryReuseRecord(module, recordId, fullPayload) {
       );
       return { ok: false, invalidId: true };
     }
+    // DUPLICATE_DATA en el update conservador (caso Santa Lucía 06-ago): el
+    // Email/Phone que se intenta escribir ya vive en OTRO registro de Zoho
+    // (son campos UNIQUE). Antes esto EXPLOTABA todo el plumbing y el registro
+    // reusado quedaba a medias con un solo warn perdido. Ahora: se reintenta
+    // el update SIN los campos únicos conflictivos y el reuso sigue en pie.
+    if (isDuplicateDataError(error)) {
+      try {
+        const existing = await getRecord(module, recordId).catch(() => null);
+        const retry = existing ? buildConservativePayload(fullPayload, existing) : { ...fullPayload };
+        delete retry.Email;
+        delete retry.Phone;
+        if (Object.keys(retry).length > 0) await updateRecord(module, recordId, retry, true);
+        console.warn(
+          `[create-from-vicky] ${module}/${recordId}: update conservador chocó con campo UNIQUE (${String(error.message || "").slice(0, 120)}) — reuso mantenido, Email/Phone omitidos`
+        );
+      } catch (retryErr) {
+        console.warn(
+          `[create-from-vicky] ${module}/${recordId}: reintento sin campos únicos también falló (${String(retryErr?.message || retryErr).slice(0, 120)}) — reuso mantenido sin update`
+        );
+      }
+      return { ok: true, recordId, uniqueConflict: true };
+    }
     // Errores no relacionados a ID inválido sí se propagan
     throw error;
   }
@@ -1098,11 +1120,21 @@ module.exports = async function handler(req, res) {
         // Datos nuevos ganan: actualizar Account, Contact y Deal con los datos del prospect.
         // En este camino (conversión de Lead) sí queremos que los datos nuevos ganen
         // porque el Lead era una primera intención desactualizada.
+        // Estos dos updates NO tumban el convert si fallan (caso Santa Lucía
+        // 06-ago: un Email duplicado en Zoho hacía explotar TODO el camino A,
+        // se descartaban los ids buenos del convert y el contacto quedaba sin
+        // datos). El convert ya está hecho; un update cosmético fallido se
+        // loguea y se sigue — el parche de placeholders de más abajo rellena
+        // lo que falte campo a campo.
         stage = "update_account_after_convert";
-        await updateRecord("Accounts", accountId, buildAccountFullPayload(cliente, sectorParaZoho), true);
+        await updateRecord("Accounts", accountId, buildAccountFullPayload(cliente, sectorParaZoho), true).catch((e) =>
+          console.warn(`[create-from-vicky] update Account post-convert falló (no tumba el convert): ${toText(e?.message || e).slice(0, 150)}`)
+        );
 
         stage = "update_contact_after_convert";
-        await updateRecord("Contacts", contactId, buildContactFullPayload(cliente), true);
+        await updateRecord("Contacts", contactId, buildContactFullPayload(cliente), true).catch((e) =>
+          console.warn(`[create-from-vicky] update Contact post-convert falló (no tumba el convert): ${toText(e?.message || e).slice(0, 150)}`)
+        );
 
         stage = "update_deal_after_convert";
         if (!reuse.dealReused) {
@@ -1193,6 +1225,24 @@ module.exports = async function handler(req, res) {
             if (accKv && !existing.accountId) existing.accountId = accKv;
             if (ctKv && !existing.contactId) existing.contactId = ctKv;
           }
+        }
+      }
+      // GUARDA DE RUT (caso Safeclin/Santa Lucía 06-ago): la cuenta adoptada
+      // por teléfono/kv puede ser de OTRA empresa — la misma persona cotizando
+      // para otra razón social. Si el cliente declaró RUT y la cuenta adoptada
+      // tiene OTRO RUT, NO se reusa: se suelta el id y aguas abajo la cuenta
+      // correcta se encuentra o se crea por RUT (Capa 3/4). Cuenta sin RUT
+      // (placeholder de la misma conversación) sí se conserva.
+      if (existing.accountId && toText(cliente.rutEmpresa)) {
+        const soloRut = (v) => String(v || "").replace(/[^0-9kK]/g, "").toLowerCase();
+        const accAdoptada = await getRecord("Accounts", existing.accountId).catch(() => null);
+        const rutAcc = soloRut(accAdoptada?.RUT_Empresa);
+        const rutCli = soloRut(cliente.rutEmpresa);
+        if (accAdoptada && rutAcc && rutCli && rutAcc !== rutCli) {
+          console.warn(
+            `[create-from-vicky] cuenta adoptada ${existing.accountId} ("${toText(accAdoptada.Account_Name)}", RUT ${toText(accAdoptada.RUT_Empresa)}) ≠ RUT declarado ${cliente.rutEmpresa} — no se reusa, se busca/crea la cuenta correcta`
+          );
+          existing.accountId = "";
         }
       }
       // ── CAMINO B: Crear Account o reusar existente ──
@@ -1437,7 +1487,9 @@ module.exports = async function handler(req, res) {
     // Candado cruzado: registrar el deal APENAS existe, para que crm-hitos
     // (agente) lo reuse en vez de crear un gemelo por hito de conversación.
     if (dealId) await setDealPorFono(cliente.contactoTelefono, dealId, "cotizacion").catch(() => {});
-    if (!accountId || !contactId || !dealId) crmIncompleto = crmIncompleto || !accountId || !dealId;
+    // (fix 06-ago: faltaba !contactId en la asignación — una cotización sin
+    // contacto quedaba con CRM_Incompleto=false y nadie la revisaba)
+    if (!accountId || !contactId || !dealId) crmIncompleto = true;
 
     // ── DATOS REALES pisan PLACEHOLDERS (Lalo 31-jul, caso D'amore) ────────
     // La cuenta, el contacto y el deal reusados pueden venir de un hito
