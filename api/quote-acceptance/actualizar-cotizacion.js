@@ -172,6 +172,13 @@ module.exports = async function handler(req, res) {
     await updateRecord(config.quoteModule, quoteId, {
       [config.quoteItemsSubformField]: subformSwap,
       [config.quoteVersionPdfField]: versionNueva,
+      // La UF con la que se recalcularon los ítems queda registrada (mismos
+      // campos que create-from-vicky). El editor interno de vendedores puede
+      // fijar una UF distinta a la del día (07-ago): sin esto, UF_Valor
+      // conservaba la UF de la emisión original y el registro quedaba
+      // inconsistente con los Subtotal_CLP nuevos.
+      UF_Valor: ufActual,
+      UF_Fecha: new Date().toISOString().slice(0, 10),
     }, true);
 
     // ── El link NO cambia: reusar el vigente (fallback: firmar uno nuevo) ──
