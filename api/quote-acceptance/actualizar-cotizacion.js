@@ -31,7 +31,7 @@ const {
   updateRecord,
   toText,
 } = require("../_shared/zoho-crm");
-const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
+const { actualizarPunteroPdf, marcarPdfPendiente } = require("../_shared/pointer-sync");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
@@ -169,10 +169,15 @@ module.exports = async function handler(req, res) {
         .map((id) => ({ id, _delete: null })),
     ];
 
-    const versionNueva = Math.max(1, Number(quote?.[config.quoteVersionPdfField] || 1)) + 1;
+    // Flujo confirmar-una-vez (Lalo 07-ago): con regenerarPdf:false la
+    // VERSIÓN NO avanza — el número de versión pertenece al PDF, y ese lo
+    // genera la confirmación (regenerate-pdf). Sin el flag, versiona como
+    // siempre (Vicky con clientes regenera en cada actualización).
+    const versionActual = Math.max(1, Number(quote?.[config.quoteVersionPdfField] || 1));
+    const versionNueva = body.regenerarPdf === false ? versionActual : versionActual + 1;
     await updateRecord(config.quoteModule, quoteId, {
       [config.quoteItemsSubformField]: subformSwap,
-      [config.quoteVersionPdfField]: versionNueva,
+      ...(body.regenerarPdf === false ? {} : { [config.quoteVersionPdfField]: versionNueva }),
       // La UF con la que se recalcularon los ítems queda registrada (mismos
       // campos que create-from-vicky). El editor interno de vendedores puede
       // fijar una UF distinta a la del día (07-ago): sin esto, UF_Valor
@@ -212,6 +217,25 @@ module.exports = async function handler(req, res) {
       instalacionRMPct: Number(quote?.[config.quoteDiscountInstRMPctField] || 0),
       instalacionRegionPct: Number(quote?.[config.quoteDiscountInstRegionPctField] || 0),
     };
+
+    // ── FLUJO CONFIRMAR-UNA-VEZ (Lalo 07-ago): el editor interno manda
+    // regenerarPdf:false en cada cambio — los datos quedan al día en Zoho
+    // pero NO se genera una versión de PDF por cada ajuste. Se deja la marca
+    // "pdf pendiente"; la versión definitiva la genera la CONFIRMACIÓN del
+    // vendedor (regenerate-pdf), que además limpia la marca. Sin el flag
+    // (Vicky con clientes, flujos previos) todo sigue como siempre.
+    if (body.regenerarPdf === false) {
+      await marcarPdfPendiente(quoteId);
+      return sendJson(res, 200, {
+        ok: true,
+        version: versionNueva,
+        acceptance_url: acceptanceUrl,
+        pdf_pendiente: true,
+        mensaje_para_prospecto:
+          `Listo! Tu cotización ya quedó actualizada${resumenCambio ? ` (${resumenCambio})` : ""} 🙌\n` +
+          `En el mismo link de siempre ya aparece la información al día: ${acceptanceUrl}`,
+      });
+    }
 
     // ── PDF + correo en segundo plano (misma técnica que el create) ──
     waitUntil(
