@@ -95,8 +95,13 @@
       "dest": "/api/q?c=$1"
     },
     {
-      "src": "^/telemarketing/?$",
+      "src": "^/oportunidades/?$",
       "dest": "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app/api/vic-funnel"
+    },
+    {
+      "src": "^/telemarketing/?$",
+      "headers": { "Location": "/oportunidades" },
+      "status": 308
     },
     {
       "src": "^/gv/(.*)$",
