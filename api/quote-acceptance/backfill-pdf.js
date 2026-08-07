@@ -24,6 +24,7 @@
  */
 
 const { getRecord, getRecordWithFields, updateRecord, toText } = require("../_shared/zoho-crm");
+const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
@@ -176,6 +177,8 @@ async function rescatarCotizacion(quoteId, config) {
   // Setear PDF_URL ANTES de enviar el correo (mismo orden que create-from-vicky):
   // garantiza que la cotización salga de la próxima barrida y no se reprocese.
   await updateRecord(config.quoteModule, quoteId, { [config.quotePdfUrlField]: pdfUrl }, true);
+  // Propaga al puntero de Supabase (principio Lalo 07-ago: el PDF nuevo en TODOS lados)
+  await actualizarPunteroPdf(quoteId, pdfUrl);
 
   const tieneReloj = items.some((it) => it && it.tipo === "hardware");
   await sendQuoteEmailViaZoho({

@@ -78,6 +78,7 @@
 
 const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
+const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono, getKvFlag } = require("../_shared/idempotencia");
 const { sendQuoteEmailViaZoho, buildEmailHtml } = require("./create-from-vicky");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
@@ -1069,6 +1070,8 @@ module.exports = async function handler(req, res) {
         await updateRecord(config.quoteModule, quoteId, {
           [config.quotePdfUrlField]: pdfUrl,
         }, true);
+        // Propaga al puntero de Supabase (principio Lalo 07-ago: el PDF nuevo en TODOS lados)
+        await actualizarPunteroPdf(quoteId, pdfUrl);
         // Correo con el PDF (v2 — caso Globe Air Fuel, 04-ago: Vicky le
         // prometía al cliente un correo que este flujo jamás enviaba, la v1
         // era "PDF sin correo"). Mismo helper y plantilla que Chile; CC y

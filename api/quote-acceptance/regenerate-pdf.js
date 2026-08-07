@@ -22,6 +22,7 @@ const {
   updateRecord,
   toText,
 } = require("../_shared/zoho-crm");
+const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { tramoModuloCL } = require("../_shared/tramos-cl");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
@@ -282,6 +283,8 @@ module.exports = async function handler(req, res) {
       },
       true,
     );
+    // Propaga al puntero de Supabase (principio Lalo 07-ago: el PDF nuevo en TODOS lados)
+    await actualizarPunteroPdf(quoteId, pdfUrl);
 
     return sendJson(res, 200, {
       ok: true,

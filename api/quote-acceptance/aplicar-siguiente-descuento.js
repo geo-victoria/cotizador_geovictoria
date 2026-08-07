@@ -36,6 +36,7 @@ const {
   updateRecord,
   toText,
 } = require("../_shared/zoho-crm");
+const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { tramoModuloCL } = require("../_shared/tramos-cl");
 const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
@@ -411,6 +412,8 @@ module.exports = async function handler(req, res) {
       },
       true
     );
+    // Propaga al puntero de Supabase (principio Lalo 07-ago: el PDF nuevo en TODOS lados)
+    await actualizarPunteroPdf(quoteId, pdfUrl);
 
     // Precio nuevo → cotización NUEVA en Creator. No se actualiza la anterior:
     // queda como la versión superada, igual que las versiones del PDF. En

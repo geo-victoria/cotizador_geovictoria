@@ -87,6 +87,7 @@
 
 const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
+const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono } = require("../_shared/idempotencia");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
@@ -955,6 +956,8 @@ module.exports = async function handler(req, res) {
         await updateRecord(config.quoteModule, quoteId, {
           [config.quotePdfUrlField]: pdfUrl,
         }, true);
+        // Propaga al puntero de Supabase (principio Lalo 07-ago: el PDF nuevo en TODOS lados)
+        await actualizarPunteroPdf(quoteId, pdfUrl);
         const tieneReloj = items.some((it) => it && String(it.tipo || "").toLowerCase() === "hardware");
         await sendQuoteEmailViaZoho({
           quoteModule: config.quoteModule,
