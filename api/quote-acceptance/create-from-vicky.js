@@ -1579,7 +1579,12 @@ module.exports = async function handler(req, res) {
         // queda ESPERANDO en Vicky (el cron de traspaso lo sorteará con los
         // relojes); un dueño humano REAL (herencia, ptv, sorteo previo) se
         // respeta y el correo/PDF lo presentan a él.
-        const DUENOS_INTERINOS = new Set([EJEC_OWNER_ID, "3525045000484500876"]);
+        const DUENOS_INTERINOS = new Set([
+          EJEC_OWNER_ID,
+          "3525045000484500876", // Vicky
+          "3525045000000200013", // GeoVictoria Admin (info@) — dueño fantasma
+          // de leads del formulario; no es gestión humana (Lalo 07-ago).
+        ]);
         if (ownerManualId) {
           await zohoApiFetch(`/crm/v3/Deals`, {
             method: "PUT",
