@@ -99,6 +99,10 @@
       "dest": "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app/api/vic-funnel"
     },
     {
+      "src": "^/gv/(.*)$",
+      "dest": "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app/gv/$1"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "/api/$1"
     },
