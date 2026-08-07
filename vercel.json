@@ -95,6 +95,10 @@
       "dest": "/api/q?c=$1"
     },
     {
+      "src": "^/telemarketing/?$",
+      "dest": "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app/api/vic-funnel"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "/api/$1"
     },
