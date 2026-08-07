@@ -1,84 +1,55 @@
 /**
- * Sincronización del puntero de cotización en Supabase (vic_v3_quote_pointers).
+ * Sincronización del puntero de cotización y la marca "cambios sin versionar"
+ * — VÍA EL AGENTE (07-ago, caso COT341).
  *
- * Principio de Lalo (07-ago): "si Vicky es capaz de actualizar el PDF desde el
- * chat, debe actualizarlo en TODOS lados". El puntero es lo que leen el dash
- * (links "📄 cotización"), la tool de envío por WhatsApp y la propia Vicky en
- * la conversación — si solo se actualiza el PDF_URL de Zoho, esos caminos
- * quedan apuntando a la versión vieja.
+ * Principio de Lalo: "si Vicky actualiza el PDF desde el chat, debe
+ * actualizarlo en TODOS lados". La v1 de este módulo escribía directo a
+ * Supabase con las credenciales del cotizador… que apuntan al proyecto de
+ * ALMACENAMIENTO DE PDFs, no al de Vicky — todas las escrituras fallaban con
+ * 404 en silencio. Ahora las tres operaciones viajan al endpoint puente del
+ * agente (vic-admin-pdf-sync), que tiene las credenciales correctas.
  *
- * Se llama en CADA lugar donde se escribe un PDF nuevo (emisión, edición,
- * regeneración, descuentos, backfill). Best-effort: su falla jamás rompe el
- * flujo que la invoca.
+ * Auth: el MISMO secreto compartido (VICKY_COTIZADORA_SECRET) que el agente
+ * usa para llamarnos, ahora en la dirección inversa. Best-effort: su falla
+ * jamás rompe el flujo que la invoca.
  */
 
-async function actualizarPunteroPdf(quoteId, pdfUrl) {
+const AGENT_BASE = String(
+  process.env.VICKY_AGENT_BASE ||
+    "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app",
+).trim().replace(/\/$/, "");
+const SECRET = String(process.env.VICKY_COTIZADORA_SECRET || "").trim();
+
+async function llamarPuente(quoteId, accion, pdfUrl) {
   try {
-    const url = String(process.env.SUPABASE_URL || "").trim();
-    const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
     const id = String(quoteId || "").trim();
-    const pdf = String(pdfUrl || "").trim();
-    if (!url || !key || !id || !pdf) return false;
-    const res = await fetch(
-      `${url}/rest/v1/vic_v3_quote_pointers?quote_id=eq.${encodeURIComponent(id)}`,
-      {
-        method: "PATCH",
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-          Prefer: "return=minimal",
-        },
-        body: JSON.stringify({ pdf_url: pdf, updated_at: new Date().toISOString() }),
-      },
-    );
+    if (!id || !SECRET) return false;
+    const res = await fetch(`${AGENT_BASE}/api/vic-admin-pdf-sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-vicky-secret": SECRET },
+      body: JSON.stringify({ quoteId: id, accion, pdfUrl: pdfUrl || undefined }),
+    });
     if (!res.ok) {
-      console.warn(`[pointer-sync] PATCH ${res.status} quote=${id}`);
+      console.warn(`[pointer-sync] puente ${accion} ${res.status} quote=${id}`);
       return false;
     }
-    await limpiarPdfPendiente(id);
     return true;
   } catch (e) {
-    console.warn("[pointer-sync] lanzó:", e && e.message ? e.message : e);
+    console.warn(`[pointer-sync] puente ${accion} lanzó:`, e && e.message ? e.message : e);
     return false;
   }
 }
 
-// ── Marca de "cambios sin versionar" (flujo confirmar-una-vez, Lalo 07-ago) ──
-// La edición por chat NO genera PDF por cada cambio: deja esta marca. La
-// confirmación (o cualquier regeneración real) la limpia. El envío por
-// WhatsApp solo regenera si la marca está puesta.
-
-function kvHeaders() {
-  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-  return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+async function actualizarPunteroPdf(quoteId, pdfUrl) {
+  return llamarPuente(quoteId, "pdf", pdfUrl);
 }
 
 async function marcarPdfPendiente(quoteId) {
-  try {
-    const url = String(process.env.SUPABASE_URL || "").trim();
-    if (!url || !quoteId) return;
-    await fetch(`${url}/rest/v1/vic_kv?on_conflict=key`, {
-      method: "POST",
-      headers: { ...kvHeaders(), Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({ key: `pdf_dirty_${quoteId}`, value: new Date().toISOString() }),
-    });
-  } catch (e) {
-    console.warn("[pointer-sync] marcarPdfPendiente:", e && e.message ? e.message : e);
-  }
+  return llamarPuente(quoteId, "marcar");
 }
 
 async function limpiarPdfPendiente(quoteId) {
-  try {
-    const url = String(process.env.SUPABASE_URL || "").trim();
-    if (!url || !quoteId) return;
-    await fetch(`${url}/rest/v1/vic_kv?key=eq.${encodeURIComponent(`pdf_dirty_${quoteId}`)}`, {
-      method: "DELETE",
-      headers: kvHeaders(),
-    });
-  } catch (e) {
-    console.warn("[pointer-sync] limpiarPdfPendiente:", e && e.message ? e.message : e);
-  }
+  return llamarPuente(quoteId, "limpiar");
 }
 
 module.exports = { actualizarPunteroPdf, marcarPdfPendiente, limpiarPdfPendiente };
