@@ -58,13 +58,13 @@ async function parseBody(req) {
 }
 
 function validateRequiredInput(fields) {
+  // Giro/comuna/direccion se capturan DESPUES del pago (Rodrigo 09-ago):
+  // son datos de FACTURA, no de pago — la factura se emite cuando lleguen
+  // (onboarding/ejecutivo). Cada campo antes de pagar cuesta ventas.
   const required = [
     ["billingEmail", "correo de facturacion"],
     ["billingPhone", "telefono de facturacion"],
-    ["companyGiro", "giro"],
     ["companyRut", "RUT de empresa"],
-    ["companyComuna", "comuna"],
-    ["companyAddress", "direccion"],
   ];
   const missing = required
     .filter(([key]) => !toText(fields?.[key]))

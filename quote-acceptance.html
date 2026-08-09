@@ -1186,20 +1186,17 @@
                 </div>
 
           <div class="stage-actions">
-            <button id="toVerifyBtn" type="button" class="btn inline">Aceptar y continuar al pago</button>
+            <button id="toVerifyBtn" type="button" class="btn inline hidden">Aceptar y continuar al pago</button>
           </div>
         </div>
       </section>
-    </div>
 
-    <!-- Pop-up de facturación (flujo de una página, Rodrigo 09-ago): el paso 2
-         completo vive aquí; goToStage(2) lo abre y goToStage(1) lo cierra. -->
-    <div id="billingModal" class="terms-modal hidden" role="dialog" aria-modal="true" aria-label="Datos para facturación">
-      <div id="billingModalBackdrop" class="terms-modal-backdrop"></div>
-      <div class="terms-modal-card" style="position: relative">
-        <button id="closeBillingModalBtn" type="button" class="terms-modal-close" aria-label="Cerrar" style="position: absolute; top: 14px; right: 14px; z-index: 3">X</button>
-        <div class="terms-modal-body" style="padding: 0">
-          <section class="card stage hidden" id="stageVerifyCard" style="border:0; box-shadow:none; margin:0">
+      <!-- Facturación INLINE (Rodrigo 09-ago, "un solo paso"): los datos y el
+           botón único "Aceptar y pagar" viven en la misma página que el
+           resumen — sin pop-up, sin paso 2. Giro/comuna/dirección se capturan
+           DESPUÉS del pago (onboarding/ejecutivo): cada dato antes de pagar
+           cuesta ventas (estudio 08-ago: 40% de abandonos al pedir datos). -->
+<section class="card stage hidden" id="stageVerifyCard">
         <div class="head">
           <h2 class="title"><span class="icon">2</span>Datos para facturación y confirmación</h2>
         </div>
@@ -1221,37 +1218,30 @@
               <label for="companyRut">RUT empresa *</label>
               <input id="companyRut" type="text" />
             </div>
-            <div>
+            <div style="display: none">
               <label for="companyGiro">Giro *</label>
               <div class="combo" id="comboGiro">
                 <input id="companyGiro" type="text" autocomplete="off" placeholder="Escribe para buscar tu giro" />
                 <ul class="combo-list hidden"></ul>
               </div>
             </div>
-            <div>
+            <div style="display: none">
               <label for="companyComuna">Comuna *</label>
               <div class="combo" id="comboComuna">
                 <input id="companyComuna" type="text" autocomplete="off" placeholder="Escribe tu comuna" />
                 <ul class="combo-list hidden"></ul>
               </div>
             </div>
-            <div class="full">
+            <div class="full" style="display: none">
               <label for="companyAddress">Dirección *</label>
               <input id="companyAddress" type="text" />
             </div>
           </div>
 
-          <button id="confirmBtn" class="btn">Aceptar cotización y continuar</button>
-
-          <div class="stage-actions">
-            <button id="backToInfoBtn" type="button" class="btn ghost">Volver</button>
-          </div>
+          <button id="confirmBtn" class="btn">Aceptar y pagar</button>
           <div id="message" class="message"></div>
         </div>
       </section>
-
-        </div>
-      </div>
     </div>
 
     <!-- Pop-up de Términos y Condiciones: todo el antiguo paso 1 con sus
@@ -1862,7 +1852,6 @@
         // redirigir. Solo el correo de contacto sigue readonly (markup).
         sendCodeBtn.disabled = true;
         verifyCodeBtn.disabled = true;
-        toVerifyBtn.classList.add("hidden");
 
         const confirmBtn = document.getElementById("confirmBtn");
         if (confirmBtn) {
@@ -1941,13 +1930,12 @@
         const isStep1 = step === 1;
         const isStep2 = step === 2;
 
-        // Una sola página (Rodrigo 09-ago): el resumen queda siempre visible
-        // y la facturación vive en un pop-up que abre el paso 2.
+        // Un solo paso (Rodrigo 09-ago): resumen y facturación conviven en la
+        // misma página; no hay pop-up ni paso 2 — ambos toggles quedan planos.
         void isStep1;
+        void isStep2;
         if (stageInfoCardEl) stageInfoCardEl.classList.remove("hidden");
-        if (stageVerifyCardEl) stageVerifyCardEl.classList.toggle("hidden", !isStep2);
-        const billingModalEl = document.getElementById("billingModal");
-        if (billingModalEl) billingModalEl.classList.toggle("hidden", !isStep2);
+        if (stageVerifyCardEl) stageVerifyCardEl.classList.remove("hidden");
       }
 
       function goToStage(step) {
@@ -2402,14 +2390,14 @@
 
       function validateRequired(options) {
         const requireVerification = Boolean(options && options.requireVerification);
+        // Giro/comuna/dirección se capturan DESPUÉS del pago (Rodrigo 09-ago):
+        // son datos de factura, no de pago, y cada campo antes de pagar cuesta
+        // ventas (estudio 08-ago: 40% de abandonos al pedir datos).
         const requiredTextFields = [
           "contactEmail",
           "billingEmail",
           "billingPhone",
           "companyRut",
-          "companyGiro",
-          "companyComuna",
-          "companyAddress",
         ];
         for (const key of requiredTextFields) {
           const input = fields[key];
@@ -2497,6 +2485,14 @@
           flowState.needsPayment = q.needsPayment === true;
           flowState.paymentUrl = q.paymentUrl || "";
           flowState.pagoInicialClp = Number(q.pagoInicialClp || 0);
+          // Botón único "Aceptar y pagar $X" (un solo paso, Rodrigo 09-ago).
+          if (!flowState.acceptedLocked) {
+            const btnUnico = document.getElementById("confirmBtn");
+            if (btnUnico)
+              btnUnico.textContent =
+                "Aceptar y pagar" +
+                (flowState.pagoInicialClp > 0 ? " " + fmtCLP(flowState.pagoInicialClp) : "");
+          }
           if (!flowState.acceptedLocked) {
             const cb = document.getElementById("confirmBtn");
             if (cb) cb.textContent = confirmCtaLabel();
@@ -3078,20 +3074,8 @@
           return;
         }
 
-        if (!isEmailVerifiedForCurrentInput()) {
-          flowState.pendingConfirmAfterVerification = true;
-          setVerifyPromptVisible(true);
-          const remaining = getCodeRemainingSeconds();
-          if (remaining > 0) {
-            setMessage("Primero valida el código vigente enviado a tu correo de contacto para continuar.", "error");
-          } else {
-            await onSendCode();
-          }
-          updateJourneyState();
-          return;
-        }
-
-        // Datos completos y correo validado: procesamos la aceptacion. La
+        // Datos completos: procesamos la aceptacion directo (el OTP de correo
+        // se retiro el 09-ago — el link con token firmado YA autentica). La
         // eleccion del metodo de pago (tarjeta/transferencia) se hace despues,
         // en la pagina de pago, por la que pasan tanto la aceptacion como el
         // cliente que vuelve a pagar una cotizacion ya aceptada.
@@ -3196,20 +3180,8 @@
       // "Volver" cierran SIEMPRE — también con la cotización ya aceptada
       // (goToStage se niega en ese estado, por eso el cierre va directo). Al
       // cerrar en aceptada, el botón del resumen reaparece para poder volver.
-      function closeBillingModal() {
-        stageState.current = 1;
-        renderStage();
-        updateJourneyState();
-        if (flowState.acceptedLocked) {
-          toVerifyBtn.textContent = flowState.onboardingUrl ? "Ir a mi auto-onboarding" : "Ir a pagar";
-          toVerifyBtn.classList.remove("hidden");
-        }
-      }
-      const closeBillingModalBtn = document.getElementById("closeBillingModalBtn");
-      if (closeBillingModalBtn) closeBillingModalBtn.addEventListener("click", closeBillingModal);
-      backToInfoBtn.addEventListener("click", () => {
-        closeBillingModal();
-      });
+      // (El pop-up de facturación se retiró el 09-ago: la sección vive inline
+      // en la página. closeBillingModal/backToInfoBtn murieron con él.)
       toVerifyBtn.addEventListener("click", () => {
         if (!termsAcceptedInput.checked) {
           journeyHintEl.textContent = "Debes aceptar los términos y condiciones para continuar.";
@@ -3237,12 +3209,7 @@
       if (tycModalBackdrop && tycModalEl) {
         tycModalBackdrop.addEventListener("click", () => tycModalEl.classList.add("hidden"));
       }
-      const billingModalBackdrop = document.getElementById("billingModalBackdrop");
-      if (billingModalBackdrop) {
-        billingModalBackdrop.addEventListener("click", () => {
-          closeBillingModal();
-        });
-      }
+
 
       function openTermsModal() {
         if (!termsModalEl) return;
