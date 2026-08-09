@@ -304,6 +304,34 @@ export default async function handler(req, res) {
     const existingAcceptedAt = toText(quote?.[config.quoteAcceptanceAtField]);
     const acceptedAtIso = existingAcceptedAt || toZohoDateTime();
 
+    // Edicion post-aceptacion (Rodrigo 09-ago): una aceptada que vuelve con
+    // datos de facturacion corregidos o completados (giro/comuna/direccion
+    // que quedaron vacios) los actualiza en la cotizacion antes de reanudar
+    // el pago — el cliente debe poder completar sus datos, no quedar preso
+    // de lo que alcanzo a llenar al aceptar. Best-effort: un fallo del
+    // update jamas frena el camino al pago.
+    if (alreadyAccepted && acceptanceData && typeof acceptanceData === "object") {
+      const cambios = {};
+      const setSi = (field, value) => {
+        const v = toText(value);
+        if (field && v && v !== toText(quote?.[field])) cambios[field] = v;
+      };
+      setSi(config.billingEmailField, billingEmailFromForm);
+      setSi(config.billingPhoneField, acceptanceData.billingPhone);
+      setSi(config.companyRutField, acceptanceData.companyRut);
+      setSi(config.companyGiroField, acceptanceData.companyGiro);
+      setSi(config.companyComunaField, acceptanceData.companyComuna);
+      setSi(config.companyAddressField, acceptanceData.companyAddress);
+      if (Object.keys(cambios).length > 0) {
+        try {
+          await updateRecordBestEffort(config.quoteModule, payload.quoteId, cambios, true);
+          Object.assign(quote, cambios);
+        } catch (updateError) {
+          console.error("[confirm] update post-aceptacion fallo:", toText(updateError?.message || updateError));
+        }
+      }
+    }
+
     if (alreadyAccepted && currentOnboardingUrl) {
       let ndv = { status: "skipped", reason: "already_linked" };
       if (config.ndvHandoffEnabled && !quoteHasNdvReference(config, quote)) {

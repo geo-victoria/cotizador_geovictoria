@@ -1196,7 +1196,8 @@
          completo vive aquí; goToStage(2) lo abre y goToStage(1) lo cierra. -->
     <div id="billingModal" class="terms-modal hidden" role="dialog" aria-modal="true" aria-label="Datos para facturación">
       <div id="billingModalBackdrop" class="terms-modal-backdrop"></div>
-      <div class="terms-modal-card">
+      <div class="terms-modal-card" style="position: relative">
+        <button id="closeBillingModalBtn" type="button" class="terms-modal-close" aria-label="Cerrar" style="position: absolute; top: 14px; right: 14px; z-index: 3">X</button>
         <div class="terms-modal-body" style="padding: 0">
           <section class="card stage hidden" id="stageVerifyCard" style="border:0; box-shadow:none; margin:0">
         <div class="head">
@@ -1855,16 +1856,13 @@
         termsAcceptedInput.checked = true;
         termsAcceptedInput.disabled = true;
 
-        Object.values(fields).forEach((input) => {
-          if (!input) return;
-          input.readOnly = true;
-          input.disabled = true;
-        });
-
+        // Los campos de facturación QUEDAN EDITABLES (Rodrigo 09-ago): el
+        // cliente que aceptó con giro/comuna/dirección vacíos (o con un dato
+        // malo) debe poder completarlos — "Ir a pagar" los guarda antes de
+        // redirigir. Solo el correo de contacto sigue readonly (markup).
         sendCodeBtn.disabled = true;
         verifyCodeBtn.disabled = true;
         toVerifyBtn.classList.add("hidden");
-        backToInfoBtn.classList.add("hidden");
 
         const confirmBtn = document.getElementById("confirmBtn");
         if (confirmBtn) {
@@ -3025,7 +3023,42 @@
               delayMs: 1500,
             });
           } else if (flowState.needsPayment && flowState.paymentUrl) {
-            startOnboardingRedirect(flowState.paymentUrl, {
+            // Antes de ir al pago se exigen y GUARDAN los datos de facturación
+            // (Rodrigo 09-ago): la aceptación pudo quedar con campos vacíos y
+            // el cliente debe poder completarlos aquí mismo.
+            const check = validateRequired({ requireVerification: false });
+            if (!check.ok) {
+              setMessage("Completa los datos de facturación que faltan para continuar al pago.", "error");
+              return;
+            }
+            const btnPagar = document.getElementById("confirmBtn");
+            if (btnPagar) btnPagar.disabled = true;
+            setMessage("Guardando tus datos de facturación...");
+            let urlPago = flowState.paymentUrl;
+            try {
+              const res = await fetch("/api/quote-acceptance/confirm", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  token,
+                  termsAccepted: true,
+                  acceptanceData: {
+                    billingEmail: fields.billingEmail.value.trim(),
+                    billingPhone: fields.billingPhone.value.trim(),
+                    companyRut: fields.companyRut.value.trim(),
+                    companyGiro: fields.companyGiro.value.trim(),
+                    companyComuna: fields.companyComuna.value.trim(),
+                    companyAddress: fields.companyAddress.value.trim(),
+                  },
+                }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (data && data.paymentUrl) urlPago = data.paymentUrl;
+            } catch (e) {
+              // El guardado es best-effort: el pago no se frena por esto.
+            }
+            if (btnPagar) btnPagar.disabled = false;
+            startOnboardingRedirect(urlPago, {
               title: "Te llevamos a tu pago inicial",
               detail: "Estamos preparando tu pago seguro para activar tu servicio.",
               delayMs: 1500,
@@ -3159,8 +3192,23 @@
         if (event.key === "Enter") onVerifyCode();
       });
 
+      // Cerrar el pop-up de facturación (Rodrigo 09-ago): cruz, backdrop y
+      // "Volver" cierran SIEMPRE — también con la cotización ya aceptada
+      // (goToStage se niega en ese estado, por eso el cierre va directo). Al
+      // cerrar en aceptada, el botón del resumen reaparece para poder volver.
+      function closeBillingModal() {
+        stageState.current = 1;
+        renderStage();
+        updateJourneyState();
+        if (flowState.acceptedLocked) {
+          toVerifyBtn.textContent = flowState.onboardingUrl ? "Ir a mi auto-onboarding" : "Ir a pagar";
+          toVerifyBtn.classList.remove("hidden");
+        }
+      }
+      const closeBillingModalBtn = document.getElementById("closeBillingModalBtn");
+      if (closeBillingModalBtn) closeBillingModalBtn.addEventListener("click", closeBillingModal);
       backToInfoBtn.addEventListener("click", () => {
-        goToStage(1);
+        closeBillingModal();
       });
       toVerifyBtn.addEventListener("click", () => {
         if (!termsAcceptedInput.checked) {
@@ -3192,7 +3240,7 @@
       const billingModalBackdrop = document.getElementById("billingModalBackdrop");
       if (billingModalBackdrop) {
         billingModalBackdrop.addEventListener("click", () => {
-          if (!flowState.acceptedLocked) goToStage(1);
+          closeBillingModal();
         });
       }
 
