@@ -137,9 +137,9 @@
         <p id="quoteName">Completa el pago para iniciar tu onboarding.</p>
       </div>
       <div class="body">
-        <div class="steps" id="stepsBar">
-          <div class="step-pill solo" data-step="oneshot">Pago inicial</div>
-        </div>
+        <!-- Píldora "Pago inicial" eliminada (Rodrigo 09-ago). El contenedor
+             queda vacío y oculto porque setSteps() lo referencia por id. -->
+        <div class="steps" id="stepsBar" style="display:none"></div>
 
         <div id="loading" class="center">
           <div class="spinner"></div>
