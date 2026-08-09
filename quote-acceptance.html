@@ -1188,6 +1188,8 @@
           <div class="stage-actions">
             <button id="toVerifyBtn" type="button" class="btn inline hidden">Aceptar y continuar al pago</button>
           </div>
+          <button id="confirmBtn" class="btn">Aceptar y pagar</button>
+          <div id="message" class="message"></div>
         </div>
       </section>
 
@@ -1196,7 +1198,7 @@
            resumen — sin pop-up, sin paso 2. Giro/comuna/dirección se capturan
            DESPUÉS del pago (onboarding/ejecutivo): cada dato antes de pagar
            cuesta ventas (estudio 08-ago: 40% de abandonos al pedir datos). -->
-<section class="card stage hidden" id="stageVerifyCard">
+<section class="card stage hidden" id="stageVerifyCard" aria-hidden="true">
         <div class="head">
           <h2 class="title"><span class="icon">2</span>Datos para facturación y confirmación</h2>
         </div>
@@ -1238,8 +1240,6 @@
             </div>
           </div>
 
-          <button id="confirmBtn" class="btn">Aceptar y pagar</button>
-          <div id="message" class="message"></div>
         </div>
       </section>
     </div>
@@ -1935,7 +1935,9 @@
         void isStep1;
         void isStep2;
         if (stageInfoCardEl) stageInfoCardEl.classList.remove("hidden");
-        if (stageVerifyCardEl) stageVerifyCardEl.classList.remove("hidden");
+        // La sección de datos queda OCULTA (Rodrigo 09-ago: correo, teléfono y
+        // RUT ya se entregaron en el chat — no se muestran ni se piden). Solo
+        // reaparece si la cotización no trae correo de contacto.
       }
 
       function goToStage(step) {
@@ -2393,19 +2395,14 @@
         // Giro/comuna/dirección se capturan DESPUÉS del pago (Rodrigo 09-ago):
         // son datos de factura, no de pago, y cada campo antes de pagar cuesta
         // ventas (estudio 08-ago: 40% de abandonos al pedir datos).
-        const requiredTextFields = [
-          "contactEmail",
-          "billingPhone",
-          "companyRut",
-        ];
-        for (const key of requiredTextFields) {
-          const input = fields[key];
-          if (!input || !String(input.value || "").trim()) {
-            return { ok: false, field: key };
-          }
-        }
-        if (!emailLooksValid(fields.contactEmail.value)) {
-          return { ok: false, field: "contactEmail" };
+        // Sin campos visibles (Rodrigo 09-ago): correo, teléfono y RUT ya se
+        // entregaron en el chat y viajan prellenados. Solo el caso borde de
+        // cotización SIN correo de contacto exige el correo (fila revelada).
+        if (
+          !String(fields.contactEmail.value || "").trim() &&
+          !String(fields.billingEmail.value || "").trim()
+        ) {
+          return { ok: false, field: "billingEmail" };
         }
         if (String(fields.billingEmail.value || "").trim() && !emailLooksValid(fields.billingEmail.value)) {
           return { ok: false, field: "billingEmail" };
@@ -2474,7 +2471,11 @@
           fields.billingEmail.value = q.billingEmail || q.contactEmail || "";
           {
             const rowBE = document.getElementById("rowBillingEmail");
-            if (rowBE && !emailLooksValid(q.contactEmail || "")) rowBE.style.display = "";
+            if (rowBE && !emailLooksValid(q.contactEmail || "")) {
+              rowBE.style.display = "";
+              const secDatos = document.getElementById("stageVerifyCard");
+              if (secDatos) secDatos.classList.remove("hidden");
+            }
           }
           fields.billingPhone.value = q.billingPhone || "";
           fields.contactEmail.value = q.contactEmail || "";

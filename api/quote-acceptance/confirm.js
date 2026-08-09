@@ -61,10 +61,10 @@ function validateRequiredInput(fields) {
   // Giro/comuna/direccion se capturan DESPUES del pago (Rodrigo 09-ago):
   // son datos de FACTURA, no de pago — la factura se emite cuando lleguen
   // (onboarding/ejecutivo). Cada campo antes de pagar cuesta ventas.
-  const required = [
-    ["billingPhone", "telefono de facturacion"],
-    ["companyRut", "RUT de empresa"],
-  ];
+  // Sin datos requeridos del form (Rodrigo 09-ago): correo, telefono y RUT
+  // ya viven en la cotizacion (los entrego el chat); el form solo aporta lo
+  // que traiga. El unico candado real es tener ALGUN correo (mas abajo).
+  const required = [];
   const missing = required
     .filter(([key]) => !toText(fields?.[key]))
     .map(([, label]) => label);
