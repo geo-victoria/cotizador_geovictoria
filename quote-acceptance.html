@@ -1134,23 +1134,18 @@
               <span>Vigencia: <span id="qExpiry">-</span></span>
               <a id="pdfLink" class="pdf-link" target="_blank" rel="noopener noreferrer" style="margin-left:4px">Ver PDF de cotización</a>
             </div>
-            <p class="info-help" style="margin-top:8px">
-              Si detectas diferencias en items o precios, no aceptes aun. Contacta a tu ejecutivo comercial.
-            </p>
           </div>
           <div id="status" class="status">Cargando...</div>
         </div>
-        <div class="steps">
-          <div id="stepInfo" class="step current">
-            <div class="step-line"><span class="step-num">1</span><span class="step-title">Información y términos</span></div>
-            <div class="step-sub">Revisión comercial y aceptación de términos y condiciones.</div>
-          </div>
-          <div id="stepVerify" class="step">
-            <div class="step-line"><span class="step-num">2</span><span class="step-title">Facturación y verificación</span></div>
-            <div class="step-sub">Datos de facturación.</div>
-          </div>
+        <!-- Franjas del hero eliminadas (Rodrigo 09-ago): nota de diferencias,
+             píldoras de pasos y línea de estado. journeyHint queda OCULTO (no
+             borrado) porque el JS le escribe textContent sin guard; stepInfo/
+             stepVerify se conservan ocultos por la misma razón (setStepClass). -->
+        <div style="display: none">
+          <div id="stepInfo" class="step"></div>
+          <div id="stepVerify" class="step"></div>
         </div>
-        <div id="journeyHint" class="journey-hint">Cargando cotización...</div>
+        <div id="journeyHint" class="journey-hint" style="display: none">Cargando cotización...</div>
       </section>
 
       <section class="card stage" id="stageInfoCard">
