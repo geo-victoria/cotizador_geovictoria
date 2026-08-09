@@ -1206,7 +1206,7 @@
               <label for="contactEmail">Correo de contacto (definido en cotización) *</label>
               <input id="contactEmail" type="email" readonly />
             </div>
-            <div>
+            <div id="rowBillingEmail" style="display: none">
               <label for="billingEmail">Correo de facturación *</label>
               <input id="billingEmail" type="email" />
             </div>
@@ -2395,7 +2395,6 @@
         // ventas (estudio 08-ago: 40% de abandonos al pedir datos).
         const requiredTextFields = [
           "contactEmail",
-          "billingEmail",
           "billingPhone",
           "companyRut",
         ];
@@ -2408,7 +2407,7 @@
         if (!emailLooksValid(fields.contactEmail.value)) {
           return { ok: false, field: "contactEmail" };
         }
-        if (!emailLooksValid(fields.billingEmail.value)) {
+        if (String(fields.billingEmail.value || "").trim() && !emailLooksValid(fields.billingEmail.value)) {
           return { ok: false, field: "billingEmail" };
         }
         if (!termsAcceptedInput.checked) {
@@ -2468,7 +2467,15 @@
             pdfLink.classList.add("disabled");
             pdfLink.removeAttribute("target");
           }
-          fields.billingEmail.value = q.billingEmail || "";
+          // Correo de facturación POSPUESTO (Rodrigo 09-ago): se asume el de
+          // contacto — en la captura post-pago de datos de factura puede
+          // entregar uno distinto. La fila solo aparece si la cotización no
+          // trae correo de contacto (ahí es la única forma de tener correo).
+          fields.billingEmail.value = q.billingEmail || q.contactEmail || "";
+          {
+            const rowBE = document.getElementById("rowBillingEmail");
+            if (rowBE && !emailLooksValid(q.contactEmail || "")) rowBE.style.display = "";
+          }
           fields.billingPhone.value = q.billingPhone || "";
           fields.contactEmail.value = q.contactEmail || "";
           fields.companyRut.value = q.companyRut || "";
@@ -3039,7 +3046,7 @@
                   token,
                   termsAccepted: true,
                   acceptanceData: {
-                    billingEmail: fields.billingEmail.value.trim(),
+                    billingEmail: (fields.billingEmail.value.trim() || fields.contactEmail.value.trim()),
                     billingPhone: fields.billingPhone.value.trim(),
                     companyRut: fields.companyRut.value.trim(),
                     companyGiro: fields.companyGiro.value.trim(),
@@ -3092,7 +3099,7 @@
               verificationToken: verificationState.verificationToken,
               termsAccepted: true,
               acceptanceData: {
-                billingEmail: fields.billingEmail.value.trim(),
+                billingEmail: (fields.billingEmail.value.trim() || fields.contactEmail.value.trim()),
                 billingPhone: fields.billingPhone.value.trim(),
                 companyRut: fields.companyRut.value.trim(),
                 companyGiro: fields.companyGiro.value.trim(),

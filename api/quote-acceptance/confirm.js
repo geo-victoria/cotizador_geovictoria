@@ -62,7 +62,6 @@ function validateRequiredInput(fields) {
   // son datos de FACTURA, no de pago — la factura se emite cuando lleguen
   // (onboarding/ejecutivo). Cada campo antes de pagar cuesta ventas.
   const required = [
-    ["billingEmail", "correo de facturacion"],
     ["billingPhone", "telefono de facturacion"],
     ["companyRut", "RUT de empresa"],
   ];
@@ -297,7 +296,13 @@ export default async function handler(req, res) {
     const currentOnboardingUrl = toText(quote?.[config.quoteOnboardingUrlField]);
     const currentOnboardingLookup = toText(quote?.[config.quoteOnboardingLookupField]?.id);
     let authoritativeContactEmail = normalizeEmail(quote?.[config.contactEmailField]);
-    const billingEmailFromForm = normalizeEmail(acceptanceData?.billingEmail);
+    // Correo de facturacion POSPUESTO (Rodrigo 09-ago): si el form no lo trae,
+    // se asume el correo de contacto de la cotizacion — la captura post-pago
+    // de datos de factura puede entregar uno distinto y ahi se actualiza.
+    let billingEmailFromForm = normalizeEmail(acceptanceData?.billingEmail);
+    if (!isValidEmail(billingEmailFromForm) && isValidEmail(authoritativeContactEmail)) {
+      billingEmailFromForm = authoritativeContactEmail;
+    }
 
     const currentStatus = toText(quote?.[config.quoteStatusField]);
     const alreadyAccepted = /Aceptada/i.test(currentStatus);
