@@ -114,7 +114,7 @@
         padding: 10px 12px;
       }
       .step-line {
-        display: flex;
+        display: none;
         align-items: center;
         gap: 8px;
       }
@@ -1126,7 +1126,7 @@
             </div>
             <h1 class="hero-title">Aceptación digital de cotización</h1>
             <p class="hero-sub">
-              Revisa la propuesta, acepta términos, valida tu correo y continua al auto-onboarding.
+              Revisa tu propuesta, acepta los términos y continúa al pago.
             </p>
             <div style="margin-top:8px;font-size:14px;color:#374151;display:flex;flex-wrap:wrap;align-items:center;gap:8px">
               <strong id="qName" style="font-weight:700">-</strong>
@@ -1155,10 +1155,125 @@
 
       <section class="card stage" id="stageInfoCard">
         <div class="head">
-          <h1 class="title"><span class="icon">1</span>Información comercial y términos</h1>
-          <div class="k">Revisa cada sección y acepta términos para continuar</div>
+          <h1 class="title"><span class="icon">✓</span>Resumen de tu cotización</h1>
+          <div class="k">Revisa el detalle, acepta los términos y continúa al pago</div>
         </div>
         <div class="content">
+          <div class="acc-list">
+            <section id="sectionCosts" class="brand-band acc-section">
+              <button type="button" class="brand-band-h acc-toggle" aria-expanded="true">
+                <span>Detalle de Costos</span>
+                <span class="acc-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div id="costHighlight" class="cost-highlight" aria-live="polite"></div>
+              <div class="brand-band-b acc-body">
+                <table class="cost-table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Tipo</th>
+                      <th>Modalidad</th>
+                      <th>Cant.</th>
+                      <th>Precio Unit.</th>
+                      <th>Dcto.</th>
+                      <th>Subtotal (UF)</th>
+                      <th>Ref. CLP</th>
+                    </tr>
+                  </thead>
+                  <tbody id="itemsRows">
+                    <tr><td colspan="8">Sin datos.</td></tr>
+                  </tbody>
+                </table>
+                <p id="ufReferenceNote" class="uf-note"></p>
+              </div>
+            </section>
+          </div>
+
+          <div class="accept">
+                  <input id="termsAccepted" type="checkbox" style="width: 18px; height: 18px; margin-top: 2px" />
+                  <label for="termsAccepted" style="margin: 0">
+                    He leído y acepto los <a href="#" id="openTycModalLink">Términos y Condiciones del servicio</a> y confirmo que los datos de la cotización son correctos.
+                  </label>
+                </div>
+
+          <div class="stage-actions">
+            <button id="toVerifyBtn" type="button" class="btn inline">Aceptar y continuar al pago</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Pop-up de facturación (flujo de una página, Rodrigo 09-ago): el paso 2
+         completo vive aquí; goToStage(2) lo abre y goToStage(1) lo cierra. -->
+    <div id="billingModal" class="terms-modal hidden" role="dialog" aria-modal="true" aria-label="Datos para facturación">
+      <div id="billingModalBackdrop" class="terms-modal-backdrop"></div>
+      <div class="terms-modal-card">
+        <div class="terms-modal-body" style="padding: 0">
+          <section class="card stage hidden" id="stageVerifyCard" style="border:0; box-shadow:none; margin:0">
+        <div class="head">
+          <h2 class="title"><span class="icon">2</span>Datos para facturación y confirmación</h2>
+        </div>
+        <div class="content">
+          <div class="fields">
+            <div>
+              <label for="contactEmail">Correo de contacto (definido en cotización) *</label>
+              <input id="contactEmail" type="email" readonly />
+            </div>
+            <div>
+              <label for="billingEmail">Correo de facturación *</label>
+              <input id="billingEmail" type="email" />
+            </div>
+            <div>
+              <label for="billingPhone">Teléfono de facturación *</label>
+              <input id="billingPhone" type="text" />
+            </div>
+            <div>
+              <label for="companyRut">RUT empresa *</label>
+              <input id="companyRut" type="text" />
+            </div>
+            <div>
+              <label for="companyGiro">Giro *</label>
+              <div class="combo" id="comboGiro">
+                <input id="companyGiro" type="text" autocomplete="off" placeholder="Escribe para buscar tu giro" />
+                <ul class="combo-list hidden"></ul>
+              </div>
+            </div>
+            <div>
+              <label for="companyComuna">Comuna *</label>
+              <div class="combo" id="comboComuna">
+                <input id="companyComuna" type="text" autocomplete="off" placeholder="Escribe tu comuna" />
+                <ul class="combo-list hidden"></ul>
+              </div>
+            </div>
+            <div class="full">
+              <label for="companyAddress">Dirección *</label>
+              <input id="companyAddress" type="text" />
+            </div>
+          </div>
+
+          <button id="confirmBtn" class="btn">Aceptar cotización y continuar</button>
+
+          <div class="stage-actions">
+            <button id="backToInfoBtn" type="button" class="btn ghost">Volver</button>
+          </div>
+          <div id="message" class="message"></div>
+        </div>
+      </section>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Pop-up de Términos y Condiciones: todo el antiguo paso 1 con sus
+         acordeones originales; se abre desde el hipervínculo del checkbox. -->
+    <div id="tycModal" class="terms-modal hidden" role="dialog" aria-modal="true" aria-labelledby="tycModalTitle">
+      <div id="tycModalBackdrop" class="terms-modal-backdrop"></div>
+      <div class="terms-modal-card">
+        <div class="terms-modal-head">
+          <h3 id="tycModalTitle">Términos y Condiciones del servicio</h3>
+          <button id="closeTycModalBtn" type="button" class="terms-modal-close" aria-label="Cerrar términos">X</button>
+        </div>
+        <div class="terms-modal-body">
           <div class="acc-list">
             <section id="sectionAbout" class="brand-band acc-section">
               <button type="button" class="brand-band-h acc-toggle" aria-expanded="true">
@@ -1236,34 +1351,6 @@
               </div>
             </section>
 
-            <section id="sectionCosts" class="brand-band acc-section">
-              <button type="button" class="brand-band-h acc-toggle" aria-expanded="true">
-                <span>Detalle de Costos</span>
-                <span class="acc-chevron" aria-hidden="true">▾</span>
-              </button>
-              <div id="costHighlight" class="cost-highlight" aria-live="polite"></div>
-              <div class="brand-band-b acc-body">
-                <table class="cost-table">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th>Tipo</th>
-                      <th>Modalidad</th>
-                      <th>Cant.</th>
-                      <th>Precio Unit.</th>
-                      <th>Dcto.</th>
-                      <th>Subtotal (UF)</th>
-                      <th>Ref. CLP</th>
-                    </tr>
-                  </thead>
-                  <tbody id="itemsRows">
-                    <tr><td colspan="8">Sin datos.</td></tr>
-                  </tbody>
-                </table>
-                <p id="ufReferenceNote" class="uf-note"></p>
-              </div>
-            </section>
-
             <section id="sectionIncluded" class="brand-band acc-section">
               <button type="button" class="brand-band-h acc-toggle" aria-expanded="true">
                 <span>Servicios Adicionales sin Costo</span>
@@ -1321,72 +1408,13 @@
                 <div class="terms-actions">
                   <button id="openTermsModalBtn" type="button" class="btn secondary">Ver términos completos</button>
                 </div>
-                <div class="accept">
-                  <input id="termsAccepted" type="checkbox" style="width: 18px; height: 18px; margin-top: 2px" />
-                  <label for="termsAccepted" style="margin: 0">
-                    Acepto los términos y condiciones de la cotización y confirmo que los datos de facturación son correctos.
-                  </label>
-                </div>
+                
               </div>
             </section>
-          </div>
 
-          <div class="stage-actions">
-            <button id="toVerifyBtn" type="button" class="btn inline">Continuar a facturación</button>
           </div>
         </div>
-      </section>
-
-      <section class="card stage hidden" id="stageVerifyCard">
-        <div class="head">
-          <h2 class="title"><span class="icon">2</span>Datos para facturación y confirmación</h2>
-        </div>
-        <div class="content">
-          <div class="fields">
-            <div>
-              <label for="contactEmail">Correo de contacto (definido en cotización) *</label>
-              <input id="contactEmail" type="email" readonly />
-            </div>
-            <div>
-              <label for="billingEmail">Correo de facturación *</label>
-              <input id="billingEmail" type="email" />
-            </div>
-            <div>
-              <label for="billingPhone">Teléfono de facturación *</label>
-              <input id="billingPhone" type="text" />
-            </div>
-            <div>
-              <label for="companyRut">RUT empresa *</label>
-              <input id="companyRut" type="text" />
-            </div>
-            <div>
-              <label for="companyGiro">Giro *</label>
-              <div class="combo" id="comboGiro">
-                <input id="companyGiro" type="text" autocomplete="off" placeholder="Escribe para buscar tu giro" />
-                <ul class="combo-list hidden"></ul>
-              </div>
-            </div>
-            <div>
-              <label for="companyComuna">Comuna *</label>
-              <div class="combo" id="comboComuna">
-                <input id="companyComuna" type="text" autocomplete="off" placeholder="Escribe tu comuna" />
-                <ul class="combo-list hidden"></ul>
-              </div>
-            </div>
-            <div class="full">
-              <label for="companyAddress">Dirección *</label>
-              <input id="companyAddress" type="text" />
-            </div>
-          </div>
-
-          <button id="confirmBtn" class="btn">Aceptar cotización y continuar</button>
-
-          <div class="stage-actions">
-            <button id="backToInfoBtn" type="button" class="btn ghost">Volver a información</button>
-          </div>
-          <div id="message" class="message"></div>
-        </div>
-      </section>
+      </div>
     </div>
 
     <div id="termsModal" class="terms-modal hidden" role="dialog" aria-modal="true" aria-labelledby="termsModalTitle">
@@ -1926,8 +1954,13 @@
         const isStep1 = step === 1;
         const isStep2 = step === 2;
 
-        if (stageInfoCardEl) stageInfoCardEl.classList.toggle("hidden", !isStep1);
+        // Una sola página (Rodrigo 09-ago): el resumen queda siempre visible
+        // y la facturación vive en un pop-up que abre el paso 2.
+        void isStep1;
+        if (stageInfoCardEl) stageInfoCardEl.classList.remove("hidden");
         if (stageVerifyCardEl) stageVerifyCardEl.classList.toggle("hidden", !isStep2);
+        const billingModalEl = document.getElementById("billingModal");
+        if (billingModalEl) billingModalEl.classList.toggle("hidden", !isStep2);
       }
 
       function goToStage(step) {
@@ -3149,6 +3182,30 @@
         }
         goToStage(2);
       });
+
+      // Pop-up de T&C (hipervínculo del checkbox) y backdrop del de facturación.
+      const tycModalEl = document.getElementById("tycModal");
+      const openTycModalLink = document.getElementById("openTycModalLink");
+      if (openTycModalLink && tycModalEl) {
+        openTycModalLink.addEventListener("click", (event) => {
+          event.preventDefault();
+          tycModalEl.classList.remove("hidden");
+        });
+      }
+      const closeTycModalBtn = document.getElementById("closeTycModalBtn");
+      if (closeTycModalBtn && tycModalEl) {
+        closeTycModalBtn.addEventListener("click", () => tycModalEl.classList.add("hidden"));
+      }
+      const tycModalBackdrop = document.getElementById("tycModalBackdrop");
+      if (tycModalBackdrop && tycModalEl) {
+        tycModalBackdrop.addEventListener("click", () => tycModalEl.classList.add("hidden"));
+      }
+      const billingModalBackdrop = document.getElementById("billingModalBackdrop");
+      if (billingModalBackdrop) {
+        billingModalBackdrop.addEventListener("click", () => {
+          if (!flowState.acceptedLocked) goToStage(1);
+        });
+      }
 
       function openTermsModal() {
         if (!termsModalEl) return;
