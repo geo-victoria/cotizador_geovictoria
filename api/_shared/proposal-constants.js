@@ -104,14 +104,14 @@ const DISCOUNT_LADDER = [
     tipo: "recurrente_10",
     pct: 10,
     condicionDiscursiva:
-      "Este descuento aplica si la cotización se paga dentro de las próximas 72 horas.",
+      "Este descuento aplica si la cotización se paga dentro de las próximas 24 horas.",
     label: "10 % de descuento sobre el plan mensual",
   },
   {
     tipo: "recurrente_20",
     pct: 20,
     condicionDiscursiva:
-      "Es el mejor precio que te puedo dejar; aplica si pagas dentro de las próximas 24 horas.",
+      "Es el mejor precio que te puedo dejar; aplica si pagas dentro de las próximas 2 horas.",
     label: "20 % de descuento sobre el plan mensual",
   },
 ];
