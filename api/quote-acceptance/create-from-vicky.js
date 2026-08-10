@@ -1093,6 +1093,10 @@ module.exports = async function handler(req, res) {
       try {
         const dealDataForConvert = {
           Deal_Name: `${cliente.empresa} - Cotización Vicky`,
+          // RUT también en el DEAL (Lalo 10-ago): la cuenta lo llevaba en
+          // RUT_Empresa pero el deal quedaba sin Rut/ID Account — el equipo
+          // comercial lo necesita en ambos registros.
+          ...(cliente.rutEmpresa ? { Rut_ID_Account: cliente.rutEmpresa } : {}),
           Stage: VICKY_DEAL_STAGE,
           Pipeline: "Standard (Standard)",
           Closing_Date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
@@ -1467,6 +1471,8 @@ module.exports = async function handler(req, res) {
         stage = "create_deal";
         const dealResult = await createRecord("Deals", {
           Deal_Name: `${cliente.empresa} - Cotización Vicky`,
+          // RUT en el deal, no solo en la cuenta (Lalo 10-ago).
+          ...(cliente.rutEmpresa ? { Rut_ID_Account: cliente.rutEmpresa } : {}),
           ...(accountId ? { Account_Name: { id: accountId } } : {}),
           ...(contactId ? { Contact_Name: { id: contactId } } : {}),
           Stage: VICKY_DEAL_STAGE,
@@ -1520,13 +1526,28 @@ module.exports = async function handler(req, res) {
           }, true);
         }
       }
-      if (dealId && cliente.empresa && !ES_PLACEHOLDER.test(cliente.empresa)) {
+      // Deal REUSADO (nacido de un hito temprano): se completa lo que en ese
+      // momento no existía. El RUT es el caso típico (Lalo 10-ago, Embajada
+      // de Bélgica): el hito convierte el lead ANTES de que el cliente dé su
+      // RUT, así que Rut/ID Account queda vacío aunque la cuenta sí lo tenga.
+      // La emisión formal SIEMPRE trae RUT → se rellena si falta.
+      if (dealId && (cliente.empresa || cliente.rutEmpresa)) {
         const dl = await getRecord("Deals", dealId).catch(() => null);
-        if (dl && ES_PLACEHOLDER.test(toText(dl.Deal_Name))) {
-          await updateRecord("Deals", dealId, {
-            Deal_Name: `${cliente.empresa} (Control de Asistencia)`,
-            ...(cliente.userCount ? { N_Empleados_que_marcan: cliente.userCount } : {}),
-          }, true);
+        const patchDeal = {};
+        if (
+          dl &&
+          cliente.empresa &&
+          !ES_PLACEHOLDER.test(cliente.empresa) &&
+          ES_PLACEHOLDER.test(toText(dl.Deal_Name))
+        ) {
+          patchDeal.Deal_Name = `${cliente.empresa} (Control de Asistencia)`;
+          if (cliente.userCount) patchDeal.N_Empleados_que_marcan = cliente.userCount;
+        }
+        if (dl && cliente.rutEmpresa && !toText(dl.Rut_ID_Account)) {
+          patchDeal.Rut_ID_Account = cliente.rutEmpresa;
+        }
+        if (Object.keys(patchDeal).length) {
+          await updateRecord("Deals", dealId, patchDeal, true);
         }
       }
       if (contactId && (cliente.contactoEmail || cliente.contacto)) {
