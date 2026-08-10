@@ -1205,7 +1205,11 @@
         </div>
         <div class="content">
           <div class="fields">
-            <div>
+            <!-- Correo de contacto OCULTO (Lalo 10-ago): visible queda solo el de
+                 facturación, prellenado con el correo declarado en el chat y
+                 editable. El input sigue en el DOM porque el flujo de
+                 verificación (OTP) y las validaciones lo leen sin guard. -->
+            <div style="display:none">
               <label for="contactEmail">Correo de contacto (definido en cotización) *</label>
               <input id="contactEmail" type="email" readonly />
             </div>
@@ -2518,7 +2522,7 @@
             pdfLink.classList.add("disabled");
             pdfLink.removeAttribute("target");
           }
-          fields.billingEmail.value = q.billingEmail || "";
+          fields.billingEmail.value = q.billingEmail || q.contactEmail || "";
           fields.billingPhone.value = q.billingPhone || "";
           fields.contactEmail.value = q.contactEmail || "";
           fields.companyRut.value = q.companyRut || "";
