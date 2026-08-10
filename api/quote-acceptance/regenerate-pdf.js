@@ -28,6 +28,7 @@ const { tramoModuloCL } = require("../_shared/tramos-cl");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
+const { leerMesesDescuento } = require("../_shared/descuento-meses");
 const { ejecutivoPorOwner, resolverEjecutivoCL } = require("../_shared/ejecutivo-cl");
 const { getUFActualSafe } = require("../_shared/uf-actual");
 const { ufDeCotizacion } = require("../_shared/uf-cotizacion");
@@ -213,10 +214,13 @@ module.exports = async function handler(req, res) {
     }
 
     // Descuentos COMITEADOS actuales (no se tocan; solo se reflejan en el PDF).
+    // mesesPlan: vigencia propia de esta cotización si el ejecutivo la definió
+    // (Lalo 10-ago); null → política por defecto.
     const descuentos = {
       recurrentePct: Number(quote?.[config.quoteDiscountPctField] || 0),
       instalacionRMPct: Number(quote?.[config.quoteDiscountInstRMPctField] || 0),
       instalacionRegionPct: Number(quote?.[config.quoteDiscountInstRegionPctField] || 0),
+      mesesPlan: await leerMesesDescuento(quoteId, quote),
     };
 
     stage = "render_pdf";

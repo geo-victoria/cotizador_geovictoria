@@ -1,4 +1,10 @@
 const { verifyAcceptanceToken } = require("../_shared/acceptance-token");
+const { leerMesesDescuento } = require("../_shared/descuento-meses");
+const {
+  mesesDescuentoNormalizados,
+  textoVigenciaDescuento,
+  textoVigenciaCorto,
+} = require("../_shared/proposal-constants");
 const { getRecord, getRecordWithFields, getUserById, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { getMercadoPagoConfig } = require("../_shared/mercadopago-config");
@@ -342,6 +348,10 @@ export default async function handler(req, res) {
       instalacionRMPct: Number(quote?.[config.quoteDiscountInstRMPctField] || 0),
       instalacionRegionPct: Number(quote?.[config.quoteDiscountInstRegionPctField] || 0),
     };
+    // Vigencia del descuento del plan (Lalo 10-ago): por defecto 6 meses, pero
+    // el ejecutivo pudo fijar otra o dejarla indefinida (0). La página imprime
+    // el texto que viene de acá, para no tener el número escrito a mano.
+    const mesesDescuento = mesesDescuentoNormalizados(await leerMesesDescuento(payload.quoteId, quote));
 
     // Ruteo state-aware: una cotización ACEPTADA, con pagos habilitados y SIN
     // onboarding listo significa que falta el pago. Minteamos el link de pago
@@ -445,6 +455,12 @@ export default async function handler(req, res) {
       // solo en las líneas de hardware) con buckets pago inicial /
       // mensualidad (el front CO usa solo `co`). México: bloque `mx` (MXN,
       // IVA 16% por línea afecta, buckets pago inicial / mensualidad).
+      descuento: {
+        meses: mesesDescuento,
+        indefinido: mesesDescuento === 0,
+        texto: textoVigenciaDescuento(mesesDescuento),
+        textoCorto: textoVigenciaCorto(mesesDescuento),
+      },
       totals: {
         ...computeTotals(items, descuentos),
         ...(pais === "co" ? { co: computeTotalsCO(items) } : {}),

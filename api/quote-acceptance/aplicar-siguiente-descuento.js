@@ -39,7 +39,10 @@ const {
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { tramoModuloCL } = require("../_shared/tramos-cl");
-const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
+const {
+  DISCOUNT_LADDER,
+  mesesDescuentoNormalizados,
+} = require("../_shared/proposal-constants");
 const {
   normalizarIndiceGuardado,
   siguienteEscalonAplicable,
@@ -50,6 +53,7 @@ const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
+const { leerMesesDescuento } = require("../_shared/descuento-meses");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -218,7 +222,7 @@ function numeroParaPdf(numeroCotizacion, quoteId) {
   return String(quoteId || "").slice(-8).toUpperCase();
 }
 
-function buildMensajeParaProspecto(escalon, linkAceptacion) {
+function buildMensajeParaProspecto(escalon, linkAceptacion, mesesPlan) {
   let cuerpo;
   if (escalon.tipo === "instalacion_rm") {
     cuerpo = `Puedo aplicarte un ${escalon.pct}% de descuento en la instalación (Región Metropolitana).`;
@@ -232,8 +236,13 @@ function buildMensajeParaProspecto(escalon, linkAceptacion) {
   const esDescuentoPlan =
     escalon.tipo !== "instalacion_rm" && escalon.tipo !== "instalacion_region";
   if (esDescuentoPlan) {
+    // Vigencia real de ESTA cotización (Lalo 10-ago): por defecto 6 meses,
+    // pero el ejecutivo pudo fijar otra o dejarla indefinida.
+    const n = mesesDescuentoNormalizados(mesesPlan);
     partes.push(
-      `Aplica los primeros ${MESES_DESCUENTO_PLAN} meses; desde el mes ${MESES_DESCUENTO_PLAN + 1} el plan vuelve a su tarifa normal.`,
+      n === 0
+        ? "El descuento no tiene vencimiento: se mantiene mientras dure el servicio."
+        : `Aplica ${n === 1 ? "el primer mes" : `los primeros ${n} meses`}; desde el mes ${n + 1} el plan vuelve a su tarifa normal.`,
     );
   }
   if (escalon.condicionDiscursiva) partes.push(escalon.condicionDiscursiva);
@@ -336,6 +345,8 @@ module.exports = async function handler(req, res) {
     const descRecNuevo = descAcum.recurrentePct;
     const descRMNuevo = descAcum.instalacionRMPct;
     const descRegionNuevo = descAcum.instalacionRegionPct;
+    // Vigencia del descuento de ESTA cotización (null = política por defecto).
+    const mesesPlanQuote = await leerMesesDescuento(quoteId, quote);
 
     // 3. Versionar.
     stage = "version_bump";
@@ -379,6 +390,8 @@ module.exports = async function handler(req, res) {
         recurrentePct: descRecNuevo,
         instalacionRMPct: descRMNuevo,
         instalacionRegionPct: descRegionNuevo,
+        // Vigencia propia si el ejecutivo la definió (Lalo 10-ago).
+        mesesPlan: mesesPlanQuote,
       },
       condicionDiscursiva: escalon.condicionDiscursiva,
     });
@@ -444,7 +457,7 @@ module.exports = async function handler(req, res) {
         condicion_discursiva: escalon.condicionDiscursiva,
       },
       tope_alcanzado: topeAlcanzado,
-      mensaje_para_prospecto: buildMensajeParaProspecto(escalon, acceptanceUrl),
+      mensaje_para_prospecto: buildMensajeParaProspecto(escalon, acceptanceUrl, mesesPlanQuote),
     });
   } catch (error) {
     console.error(`[aplicar-siguiente-descuento] ERROR en stage=${stage}:`, error);

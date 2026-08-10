@@ -37,6 +37,7 @@ const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
+const { leerMesesDescuento } = require("../_shared/descuento-meses");
 const { ejecutivoPorOwner } = require("../_shared/ejecutivo-cl");
 const crypto = require("crypto");
 
@@ -216,6 +217,9 @@ module.exports = async function handler(req, res) {
       recurrentePct: Number(quote?.[config.quoteDiscountPctField] || 0),
       instalacionRMPct: Number(quote?.[config.quoteDiscountInstRMPctField] || 0),
       instalacionRegionPct: Number(quote?.[config.quoteDiscountInstRegionPctField] || 0),
+      // Vigencia propia del descuento si el ejecutivo la definió (Lalo 10-ago):
+      // un cambio de configuración no puede resetearla a los 6 por defecto.
+      mesesPlan: await leerMesesDescuento(quoteId, quote),
     };
 
     // ── FLUJO CONFIRMAR-UNA-VEZ (Lalo 07-ago): el editor interno manda

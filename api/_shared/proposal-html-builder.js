@@ -12,8 +12,11 @@
  *
  *   - version: número de versión del PDF (1 = original). Se pinta como "vN"
  *     junto al N° de cotización cuando >= 2.
- *   - descuentos: { recurrentePct, instalacionRMPct, instalacionRegionPct }.
- *     Si viene, los descuentos se aplican por línea en la tabla y al total.
+ *   - descuentos: { recurrentePct, instalacionRMPct, instalacionRegionPct,
+ *     mesesPlan }. Si viene, los descuentos se aplican por línea en la tabla y
+ *     al total. `mesesPlan` es la VIGENCIA del descuento del plan (Lalo
+ *     10-ago): vacío = política por defecto (6 meses), 0 = indefinido, N = N
+ *     meses. El texto sale siempre de textoVigenciaDescuento().
  *   - condicionDiscursiva: texto que se pinta al pie del bloque de totales
  *     (ej. "Este descuento aplica si pagas en 24 horas").
  *
@@ -26,7 +29,11 @@
  *   - Línea fija de Capacitación online sin costo en TODAS las cotizaciones.
  */
 
-const { LOGO_ORIGINAL_SVG, MESES_DESCUENTO_PLAN, PROPOSAL_TYC_ARRIENDO } = require("./proposal-constants");
+const {
+  LOGO_ORIGINAL_SVG,
+  PROPOSAL_TYC_ARRIENDO,
+  textoVigenciaDescuento,
+} = require("./proposal-constants");
 
 // Ventana de validez de la cotización (días).
 const VALIDEZ_DIAS = 30;
@@ -610,7 +617,7 @@ function buildProposalHtml({
   // items (arriba). En los totales no se repiten: solo el precio final. Se mantiene
   // la condición temporal del descuento del plan como disclosure (sin repetir %).
   if (descRecPct > 0) {
-    totHtml += `<div style="margin-top:6px;font-size:8px;line-height:1.4;color:#646464">El descuento sobre el plan mensual aplica durante los primeros ${MESES_DESCUENTO_PLAN} meses; desde el mes ${MESES_DESCUENTO_PLAN + 1} el plan vuelve a su tarifa normal. El descuento de instalación, por ser cobro único, no tiene esta limitación.</div>`;
+    totHtml += `<div style="margin-top:6px;font-size:8px;line-height:1.4;color:#646464">${escapeHtml(textoVigenciaDescuento(descuentos?.mesesPlan))}</div>`;
   }
   // Condición discursiva (ej. "paga en 24h"). No tiene enforcement técnico.
   if (condicionDiscursiva) {

@@ -30,6 +30,7 @@ const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
+const { leerMesesDescuento } = require("../_shared/descuento-meses");
 const {
   subformACotizacionItems,
   buildClienteParaHtml,
@@ -153,6 +154,8 @@ async function rescatarCotizacion(quoteId, config) {
     recurrentePct: Number(quote[config.quoteDiscountPctField] || 0),
     instalacionRMPct: Number(quote[config.quoteDiscountInstRMPctField] || 0),
     instalacionRegionPct: Number(quote[config.quoteDiscountInstRegionPctField] || 0),
+    // Vigencia propia del descuento si el ejecutivo la definió (Lalo 10-ago).
+    mesesPlan: await leerMesesDescuento(quoteId, quote),
   };
   const cliente = await buildClienteParaHtml(quote, config);
   const ufActual = await getUFActualSafe();

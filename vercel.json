@@ -32,6 +32,10 @@
       "memory": 1536,
       "maxDuration": 60
     },
+    "api/quote-acceptance/descuento-ejecutivo.js": {
+      "memory": 1536,
+      "maxDuration": 60
+    },
     "api/quote-acceptance/regenerate-pdf.js": {
       "memory": 1536,
       "maxDuration": 60

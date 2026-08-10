@@ -1378,7 +1378,7 @@
                 <ol class="terms terms-summary">
                   <li>El pago inicial incluye los conceptos de pago único (equipos, instalación y servicios iniciales) y el primer mes de servicio de la plataforma, cobrado por adelantado.</li>
                   <li>El valor mensual es referencial: el plan se factura en UF y se convierte a pesos con la UF del día de cada factura, por lo que el monto en CLP puede variar mes a mes según la UF. Además está sujeto a mantener la cantidad de usuarios de esta cotización: la variación de usuarios activos modifica el cobro mensual en la facturación del período siguiente.</li>
-                  <li>El descuento acordado sobre el plan mensual aplica durante los primeros 6 meses de servicio; a partir del septimo mes, el plan mensual vuelve a su tarifa normal (sin descuento). El descuento de instalación, por ser un cobro único, no tiene esta limitación. Ante variaciones de usuarios, la facturación recalcula el valor mensual sobre la tarifa por usuario vigente.</li>
+                  <li data-vigencia-descuento="con-recalculo">El descuento acordado sobre el plan mensual aplica durante los primeros 6 meses de servicio; a partir del septimo mes, el plan mensual vuelve a su tarifa normal (sin descuento). El descuento de instalación, por ser un cobro único, no tiene esta limitación. Ante variaciones de usuarios, la facturación recalcula el valor mensual sobre la tarifa por usuario vigente.</li>
                   <li>Vigencia comercial: 30 días corridos desde la emisión de la cotización.</li>
                   <li>Implementación estimada: 2 a 3 semanas desde recepción de planilla validada.</li>
                   <li>Atención comercial y soporte en horario habil de lunes a viernes.</li>
@@ -1445,10 +1445,10 @@
               según el valor de la UF. Además está sujeto a mantener la cantidad de usuarios de esta cotización: cualquier
               variación en el número de usuarios activos modifica el cobro mensual, ajuste que se refleja en la facturación
               del período siguiente. Facturación mensual según usuarios activos. Reajuste anual según IPC/UF cuando aplique.
-              El descuento acordado sobre el plan mensual aplica durante los primeros 6 meses de servicio; a partir del
-              septimo mes, el plan mensual vuelve a su tarifa normal (sin descuento). El descuento de instalación, por
-              ser un cobro único, no tiene esta limitación. Ante variaciones de usuarios, la facturación recalcula el
-              valor mensual sobre la tarifa por usuario vigente.
+              <span data-vigencia-descuento>El descuento acordado sobre el plan mensual aplica durante los primeros 6 meses de
+              servicio; a partir del septimo mes, el plan mensual vuelve a su tarifa normal (sin descuento). El descuento
+              de instalación, por ser un cobro único, no tiene esta limitación.</span> Ante variaciones de usuarios, la
+              facturación recalcula el valor mensual sobre la tarifa por usuario vigente.
             </li>
             <li>
               <strong>Servicios adicionales.</strong> Desarrollos, hardware u otros requerimientos fuera del servicio base
@@ -2416,6 +2416,42 @@
         return { ok: true };
       }
 
+      // ── VIGENCIA DEL DESCUENTO (Lalo 10-ago) ──────────────────────────────
+      // Antes esta página decía "primeros 6 meses" escrito a mano en cuatro
+      // partes. Ahora la vigencia es POR COTIZACIÓN (el ejecutivo la define:
+      // 1..N meses o indefinida) y viene del backend en data.descuento. Si el
+      // backend no la manda (deploy viejo), se conserva el texto por defecto.
+      var VIGENCIA_DESCUENTO = null;
+      var RECALCULO_USUARIOS =
+        " Ante variaciones de usuarios, la facturación recalcula el valor mensual sobre la tarifa por usuario vigente.";
+
+      function escapeHtml(texto) {
+        return String(texto == null ? "" : texto)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function vigenciaDescuentoTexto() {
+        if (VIGENCIA_DESCUENTO && VIGENCIA_DESCUENTO.texto) return VIGENCIA_DESCUENTO.texto;
+        return "El descuento sobre el plan mensual aplica durante los primeros 6 meses; desde el mes 7 el plan vuelve a su tarifa normal. El descuento de instalación, por ser cobro único, no tiene esta limitación.";
+      }
+
+      function vigenciaDescuentoCorto() {
+        if (VIGENCIA_DESCUENTO && VIGENCIA_DESCUENTO.textoCorto) return VIGENCIA_DESCUENTO.textoCorto;
+        return "primeros 6 meses";
+      }
+
+      function aplicarVigenciaDescuento(info) {
+        VIGENCIA_DESCUENTO = info && info.texto ? info : null;
+        if (!VIGENCIA_DESCUENTO) return;
+        var nodos = document.querySelectorAll("[data-vigencia-descuento]");
+        for (var i = 0; i < nodos.length; i++) {
+          var extra = nodos[i].getAttribute("data-vigencia-descuento") === "con-recalculo" ? RECALCULO_USUARIOS : "";
+          nodos[i].textContent = VIGENCIA_DESCUENTO.texto + extra;
+        }
+      }
+
       async function loadSession() {
         if (!token) {
           setStatus("Token no encontrado.", "warn");
@@ -2437,6 +2473,8 @@
           if (!data) return;
 
           const q = data.quote || {};
+          // Vigencia del descuento de ESTA cotización, antes de pintar nada.
+          aplicarVigenciaDescuento(data.descuento);
           // País de la cotización ("co" = Colombia). TODO el ajuste CO de esta
           // página cuelga de este flag; para Chile ("cl") nada cambia.
           const esCO = String(data.pais || "cl").toLowerCase() === "co";
@@ -2717,7 +2755,7 @@
           const descAplicados = [];
           if (descInstRMPct > 0) descAplicados.push(descInstRMPct + "% en instalaci&oacute;n (Regi&oacute;n Metropolitana)");
           if (descInstRegionPct > 0) descAplicados.push(descInstRegionPct + "% en instalaci&oacute;n (regiones)");
-          if (descRecPct > 0) descAplicados.push(descRecPct + "% en el plan mensual (primeros 6 meses)");
+          if (descRecPct > 0) descAplicados.push(descRecPct + "% en el plan mensual (" + vigenciaDescuentoCorto() + ")");
           if (descAplicados.length) {
             totalsRowsHtml +=
               '<tr><td colspan="8" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
@@ -2727,7 +2765,7 @@
           if (descRecPct > 0) {
             totalsRowsHtml +=
               '<tr><td colspan="8" style="font-size:11px;color:#6b7280;padding-top:4px;line-height:1.5">' +
-              "El descuento sobre el plan mensual aplica los primeros 6 meses; desde el mes 7 el plan vuelve a su tarifa normal. El descuento de instalaci&oacute;n, por ser cobro &uacute;nico, no tiene esta limitaci&oacute;n." +
+              escapeHtml(vigenciaDescuentoTexto()) +
               "</td></tr>";
           }
 

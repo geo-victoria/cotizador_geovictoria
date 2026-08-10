@@ -122,6 +122,41 @@ const DISCOUNT_LADDER = [
 // tiene esta limitación.) Cambiar acá si la política cambia.
 const MESES_DESCUENTO_PLAN = 6;
 
+// VIGENCIA POR COTIZACIÓN (Lalo 10-ago, caso Cigpa/Anderson): los 6 meses eran
+// una constante global y el ejecutivo NO podía moverla — ni acortarla ni
+// dejarla indefinida. Ahora cada cotización puede llevar su propia vigencia:
+//   null / undefined → política por defecto (MESES_DESCUENTO_PLAN)
+//   0                → INDEFINIDO (el descuento no vence)
+//   1..N             → esos meses
+// Estas dos funciones son la ÚNICA fuente del texto, para que PDF, correo y
+// página de aceptación digan exactamente lo mismo.
+function mesesDescuentoNormalizados(meses) {
+  if (meses === null || meses === undefined || meses === "") return MESES_DESCUENTO_PLAN;
+  const n = Math.trunc(Number(meses));
+  if (!Number.isFinite(n) || n < 0) return MESES_DESCUENTO_PLAN;
+  return Math.min(n, 120);
+}
+
+/** Frase de vigencia del descuento del plan. `meses` = 0 → indefinido. */
+function textoVigenciaDescuento(meses) {
+  const n = mesesDescuentoNormalizados(meses);
+  if (n === 0) {
+    return "El descuento sobre el plan mensual no tiene vencimiento: se mantiene mientras dure el servicio. El descuento de instalación, por ser cobro único, tampoco tiene limitación.";
+  }
+  if (n === 1) {
+    return "El descuento sobre el plan mensual aplica el primer mes; desde el mes 2 el plan vuelve a su tarifa normal. El descuento de instalación, por ser cobro único, no tiene esta limitación.";
+  }
+  return `El descuento sobre el plan mensual aplica durante los primeros ${n} meses; desde el mes ${n + 1} el plan vuelve a su tarifa normal. El descuento de instalación, por ser cobro único, no tiene esta limitación.`;
+}
+
+/** Versión corta para mensajes de chat/WhatsApp. */
+function textoVigenciaCorto(meses) {
+  const n = mesesDescuentoNormalizados(meses);
+  if (n === 0) return "sin vencimiento (se mantiene mientras dure el servicio)";
+  if (n === 1) return "aplica el primer mes";
+  return `aplica los primeros ${n} meses`;
+}
+
 module.exports = {
   PROPOSAL_INTRO,
   PROPOSAL_BENEFICIOS,
@@ -134,4 +169,7 @@ module.exports = {
   ISO_ORIGINAL_SVG,
   DISCOUNT_LADDER,
   MESES_DESCUENTO_PLAN,
+  mesesDescuentoNormalizados,
+  textoVigenciaDescuento,
+  textoVigenciaCorto,
 };

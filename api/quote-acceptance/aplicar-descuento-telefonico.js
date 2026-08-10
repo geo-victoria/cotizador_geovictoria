@@ -36,11 +36,12 @@ const {
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { tramoModuloCL } = require("../_shared/tramos-cl");
-const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
+const { DISCOUNT_LADDER, textoVigenciaCorto } = require("../_shared/proposal-constants");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
+const { leerMesesDescuento } = require("../_shared/descuento-meses");
 const { getUFActualSafe } = require("../_shared/uf-actual");
 const { ufDeCotizacion } = require("../_shared/uf-cotizacion");
 const crypto = require("crypto");
@@ -228,6 +229,8 @@ module.exports = async function handler(req, res) {
     // Instalación: se conserva lo que ya estaba comiteado.
     const descRM = Number(quote?.[config.quoteDiscountInstRMPctField] || 0);
     const descRegion = Number(quote?.[config.quoteDiscountInstRegionPctField] || 0);
+    // Vigencia propia del descuento si el ejecutivo la definió (Lalo 10-ago).
+    const mesesPlanQuote = await leerMesesDescuento(quoteId, quote);
 
     stage = "version_bump";
     const versionNueva = Math.max(1, Number(quote?.[config.quoteVersionPdfField] || 1)) + 1;
@@ -264,6 +267,7 @@ module.exports = async function handler(req, res) {
         recurrentePct: pctExacto,
         instalacionRMPct: descRM,
         instalacionRegionPct: descRegion,
+        mesesPlan: mesesPlanQuote,
       },
       condicionDiscursiva: CONDICION_TELEFONICA,
     });
@@ -315,7 +319,7 @@ module.exports = async function handler(req, res) {
       acceptance_url: acceptanceUrl,
       mensaje_para_prospecto:
         `Listo! Como acordamos por teléfono, te dejé el plan mensual con un ${pctExacto}% de descuento. ` +
-        `Aplica los primeros ${MESES_DESCUENTO_PLAN} meses; desde el mes ${MESES_DESCUENTO_PLAN + 1} el plan vuelve a su tarifa normal. ` +
+        `El descuento ${textoVigenciaCorto(mesesPlanQuote)}. ` +
         `${CONDICION_TELEFONICA} Aquí revisas, aceptas y pagas tu cotización actualizada: ${acceptanceUrl}`,
     });
   } catch (error) {
