@@ -1671,6 +1671,28 @@
         return String(value || "").trim().toLowerCase();
       }
 
+      async function prefillDesdeSii(companyRut) {
+        try {
+          var rut = String(companyRut || "").trim().replace(/\./g, "");
+          if (!/^\d{6,9}-[\dkK]$/.test(rut)) return;
+          var vacio = function (el) { return el && !String(el.value || "").trim(); };
+          if (!vacio(fields.companyGiro) && !vacio(fields.companyComuna) && !vacio(fields.companyAddress)) return;
+          var res = await fetch(
+            "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app/api/vic-sii-ficha?rut=" +
+              encodeURIComponent(rut),
+            { method: "GET" }
+          );
+          if (!res.ok) return;
+          var ficha = await res.json();
+          if (!ficha || ficha.ok !== true) return;
+          if (vacio(fields.companyGiro) && ficha.giro) fields.companyGiro.value = ficha.giro;
+          if (vacio(fields.companyComuna) && ficha.comuna) fields.companyComuna.value = ficha.comuna;
+          if (vacio(fields.companyAddress) && ficha.direccion) fields.companyAddress.value = ficha.direccion;
+        } catch (e) {
+          /* best-effort: sin SII el formulario queda como siempre */
+        }
+      }
+
       function maskEmailForHint(value) {
         const email = normalizeEmail(value);
         if (!email || !email.includes("@")) return "";
@@ -2529,6 +2551,13 @@
           fields.companyGiro.value = q.companyGiro || "";
           fields.companyComuna.value = q.companyComuna || "";
           fields.companyAddress.value = q.companyAddress || "";
+          // PRELLENADO SII (Lalo 10-ago): con el RUT de la cotización se piden
+          // giro/comuna/dirección al padrón público y se rellenan SOLO los
+          // campos que el chat dejó vacíos (lo declarado en la conversación
+          // SIEMPRE gana, y si el cliente ya tipeó algo, tampoco se pisa).
+          // Best-effort: si el servicio no responde, el formulario queda como
+          // siempre. La conversación de Vicky no participa en nada de esto.
+          prefillDesdeSii(q.companyRut || "");
           verificationState.maskedEmailHint = maskEmailForHint(fields.contactEmail.value);
           updateVerifyTargetHint(verificationState.maskedEmailHint);
           flowState.acceptedLocked = q.isAcceptedLocked === true;
