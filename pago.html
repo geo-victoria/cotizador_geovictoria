@@ -368,13 +368,36 @@
               '<button class="btn" id="payCardBtn">Pagar con tarjeta ' + fmtMonto(a.oneShotClp) + "</button>" +
               '<p class="pay-note">El pago con tarjeta es inmediato y seguro. Todo lo gestiona Mercado Pago.</p>' +
               "</div>"
-            : '<div id="payMethods">' +
-              '<button class="btn" id="payCardBtn">Pagar con tarjeta ' + fmtMonto(a.oneShotClp) + "</button>" +
-              '<button class="btn secondary" id="payTransferBtn">Pagar por transferencia</button>' +
-              '<p class="pay-note">El pago con tarjeta es inmediato y seguro. ' +
-              "Por transferencia, te mostramos los datos y le envías el comprobante a Vicky por WhatsApp.</p>" +
-              "</div>" +
-              transferPanelHtml(state);
+            : (function () {
+                // Recargo tarjeta >$100.000 (Lalo 10-ago): espejo de la regla
+                // del servidor (MP_RECARGO_UMBRAL_CLP/MP_RECARGO_PCT, defaults
+                // 100000/3). El botón muestra el TOTAL real con recargo y la
+                // transferencia queda explícita como camino sin costo extra.
+                var RECARGO_UMBRAL = 100000;
+                var RECARGO_PCT = 3;
+                var conRecargo = a.oneShotClp > RECARGO_UMBRAL;
+                var totalTarjeta = conRecargo
+                  ? Math.round(a.oneShotClp * (1 + RECARGO_PCT / 100))
+                  : a.oneShotClp;
+                var nota = conRecargo
+                  ? '<p class="pay-note">El pago con tarjeta es inmediato y seguro; sobre $100.000 incluye un ' +
+                    RECARGO_PCT +
+                    "% de recargo del medio de pago. Por transferencia pagas " +
+                    fmtMonto(a.oneShotClp) +
+                    " sin recargo: te mostramos los datos y le envías el comprobante a Vicky por WhatsApp.</p>"
+                  : '<p class="pay-note">El pago con tarjeta es inmediato y seguro. ' +
+                    "Por transferencia, te mostramos los datos y le envías el comprobante a Vicky por WhatsApp.</p>";
+                return (
+                  '<div id="payMethods">' +
+                  '<button class="btn" id="payCardBtn">Pagar con tarjeta ' + fmtMonto(totalTarjeta) + "</button>" +
+                  '<button class="btn secondary" id="payTransferBtn">Pagar por transferencia' +
+                  (conRecargo ? " " + fmtMonto(a.oneShotClp) : "") +
+                  "</button>" +
+                  nota +
+                  "</div>" +
+                  transferPanelHtml(state)
+                );
+              })();
           contentEl.innerHTML =
             '<div class="amount-box">' + rows + "</div>" +
             monthlyNote +

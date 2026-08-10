@@ -115,6 +115,29 @@ export default async function handler(req, res) {
       });
     }
 
+    // RECARGO TARJETA sobre $100.000 (Lalo 10-ago): hasta ese monto, pagar
+    // con Mercado Pago no tiene costo extra para el cliente; sobre el umbral
+    // se traspasa un 3% como LÍNEA VISIBLE del checkout (transparencia — y
+    // en montos grandes el camino sin recargo es la transferencia). Umbral y
+    // porcentaje por env; MP_RECARGO_PCT=0 lo apaga. Solo Chile: la regla es
+    // en CLP y Colombia no tiene transferencia como alternativa.
+    let recargoClp = 0;
+    if (session.pais !== "co") {
+      const recargoUmbral = Number(process.env.MP_RECARGO_UMBRAL_CLP || 100000);
+      const recargoPct = Number(process.env.MP_RECARGO_PCT || 3);
+      if (recargoPct > 0 && amounts.oneShotClp > recargoUmbral) {
+        recargoClp = Math.round((amounts.oneShotClp * recargoPct) / 100);
+        items.push({
+          id: `qa-${quoteId}-recargo-tarjeta`,
+          title: `Recargo pago con tarjeta (${recargoPct}%) — ${etiquetaReporte}`.slice(0, 256),
+          description: "Sin costo pagando por transferencia bancaria",
+          quantity: 1,
+          unit_price: recargoClp,
+          currency_id: mpConfig.currencyId,
+        });
+      }
+    }
+
     // Petición de FINANZAS (30-jul): que el registro del pago diga QUIÉN paga.
     // El payer con nombre + identificación queda visible en la actividad y los
     // reportes de Mercado Pago; empresa y nombre van además en metadata (junto
@@ -170,7 +193,8 @@ export default async function handler(req, res) {
       skipped: false,
       preferenceId: toText(created?.id),
       initPoint: pickInitPoint(created, mpConfig),
-      amountClp: amounts.oneShotClp,
+      amountClp: amounts.oneShotClp + recargoClp,
+      recargoClp,
       currencyId: mpConfig.currencyId,
     });
   } catch (error) {
