@@ -58,13 +58,14 @@ async function parseBody(req) {
 }
 
 function validateRequiredInput(fields) {
-  // Giro/comuna/direccion se capturan DESPUES del pago (Rodrigo 09-ago):
-  // son datos de FACTURA, no de pago — la factura se emite cuando lleguen
-  // (onboarding/ejecutivo). Cada campo antes de pagar cuesta ventas.
-  // Sin datos requeridos del form (Rodrigo 09-ago): correo, telefono y RUT
-  // ya viven en la cotizacion (los entrego el chat); el form solo aporta lo
-  // que traiga. El unico candado real es tener ALGUN correo (mas abajo).
-  const required = [];
+  const required = [
+    ["billingEmail", "correo de facturacion"],
+    ["billingPhone", "telefono de facturacion"],
+    ["companyGiro", "giro"],
+    ["companyRut", "RUT de empresa"],
+    ["companyComuna", "comuna"],
+    ["companyAddress", "direccion"],
+  ];
   const missing = required
     .filter(([key]) => !toText(fields?.[key]))
     .map(([, label]) => label);
@@ -296,13 +297,7 @@ export default async function handler(req, res) {
     const currentOnboardingUrl = toText(quote?.[config.quoteOnboardingUrlField]);
     const currentOnboardingLookup = toText(quote?.[config.quoteOnboardingLookupField]?.id);
     let authoritativeContactEmail = normalizeEmail(quote?.[config.contactEmailField]);
-    // Correo de facturacion POSPUESTO (Rodrigo 09-ago): si el form no lo trae,
-    // se asume el correo de contacto de la cotizacion — la captura post-pago
-    // de datos de factura puede entregar uno distinto y ahi se actualiza.
-    let billingEmailFromForm = normalizeEmail(acceptanceData?.billingEmail);
-    if (!isValidEmail(billingEmailFromForm) && isValidEmail(authoritativeContactEmail)) {
-      billingEmailFromForm = authoritativeContactEmail;
-    }
+    const billingEmailFromForm = normalizeEmail(acceptanceData?.billingEmail);
 
     const currentStatus = toText(quote?.[config.quoteStatusField]);
     const alreadyAccepted = /Aceptada/i.test(currentStatus);
