@@ -859,8 +859,14 @@ function buildSubformItems(items, ufActual, config) {
   return items.map((item, index) => {
     const modalidadZoho = mapModalidadToZoho(item.modalidad);
     const tipo = String(item.tipo || "").toLowerCase();
-    const precioUnitarioUF = Number(item.precioUnitarioUF || 0);
-    const subtotalUF = Number(item.subtotalUF || 0);
+    // Precisión de los campos double del subform en Zoho: Precio_Unitario_UF y
+    // Subtotal_UF aceptan 3 decimales; un cuarto decimal tumba el createRecord
+    // completo con INVALID_DATA (caso VADIBA 11-ago: 0,090 UF con 25% dcto =
+    // 0,0675). El cobro real usa Subtotal_UF, así que redondear el unitario es
+    // solo cosmético — igual que la calculadora, que muestra 0,068/u y cobra
+    // el subtotal exacto.
+    const precioUnitarioUF = Number((Number(item.precioUnitarioUF) || 0).toFixed(3));
+    const subtotalUF = Number((Number(item.subtotalUF) || 0).toFixed(3));
     const precioUnitarioCLP = ufActual > 0 ? Math.round(precioUnitarioUF * ufActual) : 0;
     const subtotalCLP = ufActual > 0 ? Math.round(subtotalUF * ufActual) : 0;
     // Zona tarifa: solo para items de servicio que la traen explícita. Se usa
