@@ -966,6 +966,11 @@ module.exports = async function handler(req, res) {
     const cliente = body.cliente || {};
     const cotizacion = body.cotizacion || {};
     const existing = body.existing || {};
+    // CANAL EJECUTIVO (Lalo 11-ago, principio 4 de la cotizadora): la emisión
+    // desde el agente de ejecutivos NO toca al cliente por ningún canal — el
+    // correo con el PDF queda suprimido y la entrega es siempre un botón
+    // humano (WhatsApp del ejecutivo, Vicky o correo desde el editor).
+    const sinCorreoCliente = body.sinCorreoCliente === true;
     // Descuento negociado en el preform (forma "siguiente índice" = escalón+1).
     // 0 = sin descuento. Si > 0, la cotización nace ya con ese descuento y el
     // PDF v1 refleja el precio acordado (un solo PDF, sin regenerar).
@@ -1906,7 +1911,10 @@ module.exports = async function handler(req, res) {
         // Sin correo del contacto no hay envío: la entrega corre por WhatsApp
         // (PDF adjunto + link). El respaldo por correo se ofrece en el chat y
         // recién ahí se pide la dirección.
-        if (cliente.contactoEmail) await sendQuoteEmailViaZoho({
+        if (sinCorreoCliente) {
+          console.log(`[create-from-vicky] correo al cliente SUPRIMIDO (canal ejecutivo) quote=${quoteId}`);
+        }
+        if (cliente.contactoEmail && !sinCorreoCliente) await sendQuoteEmailViaZoho({
           quoteModule: config.quoteModule,
           quoteId,
           fromEmail: VICKY_FROM_EMAIL,
