@@ -1617,6 +1617,19 @@ module.exports = async function handler(req, res) {
           "3525045000000200013", // GeoVictoria Admin (info@) — dueño fantasma
           // de leads del formulario; no es gestión humana (Lalo 07-ago).
         ]);
+        // CANAL EJECUTIVO (Lalo 11-ago, caso COT476/V&D): cuando el flujo
+        // admin/editor ancla la emisión a un deal (existing.ownerId), la
+        // cotización SIGUE al dueño del deal aunque sea Eddyluz — la marca de
+        // "interina histórica" es del canal autónomo de WhatsApp, no del
+        // trabajo real del roster en la app. Vicky y el admin fantasma siguen
+        // siendo interinos siempre.
+        if (
+          ownerManualId &&
+          ownerManualId !== "3525045000484500876" &&
+          ownerManualId !== "3525045000000200013"
+        ) {
+          DUENOS_INTERINOS.delete(ownerManualId);
+        }
         if (ownerManualId) {
           await zohoApiFetch(`/crm/v3/Deals`, {
             method: "PUT",
@@ -1658,7 +1671,13 @@ module.exports = async function handler(req, res) {
       // REUSADOS no se tocan: pueden traer gestión de un SDR. Con skip de
       // assignment_rules (convención: los updates de owner que no pasan por la
       // regla no la disparan). Best-effort.
-      if (toText(quoteOwner.id) && quoteOwner.id !== VICKY_BOT_OWNER.id && quoteOwner.id !== EJEC_OWNER_ID) {
+      // (Eddyluz cuenta como dueña real solo si el canal admin la ancló —
+      // misma excepción del bloque de arriba.)
+      if (
+        toText(quoteOwner.id) &&
+        quoteOwner.id !== VICKY_BOT_OWNER.id &&
+        (quoteOwner.id !== EJEC_OWNER_ID || ownerManualId === EJEC_OWNER_ID)
+      ) {
         const seguirDueno = async (mod, id) => {
           try {
             await zohoApiFetch(`/crm/v3/${mod}`, {
