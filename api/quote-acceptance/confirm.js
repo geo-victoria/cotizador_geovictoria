@@ -92,7 +92,7 @@ function buildPaymentSessionToken(mpConfig, { quoteId, dealId, billingEmail, pai
       // pais viaja SOLO cuando es "co" (viene del token de aceptación firmado
       // por create-from-vicky-co): así payment-session sabe que debe cobrar con
       // la app MP Colombia sin ir a Zoho, y el token chileno queda idéntico.
-      ...(toText(pais).toLowerCase() === "co" ? { pais: "co" } : {}),
+      ...(["co", "pe"].includes(toText(pais).toLowerCase()) ? { pais: toText(pais).toLowerCase() } : {}),
       exp: Date.now() + ttlMinutes * 60 * 1000,
     },
     "payment_session"

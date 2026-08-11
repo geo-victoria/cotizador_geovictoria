@@ -184,10 +184,14 @@
 
         function fmtMonto(value) {
           try {
-            return new Intl.NumberFormat(paisPago === "co" ? "es-CO" : "es-CL", {
+            var locale = paisPago === "co" ? "es-CO" : paisPago === "pe" ? "es-PE" : "es-CL";
+            // PEN usa céntimos (el descuento de cierre 20% los produce);
+            // CLP/COP van a peso entero como siempre.
+            var maxFrac = paisPago === "pe" ? 2 : 0;
+            return new Intl.NumberFormat(locale, {
               style: "currency",
               currency: monedaPago,
-              maximumFractionDigits: 0,
+              maximumFractionDigits: maxFrac,
             }).format(Number(value || 0));
           } catch (e) {
             return "$" + Number(value || 0).toLocaleString("es-CL");
@@ -329,6 +333,7 @@
 
         function renderOneShot(state) {
           var esCO = paisPago === "co";
+          var esPE = paisPago === "pe";
           var a = state.amounts;
           var hasFirstMonth = Number(a.firstMonthClp || 0) > 0;
           var rows = "";
@@ -345,12 +350,14 @@
           }
           // CO: textos en usted; el pago inicial ES la Activación (equivale al
           // primer mes cobrado por adelantado, sin línea de "primer mes" extra).
-          var lead = esCO
+          var lead = esPE
+            ? "Realiza el pago inicial de tu cotización. La Activación equivale a tu primer mes de servicio, cobrado por adelantado. Serás redirigido a Mercado Pago para completarlo de forma segura."
+            : esCO
             ? "Realice el pago inicial de su cotización. La Activación equivale a su primer mes de servicio, cobrado por adelantado. Será redirigido a Mercado Pago para completarlo de forma segura."
             : hasFirstMonth
             ? "Realiza el pago inicial, que incluye los servicios iniciales y el primer mes de servicio. Seras redirigido a Mercado Pago para completarlo de forma segura."
             : "Realiza el pago unico de los servicios iniciales. Seras redirigido a Mercado Pago para completarlo de forma segura.";
-          var monthlyNote = esCO
+          var monthlyNote = esCO || esPE
             ? '<p style="font-size:12px;color:var(--suave);margin:-4px 0 14px">' +
               "La mensualidad del servicio se factura por separado desde el mes siguiente y varía según sus usuarios activos de cada período." +
               "</p>"
@@ -363,7 +370,9 @@
           // CO: SOLO tarjeta — no hay cuenta bancaria CO configurada todavía
           // (pendiente de negocio, COLOMBIA.md). JAMÁS mostrar los datos de
           // transferencia chilenos (Victoria S.A / Banco de Chile) a un cliente CO.
-          var methodsHtml = esCO
+          // PE: SOLO tarjeta vía MP Perú — no hay cuenta bancaria PE
+          // configurada para transferencias; JAMÁS mostrar los datos chilenos.
+          var methodsHtml = esCO || esPE
             ? '<div id="payMethods">' +
               '<button class="btn" id="payCardBtn">Pagar con tarjeta ' + fmtMonto(a.oneShotClp) + "</button>" +
               '<p class="pay-note">El pago con tarjeta es inmediato y seguro. Todo lo gestiona Mercado Pago.</p>' +
@@ -495,9 +504,10 @@
         }
 
         function renderDone(state) {
-          // CO: mismos estados que Chile pero en usted y sin mencionar
-          // "suscripción" (en Colombia no hay suscripción MP; se factura).
-          var esCO = paisPago === "co";
+          // CO/PE: mismos estados que Chile pero sin mencionar "suscripción"
+          // (la mensualidad va por facturación). CO en usted; PE reusa ese
+          // texto (neutro y correcto también en tuteo peruano).
+          var esCO = paisPago === "co" || paisPago === "pe";
           if (state.onboarding.ready && state.onboarding.url) {
             contentEl.innerHTML = esCO
               ? '<div class="center">' +
@@ -574,7 +584,7 @@
             // País/moneda ANTES de renderizar: todos los formatos y textos
             // condicionados por CO dependen de estas dos variables.
             paisPago = String(state.pais || "cl").toLowerCase();
-            monedaPago = String(state.currencyId || (paisPago === "co" ? "COP" : "CLP"));
+            monedaPago = String(state.currencyId || (paisPago === "co" ? "COP" : paisPago === "pe" ? "PEN" : "CLP"));
             loadingEl.classList.add("hidden");
             contentEl.classList.remove("hidden");
             if (state.quote && state.quote.name) {
@@ -600,6 +610,8 @@
               "Pagos procesados por Mercado Pago." +
               (paisPago === "co"
                 ? " Montos en pesos colombianos (COP)."
+                : paisPago === "pe"
+                ? " Montos en soles (PEN), IGV incluido."
                 : state.includeIva
                 ? " Montos con IVA incluido."
                 : "");

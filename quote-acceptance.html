@@ -2168,6 +2168,70 @@
         );
       }
 
+      // PEN (Perú): S/1,234.56 (es-PE, céntimos solo cuando existen). Solo se
+      // usa cuando la sesión viene con pais === "pe".
+      function fmtPEN(value) {
+        var n = Math.round(Number(value || 0) * 100) / 100;
+        return (
+          "S/" +
+          n.toLocaleString("es-PE", {
+            minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+            maximumFractionDigits: 2,
+          })
+        );
+      }
+
+      // ── Ajustes PERÚ (solo cuando la sesión trae pais === "pe") ──
+      // Mismo patrón que applyCountryCO/MX: retoques puntuales sobre el DOM
+      // estático. Tuteo, PEN, IGV 18 % en TODOS los conceptos, términos
+      // espejo del PDF PE (proposal-html-builder-pe.js).
+      function applyCountryPE() {
+        var pricingSection = document.getElementById("sectionPricing");
+        if (pricingSection) pricingSection.style.display = "none";
+        var costHead = document.querySelector("#sectionCosts .cost-table thead tr");
+        if (costHead) {
+          costHead.innerHTML =
+            "<th>Item</th><th>Tipo</th><th>Modalidad</th><th>Cant.</th>" +
+            "<th>Precio Unit.</th><th>Subtotal (PEN)</th>";
+        }
+        var summary = document.querySelector("#sectionTerms .terms-summary");
+        if (summary) {
+          summary.innerHTML = [
+            "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único e incluye la Activación, equivalente al primer mes de servicio cobrado por adelantado. La mensualidad se factura desde el mes siguiente.",
+            "Valores netos en soles (PEN); a todos los conceptos se les aplica IGV (18 %).",
+            "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
+            "Envío e instalación del reloj sin costo en Lima Metropolitana. El envío a provincia corre por cuenta del cliente; la instalación fuera de Lima se coordina con nuestro servicio técnico y se cotiza aparte.",
+            "Para los equipos en modalidad arriendo: el servicio incluye mantención y reposición por falla técnica; los equipos son propiedad de GeoVictoria y deben devolverse al término del servicio.",
+            "Los equipos en modalidad venta incluyen garantía de fábrica de 1 año bajo uso normal.",
+            "Sin cláusula de permanencia: puedes terminar el servicio avisando con 30 días de anticipación.",
+            "Incluye sin costo: soporte de lunes a viernes de 8:30 a 18:30, actualizaciones, app móvil y portal del colaborador.",
+            "Plataforma cloud en Microsoft Azure con uptime garantizado de 99,5 %.",
+            "Cotización válida por 30 días desde su emisión.",
+          ]
+            .map(function (t) { return "<li>" + t + "</li>"; })
+            .join("");
+        }
+        var fullTermsBtn = document.getElementById("openTermsModalBtn");
+        if (fullTermsBtn) fullTermsBtn.style.display = "none";
+        // Formulario de facturación en términos peruanos.
+        var rutLabel = document.querySelector('label[for="companyRut"]');
+        if (rutLabel) rutLabel.textContent = "RUC *";
+        var rutInput = document.getElementById("companyRut");
+        if (rutInput) rutInput.placeholder = "Ej: 20605842055";
+        var comunaLabel = document.querySelector('label[for="companyComuna"]');
+        if (comunaLabel) comunaLabel.textContent = "Distrito / Provincia *";
+        var comunaInput = document.getElementById("companyComuna");
+        if (comunaInput) comunaInput.placeholder = "Escribe tu distrito o provincia";
+        var giroLabel = document.querySelector('label[for="companyGiro"]');
+        if (giroLabel) giroLabel.textContent = "Actividad económica *";
+        var giroInput = document.getElementById("companyGiro");
+        if (giroInput) giroInput.placeholder = "Escribe tu actividad económica";
+        // "Capacitación inicial" en servicios sin costo: en Perú NO existe.
+        document.querySelectorAll("#sectionIncluded .included-table tbody tr").forEach(function (tr) {
+          if (/capacitaci/i.test(tr.textContent || "")) tr.remove();
+        });
+      }
+
       // ── Ajustes MÉXICO (solo cuando la sesión trae pais === "mx") ──
       // Mismo patrón que applyCountryCO: retoques puntuales sobre el DOM
       // estático, sin tocar el flujo chileno. Tuteo (como CL), MXN, IVA 16%,
@@ -2523,8 +2587,10 @@
           // México ("mx"): misma mecánica que CO — todos los ajustes MX de esta
           // página cuelgan de este flag; para Chile nada cambia.
           const esMX = String(data.pais || "cl").toLowerCase() === "mx";
+          const esPE = String(data.pais || "cl").toLowerCase() === "pe";
           if (esCO) applyCountryCO();
           if (esMX) applyCountryMX();
+          if (esPE) applyCountryPE();
           // Autocompletados de Comuna (lista de comunas chilenas) y Giro
           // (catálogo SII con códigos): SOLO Chile. En CO/MX esos catálogos no
           // aplican (22-jul: un cliente MX veía comunas de Chile y giros SII
@@ -2557,7 +2623,7 @@
           // SIEMPRE gana, y si el cliente ya tipeó algo, tampoco se pisa).
           // Best-effort: si el servicio no responde, el formulario queda como
           // siempre. La conversación de Vicky no participa en nada de esto.
-          prefillDesdeSii(q.companyRut || "");
+          if (!esCO && !esMX && !esPE) prefillDesdeSii(q.companyRut || "");
           verificationState.maskedEmailHint = maskEmailForHint(fields.contactEmail.value);
           updateVerifyTargetHint(verificationState.maskedEmailHint);
           flowState.acceptedLocked = q.isAcceptedLocked === true;
@@ -2615,6 +2681,22 @@
                 "</tr>"
               );
             }
+            if (esPE) {
+              // Perú: 6 columnas sin UF; subtotalClp guarda PEN (convención
+              // "unidad de pricing del país"). IGV 18 % en TODOS los
+              // conceptos: la tabla muestra netos y los totales desglosan.
+              const montoPen = Number(row.subtotalClp || 0);
+              return (
+                "<tr>" +
+                "<td>" + (row.nombre || "-") + "</td>" +
+                "<td>" + inferItemType(row) + "</td>" +
+                "<td>" + normalizeModalidadLabel(row) + "</td>" +
+                "<td>" + Number(row.cantidad || 0) + "</td>" +
+                "<td>" + fmtPEN(row.precioUnitarioClp) + "</td>" +
+                "<td>" + fmtPEN(montoPen) + "</td>" +
+                "</tr>"
+              );
+            }
             if (esCO) {
               // Colombia: 6 columnas sin UF; subtotalClp guarda COP (convención
               // "unidad de pricing del país"). IVA (10-jul refinado): SOLO el
@@ -2666,7 +2748,7 @@
 
           const itemRowsHtml = rows.length
             ? rows.map(itemRowHtml).join("")
-            : '<tr><td colspan="' + (esCO || esMX ? 6 : 8) + '">Sin datos.</td></tr>';
+            : '<tr><td colspan="' + (esCO || esMX || esPE ? 6 : 8) + '">Sin datos.</td></tr>';
 
           // Valor mensual: el servidor ya entrega el recurrente NETO (con el
           // descuento aplicado). Mostramos el bruto tachado cuando hay descuento.
@@ -2714,6 +2796,40 @@
               '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
               "El <b>Pago inicial</b> se cobra al aceptar y corresponde a los conceptos de pago &uacute;nico (capacitaci&oacute;n y, si aplica, equipos, env&iacute;o e instalaci&oacute;n). " +
               "La <b>mensualidad</b> se factura desde la activaci&oacute;n del servicio; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
+              "</td></tr>";
+          } else if (esPE) {
+            // Perú: totales del bloque `pe` del servidor (computeTotalsPE,
+            // IGV 18 % por línea afecta — en PE: todas). La Activación ya es
+            // el primer mes COMPLETO cobrado por adelantado.
+            const pe = totals.pe || {};
+            totalsRowsHtml =
+              '<tr class="cost-row-sub"><td colspan="5">Pago único (incluye Activación)</td><td>' +
+              fmtPEN(pe.pagoInicialNetoPen) + "</td></tr>";
+            if (Number(pe.pagoInicialIgvPen || 0) > 0) {
+              totalsRowsHtml +=
+                '<tr class="cost-row-sub"><td colspan="5">IGV (18 %)</td><td>' +
+                fmtPEN(pe.pagoInicialIgvPen) + "</td></tr>";
+            }
+            totalsRowsHtml +=
+              '<tr class="cost-row-total"><td colspan="5">Pago inicial — al aceptar</td><td>' +
+              fmtPEN(pe.pagoInicialPen) + "</td></tr>";
+            if (Number(pe.mensualidadPen || 0) > 0) {
+              totalsRowsHtml +=
+                '<tr class="cost-row-sub"><td colspan="5">Mensualidad del servicio (neto)</td><td>' +
+                fmtPEN(pe.mensualidadNetaPen) + "</td></tr>";
+              if (Number(pe.mensualidadIgvPen || 0) > 0) {
+                totalsRowsHtml +=
+                  '<tr class="cost-row-sub"><td colspan="5">IGV (18 %)</td><td>' +
+                  fmtPEN(pe.mensualidadIgvPen) + "</td></tr>";
+              }
+              totalsRowsHtml +=
+                '<tr class="cost-row-sub"><td colspan="5">Mensualidad — desde el mes siguiente</td><td>' +
+                fmtPEN(pe.mensualidadPen) + "/mes</td></tr>";
+            }
+            totalsRowsHtml +=
+              '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
+              "El <b>Pago inicial</b> se cobra al aceptar; la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado. " +
+              "La <b>mensualidad</b> se factura desde el mes siguiente; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
               "</td></tr>";
           } else if (esCO) {
             // Colombia: totales del bloque `co` del servidor (computeTotalsCO

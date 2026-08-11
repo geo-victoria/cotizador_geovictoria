@@ -14,6 +14,8 @@ const {
   computePaymentAmountsCO,
   computeTotalsCO,
   computeTotalsMX,
+  computeTotalsPE,
+  computePaymentAmountsPE,
 } = require("../_shared/quote-pricing");
 
 // Minteo del link de pago para un cliente que VUELVE a una cotización ya
@@ -26,9 +28,9 @@ function buildPaymentUrlForQuote(mpConfig, { quoteId, dealId, billingEmail, pais
       quoteId,
       dealId,
       billingEmail,
-      // pais solo viaja cuando es "co": payment-session cobra con la app MP
-      // Colombia sin ir a Zoho; el token chileno queda idéntico al de siempre.
-      ...(toText(pais).toLowerCase() === "co" ? { pais: "co" } : {}),
+      // pais viaja cuando es "co" o "pe": payment-session cobra con la app MP
+      // del país sin ir a Zoho; el token chileno queda idéntico al de siempre.
+      ...(["co", "pe"].includes(toText(pais).toLowerCase()) ? { pais: toText(pais).toLowerCase() } : {}),
       exp: Date.now() + ttlMinutes * 60 * 1000,
     },
     "payment_session"
@@ -315,7 +317,9 @@ export default async function handler(req, res) {
         ? "mx"
         : paisToken === "co" || /colombia/i.test(territorioDeal)
           ? "co"
-          : "cl";
+          : paisToken === "pe" || /per[u\u00fa]/i.test(territorioDeal)
+            ? "pe"
+            : "cl";
 
     // La asociación de deal puede cambiar legítimamente DESPUÉS de emitido el
     // link (consolidación de duplicados, reparaciones — caso vaitiare 31-jul:
@@ -380,6 +384,8 @@ export default async function handler(req, res) {
     const pagoInicialClp = needsPayment
       ? pais === "co"
         ? computePaymentAmountsCO(items).oneShotClp
+        : pais === "pe"
+        ? computePaymentAmountsPE(items).oneShotClp
         : computePaymentAmounts(items, descuentos, {
             includeIva: mpConfig.includeIva,
             includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
@@ -465,6 +471,7 @@ export default async function handler(req, res) {
         ...computeTotals(items, descuentos),
         ...(pais === "co" ? { co: computeTotalsCO(items) } : {}),
         ...(pais === "mx" ? { mx: computeTotalsMX(items) } : {}),
+        ...(pais === "pe" ? { pe: computeTotalsPE(items) } : {}),
       },
     });
   } catch (error) {

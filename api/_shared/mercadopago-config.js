@@ -198,11 +198,78 @@ function getMercadoPagoConfigForQuoteCO(req, quote, acceptanceConfig) {
   };
 }
 
+// ── Multi-país: PERÚ ────────────────────────────────────────────────────────
+// Variante para la cuenta de MercadoPago de GEOVICTORIA PERU S.A.C. (site
+// MPE). Mismo patrón que Colombia: credenciales, clave de webhook y moneda
+// propias (envs *_PE). El webhook decide el país validando la firma contra
+// todas las claves. La Activación PE ya incluye el primer mes → nunca se
+// suma un "primer mes" extra desde el env chileno.
+function getMercadoPagoConfigPE(req) {
+  const base = getMercadoPagoConfig(req);
+  return {
+    ...base,
+    pais: "pe",
+    accessToken: toText(process.env.MP_ACCESS_TOKEN_PE),
+    publicKey: toText(process.env.MP_PUBLIC_KEY_PE),
+    webhookSecret: toText(process.env.MP_WEBHOOK_SECRET_PE),
+    currencyId: toText(process.env.MP_CURRENCY_ID_PE || "PEN"),
+    oneShotTitle: toText(process.env.MP_ONESHOT_TITLE_PE || "Pago inicial GeoVictoria Perú"),
+    oneShotIncludeFirstMonth: false,
+  };
+}
+
+// ── Carril de PRUEBA PERÚ (espejo del CO): la empresa de prueba pasa por el
+// checkout con credenciales SANDBOX de la app PE — flujo completo con
+// tarjetas de prueba, sin cobros reales. FAIL-SAFE: sin envs sandbox se
+// lanza error explícito, jamás se cae a producción en silencio.
+function isTestLaneQuotePE(quote, acceptanceConfig) {
+  if (!quote) return false;
+  const testRucs = (toText(process.env.TEST_LANE_PE_RUC) || "20605842055")
+    .split(",").map((s) => String(s).replace(/\D/g, "")).filter(Boolean);
+  const testNames = (toText(process.env.TEST_LANE_PE_NAME) || "Prueba Vicky PE SAC")
+    .split(",").map((s) => s.trim().toLowerCase().replace(/\s+/g, "")).filter(Boolean);
+  const ruc = String(
+    quote?.[acceptanceConfig?.companyRutField] || quote?.RUT_Cliente || quote?.RUT || ""
+  ).replace(/\D/g, "");
+  const companyName = toText(
+    quote?.Cuenta_Asociada?.name || quote?.Account_Name?.name || quote?.CRM_ACCOUNT
+  ).toLowerCase().replace(/\s+/g, "");
+  if (ruc && testRucs.includes(ruc)) return true;
+  if (companyName && testNames.includes(companyName)) return true;
+  return false;
+}
+
+function getMercadoPagoConfigForQuotePE(req, quote, acceptanceConfig) {
+  const base = getMercadoPagoConfigPE(req);
+  if (!isTestLaneQuotePE(quote, acceptanceConfig)) return base;
+
+  const testAccessToken = toText(process.env.MP_TEST_ACCESS_TOKEN_PE);
+  const testPublicKey = toText(process.env.MP_TEST_PUBLIC_KEY_PE);
+  if (!testAccessToken) {
+    throw new Error(
+      "Carril de prueba PE: la cotizacion es de la empresa de prueba pero faltan las credenciales " +
+        "sandbox (MP_TEST_ACCESS_TOKEN_PE / MP_TEST_PUBLIC_KEY_PE). No se usa produccion como fallback."
+    );
+  }
+  return {
+    ...base,
+    accessToken: testAccessToken,
+    publicKey: testPublicKey,
+    environment: "test",
+    // Igual que CO: NO bajar isProduction — con credenciales de prueba el
+    // init_point normal funciona; el sandbox_init_point está deprecado.
+    testLane: true,
+  };
+}
+
 module.exports = {
   MP_API_BASE,
   getMercadoPagoConfig,
   getMercadoPagoConfigCO,
   getMercadoPagoConfigForQuoteCO,
+  getMercadoPagoConfigPE,
+  getMercadoPagoConfigForQuotePE,
+  isTestLaneQuotePE,
   isTestLaneQuote,
   isTestLaneQuoteCO,
   pickInitPoint,

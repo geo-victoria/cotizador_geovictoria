@@ -1,6 +1,6 @@
 const { toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
-const { getMercadoPagoConfig, getMercadoPagoConfigCO } = require("../_shared/mercadopago-config");
+const { getMercadoPagoConfig, getMercadoPagoConfigCO, getMercadoPagoConfigPE } = require("../_shared/mercadopago-config");
 const {
   getPayment,
   getPreapproval,
@@ -106,6 +106,17 @@ export default async function handler(req, res) {
           signature = firmaCO;
           mpConfig = mpConfigCO;
           console.log("[mp-webhook] firma validada con la app de COLOMBIA");
+        }
+      }
+    }
+    if (!signature.valid) {
+      const mpConfigPE = getMercadoPagoConfigPE(req);
+      if (mpConfigPE.webhookSecret) {
+        const firmaPE = validateWebhookSignature({ ...firmaArgs, secret: mpConfigPE.webhookSecret });
+        if (firmaPE.valid) {
+          signature = firmaPE;
+          mpConfig = mpConfigPE;
+          console.log("[mp-webhook] firma validada con la app de PERÚ");
         }
       }
     }

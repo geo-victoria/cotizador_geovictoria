@@ -26,9 +26,10 @@ const {
   clampDescuentoPct,
   computePaymentAmounts,
   computePaymentAmountsCO,
+  computePaymentAmountsPE,
 } = require("./quote-pricing");
-const { getMercadoPagoConfigForQuoteCO } = require("./mercadopago-config");
-const { esCotizacionCO } = require("./payment-session");
+const { getMercadoPagoConfigForQuoteCO, getMercadoPagoConfigForQuotePE } = require("./mercadopago-config");
+const { esCotizacionCO, esCotizacionPE } = require("./payment-session");
 const {
   searchPaymentsByExternalReference,
   searchPreapprovalByExternalReference,
@@ -167,9 +168,13 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
   const pais =
     mpConfig?.pais === "co" || (await esCotizacionCO(quote, null, acceptanceConfig))
       ? "co"
-      : "cl";
+      : mpConfig?.pais === "pe" || (await esCotizacionPE(quote, null, acceptanceConfig))
+        ? "pe"
+        : "cl";
   if (pais === "co") {
     mpConfig = getMercadoPagoConfigForQuoteCO(null, quote, acceptanceConfig);
+  } else if (pais === "pe") {
+    mpConfig = getMercadoPagoConfigForQuotePE(null, quote, acceptanceConfig);
   }
 
   const items = sanitizeItems(quote?.[acceptanceConfig.quoteItemsSubformField]);
@@ -177,13 +182,16 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
   const amounts =
     pais === "co"
       ? computePaymentAmountsCO(items)
-      : computePaymentAmounts(items, descuentoPct, { includeIva: mpConfig.includeIva });
+      : pais === "pe"
+        ? computePaymentAmountsPE(items)
+        : computePaymentAmounts(items, descuentoPct, { includeIva: mpConfig.includeIva });
 
   const hasOneShot = amounts.oneShotClp > 0;
   // La suscripcion recurrente esta desactivada hasta integrar usuarios activos/mes.
   // CO: NUNCA hay suscripción MP (la mensualidad va por facturación a 30 días,
   // COLOMBIA.md) — se excluye aunque algún día se encienda el env global.
-  const hasSubscription = pais !== "co" && mpConfig.subscriptionEnabled && amounts.recurringClp > 0;
+  // CO y PE: la mensualidad va por facturación (jamás suscripción MP).
+  const hasSubscription = pais === "cl" && mpConfig.subscriptionEnabled && amounts.recurringClp > 0;
 
   let oneShotApproved = !hasOneShot;
   if (hasOneShot) {
@@ -252,8 +260,8 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
     // El finalize downstream (onboarding + NDV) corre IGUAL que Chile también
     // para CO (decisión paso 4 COLOMBIA.md); si algo resulta Chile-específico
     // se ajustará en fase 2 CO. Se deja traza para diagnosticar esos casos.
-    if (pais === "co") {
-      console.log(`[finalize] cotizacion CO ${quoteId}: pago confirmado, finalize estandar (fase 2 CO pendiente para pasos Chile-especificos).`);
+    if (pais === "co" || pais === "pe") {
+      console.log(`[finalize] cotizacion ${pais.toUpperCase()} ${quoteId}: pago confirmado, finalize estandar (pasos Chile-especificos se ajustan si aparecen).`);
     }
     const result = await finalizeAfterPayment({
       config: acceptanceConfig,

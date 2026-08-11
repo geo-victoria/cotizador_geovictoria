@@ -275,6 +275,73 @@ function computePaymentAmountsCO(items) {
   };
 }
 
+// ── PERÚ ────────────────────────────────────────────────────────────────────
+// Totales PE — IGV 18% POR LÍNEA según Afecto_IVA (en Perú TODOS los
+// conceptos son afectos: el agente marca afectoIgv=true en todo; el flag por
+// línea queda por si negocio exime algo). Convención espejo de COLOMBIA.md:
+// el subform guarda PEN en los campos *_CLP/*_UF. La Activación (pago único)
+// ES el primer mes COMPLETO cobrado por adelantado (plan + arriendos, patrón
+// CL) → jamás se suma un "primer mes" extra. Redondeo a céntimos (2
+// decimales, como MX): el descuento de cierre 20% produce céntimos exactos.
+const IGV_RATE_PE = 0.18;
+
+function computeTotalsPE(items) {
+  const rows = Array.isArray(items) ? items : [];
+  const r2 = (v) => Math.round(v * 100) / 100;
+  let pagoInicialNeto = 0;
+  let pagoInicialIgv = 0;
+  let mensualidadNeta = 0;
+  let mensualidadIgv = 0;
+
+  rows.forEach((row) => {
+    const montoPen = toNumber(row?.subtotalClp);
+    const igvPen = row?.afectoIva === true ? montoPen * IGV_RATE_PE : 0;
+    if (isRecurrentModalidad(row?.modalidad)) {
+      mensualidadNeta += montoPen;
+      mensualidadIgv += igvPen;
+    } else {
+      pagoInicialNeto += montoPen;
+      pagoInicialIgv += igvPen;
+    }
+  });
+
+  return {
+    pagoInicialNetoPen: r2(pagoInicialNeto),
+    pagoInicialIgvPen: r2(pagoInicialIgv),
+    pagoInicialPen: r2(pagoInicialNeto + pagoInicialIgv),
+    mensualidadNetaPen: r2(mensualidadNeta),
+    mensualidadIgvPen: r2(mensualidadIgv),
+    mensualidadPen: r2(mensualidadNeta + mensualidadIgv),
+  };
+}
+
+/**
+ * Montos a cobrar de una cotización PERÚ, en el MISMO shape que
+ * computePaymentAmounts (los campos *Clp llevan PEN, misma convención del
+ * subform). Pago único = no recurrentes (la Activación ya es el primer mes
+ * completo adelantado) + IGV 18% por línea afecta; firstMonthClp = 0 siempre.
+ */
+function computePaymentAmountsPE(items) {
+  const totals = computeTotalsPE(items);
+  return {
+    oneShotClp: totals.pagoInicialPen,
+    oneShotItemsClp: totals.pagoInicialPen,
+    firstMonthClp: 0,
+    recurringClp: totals.mensualidadPen,
+    includeIva: true,
+    includeFirstMonth: false,
+    descuentoPct: 0,
+    descuentos: { recurrentePct: 0, instalacionRMPct: 0, instalacionRegionPct: 0 },
+    breakdown: {
+      oneShotNetClp: totals.pagoInicialNetoPen,
+      oneShotIvaClp: totals.pagoInicialIgvPen,
+      recurringNetClp: totals.mensualidadNetaPen,
+      recurringIvaClp: totals.mensualidadIgvPen,
+    },
+    pe: totals,
+  };
+}
+
 // ── MÉXICO ──────────────────────────────────────────────────────────────────
 // Totales MX — IVA 16% POR LÍNEA según el flag Afecto_IVA del subform (en MX,
 // a diferencia de CO, el IVA aplica en general a servicios Y hardware: el
@@ -340,5 +407,7 @@ module.exports = {
   computePaymentAmounts,
   computeTotalsCO,
   computePaymentAmountsCO,
+  computeTotalsPE,
+  computePaymentAmountsPE,
   computeTotalsMX,
 };

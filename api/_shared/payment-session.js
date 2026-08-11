@@ -13,13 +13,14 @@
 
 const { getRecord, getRecordWithFields, toText } = require("./zoho-crm");
 const { getAcceptanceConfig } = require("./quote-acceptance-config");
-const { getMercadoPagoConfig, getMercadoPagoConfigForQuoteCO } = require("./mercadopago-config");
+const { getMercadoPagoConfig, getMercadoPagoConfigForQuoteCO, getMercadoPagoConfigForQuotePE } = require("./mercadopago-config");
 const { verifyVerificationToken, normalizeEmail } = require("./verification-token");
 const {
   sanitizeItems,
   clampDescuentoPct,
   computePaymentAmounts,
   computePaymentAmountsCO,
+  computePaymentAmountsPE,
 } = require("./quote-pricing");
 
 const PAYMENT_SESSION_PURPOSE = "payment_session";
@@ -41,6 +42,17 @@ async function esCotizacionCO(quote, tokenPayload, acceptanceConfig) {
   // comportamiento previo), nunca se rompe la sesión de pago por esto.
   const deal = await getRecordWithFields("Deals", dealId, ["id", "Territorio"]).catch(() => null);
   return /colombia/i.test(toText(deal?.Territorio));
+}
+
+/** true si la cotización es PERÚ. Mismo mecanismo que CO: token firmado con
+ * pais:"pe" (create-from-vicky-pe) y respaldo Territorio del Deal = "Perú". */
+async function esCotizacionPE(quote, tokenPayload, acceptanceConfig) {
+  if (toText(tokenPayload?.pais).toLowerCase() === "pe") return true;
+  const dealField = toText(acceptanceConfig?.quoteDealLookupField) || "Deal_Asociado";
+  const dealId = toText(quote?.[dealField]?.id || quote?.[dealField]);
+  if (!dealId) return false;
+  const deal = await getRecordWithFields("Deals", dealId, ["id", "Territorio"]).catch(() => null);
+  return /per[uú]/i.test(toText(deal?.Territorio));
 }
 
 async function resolvePaymentSession(req, token) {
@@ -69,11 +81,17 @@ async function resolvePaymentSession(req, token) {
   // País de la cotización: define credenciales de MP (app CO en COP vs app CL
   // en CLP) y la fórmula de montos (CO: IVA 19% solo en líneas de hardware,
   // resto precios finales — vs flag global chileno).
-  const pais = (await esCotizacionCO(quote, payload, acceptanceConfig)) ? "co" : "cl";
+  const pais = (await esCotizacionCO(quote, payload, acceptanceConfig))
+    ? "co"
+    : (await esCotizacionPE(quote, payload, acceptanceConfig))
+      ? "pe"
+      : "cl";
   const mpConfig =
     pais === "co"
       ? getMercadoPagoConfigForQuoteCO(req, quote, acceptanceConfig)
-      : getMercadoPagoConfig(req);
+      : pais === "pe"
+        ? getMercadoPagoConfigForQuotePE(req, quote, acceptanceConfig)
+        : getMercadoPagoConfig(req);
 
   const items = sanitizeItems(quote?.[acceptanceConfig.quoteItemsSubformField]);
   const descuentos = {
@@ -87,6 +105,10 @@ async function resolvePaymentSession(req, token) {
         // hardware); la Activación ya es el primer mes → sin "primer mes"
         // adicional. Sin descuentos v1.
         computePaymentAmountsCO(items)
+      : pais === "pe"
+      ? // PE: pago único = no recurrentes (Activación = primer mes completo
+        // adelantado) + IGV 18% por línea afecta (en PE: todas).
+        computePaymentAmountsPE(items)
       : computePaymentAmounts(items, descuentos, {
           includeIva: mpConfig.includeIva,
           includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
@@ -118,4 +140,5 @@ module.exports = {
   PAYMENT_SESSION_PURPOSE,
   resolvePaymentSession,
   esCotizacionCO,
+  esCotizacionPE,
 };

@@ -81,7 +81,7 @@ export default async function handler(req, res) {
     // saber de qué empresa era cada pago. El título ahora lleva número de
     // cotización + empresa + RUT/NIT; el cliente lo ve igual en el checkout
     // (informativo, no molesta).
-    const idTributario = session.pais === "co" ? "NIT" : "RUT";
+    const idTributario = session.pais === "co" ? "NIT" : session.pais === "pe" ? "RUC" : "RUT";
     const etiquetaReporte = [
       toText(session.quote?.Numero_Cotizacion) || `Cotizacion ${quoteId}`,
       toText(session.quote?.Cuenta_Asociada?.name),
@@ -122,7 +122,10 @@ export default async function handler(req, res) {
     // porcentaje por env; MP_RECARGO_PCT=0 lo apaga. Solo Chile: la regla es
     // en CLP y Colombia no tiene transferencia como alternativa.
     let recargoClp = 0;
-    if (session.pais !== "co") {
+    // Solo CHILE: el umbral es en CLP y la alternativa sin recargo es la
+    // transferencia local. CO nunca lo tuvo; PE (montos en PEN) tampoco —
+    // aplicarle el umbral chileno a soles cobraría 3% casi nunca/mal.
+    if (session.pais !== "co" && session.pais !== "pe") {
       const recargoUmbral = Number(process.env.MP_RECARGO_UMBRAL_CLP || 100000);
       const recargoPct = Number(process.env.MP_RECARGO_PCT || 3);
       if (recargoPct > 0 && amounts.oneShotClp > recargoUmbral) {
@@ -158,7 +161,7 @@ export default async function handler(req, res) {
       ...(session.companyRut
         ? {
             identification: {
-              type: session.pais === "co" ? "NIT" : "RUT",
+              type: session.pais === "co" ? "NIT" : session.pais === "pe" ? "RUC" : "RUT",
               number: session.companyRut,
             },
           }

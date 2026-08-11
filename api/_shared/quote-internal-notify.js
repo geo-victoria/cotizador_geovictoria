@@ -47,6 +47,14 @@ const NOTIFY_RECIPIENTS_MX = (
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+const NOTIFY_RECIPIENTS_PE = (
+  process.env.QUOTE_NOTIFY_RECIPIENTS_PE ||
+  "egomez@geovictoria.com,mmendozav@geovictoria.com,rlewit@geovictoria.com"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 const SUPPRESS_DOMAINS = (process.env.QUOTE_NOTIFY_SUPPRESS_DOMAINS || "geovictoria.com")
   .split(",")
   .map((s) => s.trim().toLowerCase())
@@ -93,6 +101,27 @@ async function esCotizacionMX(quote, config) {
   if (!dealId) return false;
   const deal = await getRecordWithFields("Deals", dealId, ["id", "Territorio"]).catch(() => null);
   return /m[eé]xico/i.test(toText(deal?.Territorio));
+}
+
+/** true si la cotización es PERÚ: token del link de aceptación con pais:"pe"
+ * (create-from-vicky-pe); respaldo Territorio del Deal = "Perú". */
+async function esCotizacionPEnotify(quote, config) {
+  try {
+    const url = toText(quote?.[config?.quoteAcceptanceUrlField || "URL_Aceptacion_Web"]);
+    const m = String(url || "").match(/[?&]token=([^&]+)/);
+    if (m) {
+      const body = decodeURIComponent(m[1]).split(".")[0];
+      const json = Buffer.from(body.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+      if (String(JSON.parse(json)?.pais || "").toLowerCase() === "pe") return true;
+    }
+  } catch (_e) {
+    /* sigue al respaldo por Territorio */
+  }
+  const dealField = toText(config?.quoteDealLookupField) || "Deal_Asociado";
+  const dealId = toText(quote?.[dealField]?.id || quote?.[dealField]);
+  if (!dealId) return false;
+  const deal = await getRecordWithFields("Deals", dealId, ["id", "Territorio"]).catch(() => null);
+  return /per[u\u00fa]/i.test(toText(deal?.Territorio));
 }
 
 function fmtClp(n) {
@@ -312,6 +341,7 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
     // siempre.
     const esCO = await esCotizacionCO(quote, null, config).catch(() => false);
     const esMX = !esCO && (await esCotizacionMX(quote, config).catch(() => false));
+    const esPE = !esCO && !esMX && (await esCotizacionPEnotify(quote, config).catch(() => false));
     // PROPIETARIO del trato/cotización SIEMPRE copiado (Lalo 31-jul): primero
     // el Owner de la cotización; si no viene, el Owner del deal. Dedup contra
     // la base y jamás el robot Vicky.
@@ -320,7 +350,7 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
       const dealOwner = await getRecordWithFields("Deals", dealId, ["Owner"]).catch(() => null);
       ownerEmail = toText(dealOwner?.Owner?.email);
     }
-    const base = esCO ? NOTIFY_RECIPIENTS_CO : esMX ? NOTIFY_RECIPIENTS_MX : NOTIFY_RECIPIENTS;
+    const base = esCO ? NOTIFY_RECIPIENTS_CO : esMX ? NOTIFY_RECIPIENTS_MX : esPE ? NOTIFY_RECIPIENTS_PE : NOTIFY_RECIPIENTS;
     const vistos = new Set();
     const recipients = [...base, ownerEmail].filter((e) => {
       const low = String(e || "").trim().toLowerCase();
@@ -329,7 +359,7 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
       return true;
     });
     await sendInternalMail({ quoteModule: config.quoteModule, quoteId, subject, htmlBody, recipients });
-    console.log(`[quote-notify] enviado evento=${evento} quote=${numero || quoteId} pais=${esCO ? "co" : esMX ? "mx" : "cl"} → ${recipients.join(", ")}`);
+    console.log(`[quote-notify] enviado evento=${evento} quote=${numero || quoteId} pais=${esCO ? "co" : esMX ? "mx" : esPE ? "pe" : "cl"} → ${recipients.join(", ")}`);
     // Además del correo: aviso por WhatsApp (best-effort, no bloquea).
     await notifyWhatsApp({ evento, empresa, numero, montoClp, quoteId });
   } catch (err) {
