@@ -91,7 +91,7 @@ const DESC_PLAN_PE =
 const DESC_ACTIVACION_PE =
   "Habilitación y configuración inicial del servicio. Equivale al primer mes del plan, cobrado por adelantado.";
 const DESC_EQUIPO_PE =
-  "Reloj biométrico de control de asistencia (facial y huella), con conexión WiFi y Ethernet. Envío e instalación sin costo en Lima Metropolitana.";
+  "Reloj biométrico de control de asistencia (facial y huella), con conexión WiFi y Ethernet. Envío sin costo en Lima Metropolitana.";
 
 function esItemActivacion(item) {
   const tipo = String(item.tipo || "").toLowerCase();
@@ -206,7 +206,7 @@ function buildProposalHtmlPE({
     "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único e incluye la Activación, equivalente al primer mes de servicio cobrado por adelantado. La mensualidad se factura desde el mes siguiente.",
     "Valores netos en soles (PEN); a todos los conceptos se les aplica IGV (18 %).",
     "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
-    "Envío e instalación del reloj sin costo en Lima Metropolitana. El envío a provincia corre por cuenta del cliente; la instalación fuera de Lima se coordina con nuestro servicio técnico y se cotiza aparte.",
+    "Envío del reloj sin costo en Lima Metropolitana; a provincia corre por cuenta del cliente (lo usual es la entrega en Lima). La instalación con visita técnica se coordina con nuestro servicio técnico y puede tener costo según el distrito (tarifario oficial por zonas, en dólares + IGV, facturado aparte por servicio técnico); la auto-instalación no tiene costo.",
     "Para los equipos en modalidad arriendo: el servicio incluye mantención y reposición por falla técnica; los equipos son propiedad de GeoVictoria y deben devolverse al término del servicio.",
     "Sin cláusula de permanencia: usted puede terminar el servicio avisando con 30 días de anticipación.",
     "Los equipos en modalidad venta incluyen garantía de fábrica de 1 año bajo uso normal.",
