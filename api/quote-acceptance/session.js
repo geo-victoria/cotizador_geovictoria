@@ -151,7 +151,12 @@ function computeTotals(items, descuentos = 0) {
       ahorroInstalacionUf += brutoUf * (1 - factor);
       ahorroInstalacionClp += brutoClp * (1 - factor);
     } else if (recurrente) {
-      factor = factorRec;
+      // El descuento del plan mensual aplica SOLO al software (asistencia),
+      // NO al arriendo de hardware — mismo criterio que computePaymentAmounts
+      // y el PDF (desalineación cazada 11-ago con COT453: la página
+      // descontaba los relojes que el checkout cobraba completos).
+      const esArriendoHw = String(row?.modalidad || "").toLowerCase().includes("arriendo");
+      factor = esArriendoHw ? 1 : factorRec;
     }
 
     const netUf = brutoUf * factor;

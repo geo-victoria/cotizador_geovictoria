@@ -122,6 +122,10 @@ module.exports = async function handler(req, res) {
     const config = getAcceptanceConfig(req);
     const body = parseBody(req);
     const quoteId = toText(body.quoteId);
+    // Canal ejecutivo/admin (Lalo 11-ago, "deja de enviar cotizaciones
+    // automáticamente"): con sinCorreoCliente la regeneración NO manda el
+    // correo al cliente — la entrega es botón humano. Vicky no lo pasa.
+    const sinCorreoCliente = body.sinCorreoCliente === true;
     const cotizacion = body.cotizacion || {};
     const items = Array.isArray(cotizacion.items) ? cotizacion.items : [];
     const ufActual = Number(cotizacion.ufActual || 0);
@@ -270,7 +274,7 @@ module.exports = async function handler(req, res) {
         }, true);
         // Propaga al puntero de Supabase (principio Lalo 07-ago: el PDF nuevo en TODOS lados)
         await actualizarPunteroPdf(quoteId, pdfUrl);
-        if (contactoEmail) {
+        if (contactoEmail && !sinCorreoCliente) {
           const tieneReloj = items.some((it) => it && it.tipo === "hardware");
           await sendQuoteEmailViaZoho({
             quoteModule: config.quoteModule,
