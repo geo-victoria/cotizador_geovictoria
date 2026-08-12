@@ -2,10 +2,8 @@ const { toText } = require("../_shared/zoho-crm");
 const { resolvePaymentSession } = require("../_shared/payment-session");
 const {
   searchPaymentsByExternalReference,
-  searchPreapprovalByExternalReference,
   buildExternalReference,
   hasApprovedPayment,
-  isPreapprovalActive,
 } = require("../_shared/mercadopago-client");
 const { finalizeAfterPayment } = require("../_shared/post-payment-finalize");
 
@@ -61,14 +59,16 @@ export default async function handler(req, res) {
     }
 
     const hasOneShot = amounts.oneShotClp > 0;
-    // La suscripcion recurrente esta desactivada hasta integrar usuarios activos/mes.
-    // CO: NUNCA hay suscripción MP (mensualidad por facturación a 30 días).
-    const hasSubscription = pais !== "co" && mpConfig.subscriptionEnabled && amounts.recurringClp > 0;
+    // Suscripción MP RETIRADA (Lalo 12-ago): la mensualidad SIEMPRE va por
+    // facturación; el único cobro online es el pago inicial. El contrato del
+    // JSON conserva el bloque subscription (not_required) por compatibilidad
+    // con pago.html cacheados.
+    const hasSubscription = false;
 
     let oneShotApproved = !hasOneShot;
     let oneShotStatus = hasOneShot ? "pending" : "not_required";
-    let subscriptionAuthorized = !hasSubscription;
-    let subscriptionStatus = hasSubscription ? "pending" : "not_required";
+    const subscriptionAuthorized = true;
+    const subscriptionStatus = "not_required";
 
     if (hasOneShot) {
       try {
@@ -85,22 +85,6 @@ export default async function handler(req, res) {
       }
     }
 
-    if (hasSubscription) {
-      try {
-        const preapprovals = await searchPreapprovalByExternalReference(
-          mpConfig,
-          buildExternalReference(quoteId, "sub")
-        );
-        // Puede haber mas de un preapproval para la misma cotizacion (reintentos):
-        // basta con que ALGUNO este autorizado.
-        const activePreapproval = (preapprovals || []).find(isPreapprovalActive);
-        subscriptionAuthorized = Boolean(activePreapproval);
-        subscriptionStatus =
-          toText(activePreapproval?.status || preapprovals?.[0]?.status) || "pending";
-      } catch (_error) {
-        subscriptionStatus = "unknown";
-      }
-    }
 
     const paymentsComplete = oneShotApproved && subscriptionAuthorized;
 

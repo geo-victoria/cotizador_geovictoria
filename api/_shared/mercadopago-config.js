@@ -87,11 +87,9 @@ function getMercadoPagoConfig(req) {
     // Suscripcion recurrente: desactivada por ahora. El monto recurrente varia
     // por usuarios activos/mes (input aun no integrado), asi que por defecto solo
     // se cobra el pago unico. Encender con MP_SUBSCRIPTION_ENABLED=true.
-    subscriptionEnabled: toBool(process.env.MP_SUBSCRIPTION_ENABLED, false),
     // Cobrar el primer mes de servicio por adelantado dentro del pago unico.
     oneShotIncludeFirstMonth: toBool(process.env.MP_ONESHOT_INCLUDE_FIRST_MONTH, true),
     statementDescriptor: toText(process.env.MP_STATEMENT_DESCRIPTOR || "GEOVICTORIA"),
-    subscriptionReason: toText(process.env.MP_SUBSCRIPTION_REASON || "Suscripcion GeoVictoria"),
     oneShotTitle: toText(process.env.MP_ONESHOT_TITLE || "Servicios iniciales GeoVictoria"),
     paymentSessionTtlMinutes: toInt(process.env.MP_PAYMENT_SESSION_TTL_MINUTES, 1440),
     baseUrl,

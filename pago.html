@@ -156,9 +156,9 @@
     <script>
       (function () {
         var token = new URLSearchParams(window.location.search).get("token") || "";
-        // El back_url del preapproval no puede llevar el token (limite de longitud
-        // de Mercado Pago), por lo que al volver de la suscripcion la URL no lo trae.
-        // Lo persistimos al cargar y lo recuperamos desde localStorage si falta.
+        // Al volver de Mercado Pago la URL puede no traer el token (limites de
+        // longitud del back_url). Lo persistimos al cargar y lo recuperamos
+        // desde localStorage si falta.
         try {
           if (token) {
             window.localStorage.setItem("gv_mp_token", token);
@@ -204,19 +204,18 @@
         }
 
         function setSteps(currentStep, state) {
-          // Si la suscripcion no aplica, ocultamos su paso y renumeramos.
-          var subActive = state.subscription.required;
+          // Suscripcion MP RETIRADA (Lalo 12-ago): la mensualidad va por
+          // facturacion. Solo quedan los pasos de pago inicial y onboarding.
           var pills = stepsBar.querySelectorAll(".step-pill");
           pills.forEach(function (pill) {
             var step = pill.getAttribute("data-step");
             pill.classList.remove("active", "done");
             if (step === "sub") {
-              pill.style.display = subActive ? "" : "none";
-              if (!state.subscription.required || state.subscription.authorized) pill.classList.add("done");
+              pill.style.display = "none";
             } else if (step === "oneshot") {
               if (!state.oneShot.required || state.oneShot.approved) pill.classList.add("done");
             } else if (step === "done") {
-              pill.textContent = (subActive ? "3" : "2") + " · Onboarding";
+              pill.textContent = "2 · Onboarding";
               if (state.onboarding.ready) pill.classList.add("done");
             }
             if (step === currentStep) pill.classList.add("active");
@@ -226,7 +225,6 @@
         function currentStepOf(state) {
           if (state.onboarding.ready) return "done";
           if (state.oneShot.required && !state.oneShot.approved) return "oneshot";
-          if (state.subscription.required && !state.subscription.authorized) return "sub";
           return "done";
         }
 
@@ -345,9 +343,6 @@
             "Pago inicial total",
             "<strong>" + fmtMonto(a.oneShotClp) + "</strong>"
           );
-          if (state.subscription.required) {
-            rows += amountRow("Suscripcion mensual", fmtMonto(a.recurringClp) + " <small>/mes</small>");
-          }
           // CO: textos en usted; el pago inicial ES la Activación (equivale al
           // primer mes cobrado por adelantado, sin línea de "primer mes" extra).
           var lead = esPE
@@ -493,25 +488,6 @@
           );
         }
 
-        function renderSubscription(state) {
-          contentEl.innerHTML =
-            '<div class="amount-box">' +
-            (state.oneShot.required
-              ? '<div class="amount-row"><span class="label">Pago inicial</span>' +
-                '<span class="value" style="color:var(--ok)">Pagado ✓</span></div>'
-              : "") +
-            '<div class="amount-row"><span class="label">Suscripcion mensual</span>' +
-            '<span class="value">' + fmtMonto(state.amounts.recurringClp) +
-            ' <small>/mes</small></span></div>' +
-            "</div>" +
-            "<h2>Paso 2: Activa tu suscripcion</h2>" +
-            '<p class="lead">Autoriza el cobro mensual recurrente en Mercado Pago. ' +
-            "No ingresaras datos de tarjeta en este sitio: todo lo gestiona Mercado Pago.</p>" +
-            '<button class="btn" id="subBtn">Activar suscripcion mensual</button>';
-          document.getElementById("subBtn").addEventListener("click", function () {
-            startStep("/api/payments/create-subscription", "Conectando con Mercado Pago...");
-          });
-        }
 
         function renderDone(state) {
           // CO/PE: mismos estados que Chile pero sin mencionar "suscripción"
@@ -530,7 +506,7 @@
                 "</div>"
               : '<div class="center">' +
                 '<h2>¡Pago confirmado! 🎉</h2>' +
-                '<p class="lead">Tu pago y suscripcion estan activos. ' +
+                '<p class="lead">Tu pago esta confirmado. ' +
                 "En unos segundos te llevaremos a tu auto-onboarding para configurar tu plataforma.</p>" +
                 '<p class="lead">📧 Tambien te enviamos el link del auto-onboarding a tu correo: ' +
                 "puedes completarlo cuando quieras — mientras antes lo hagas, antes queda lista tu plataforma.</p>" +
@@ -561,7 +537,7 @@
               : '<div class="center">' +
                 '<div class="spinner"></div>' +
                 '<h2>Confirmando tu pago</h2>' +
-                '<p class="lead">Estamos validando tu pago y suscripcion con Mercado Pago. ' +
+                '<p class="lead">Estamos validando tu pago con Mercado Pago. ' +
                 "Esto puede tardar unos segundos...</p>" +
                 "</div>";
             if (state.finalizeError) {
@@ -606,9 +582,6 @@
 
             if (step === "oneshot") {
               renderOneShot(state);
-              setMessage("", "");
-            } else if (step === "sub") {
-              renderSubscription(state);
               setMessage("", "");
             } else {
               renderDone(state);

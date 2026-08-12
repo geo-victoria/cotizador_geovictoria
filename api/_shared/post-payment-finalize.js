@@ -32,10 +32,8 @@ const { getMercadoPagoConfigForQuoteCO, getMercadoPagoConfigForQuotePE } = requi
 const { esCotizacionCO, esCotizacionPE } = require("./payment-session");
 const {
   searchPaymentsByExternalReference,
-  searchPreapprovalByExternalReference,
   buildExternalReference,
   hasApprovedPayment,
-  isPreapprovalActive,
 } = require("./mercadopago-client");
 
 function buildAcceptanceDataFromQuote(config, quote) {
@@ -187,11 +185,9 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
         : computePaymentAmounts(items, descuentoPct, { includeIva: mpConfig.includeIva });
 
   const hasOneShot = amounts.oneShotClp > 0;
-  // La suscripcion recurrente esta desactivada hasta integrar usuarios activos/mes.
-  // CO: NUNCA hay suscripción MP (la mensualidad va por facturación a 30 días,
-  // COLOMBIA.md) — se excluye aunque algún día se encienda el env global.
-  // CO y PE: la mensualidad va por facturación (jamás suscripción MP).
-  const hasSubscription = pais === "cl" && mpConfig.subscriptionEnabled && amounts.recurringClp > 0;
+  // Suscripción MP RETIRADA (Lalo 12-ago): la mensualidad va SIEMPRE por
+  // facturación en todos los países; el único cobro online es el pago inicial.
+  const hasSubscription = false;
 
   let oneShotApproved = !hasOneShot;
   if (hasOneShot) {
@@ -232,14 +228,7 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
     }
   }
 
-  let subscriptionAuthorized = !hasSubscription;
-  if (hasSubscription) {
-    const preapprovals = await searchPreapprovalByExternalReference(
-      mpConfig,
-      buildExternalReference(quoteId, "sub")
-    );
-    subscriptionAuthorized = (preapprovals || []).some(isPreapprovalActive);
-  }
+  const subscriptionAuthorized = true;
 
   // GUARDA (caso real Aitas COT215, 10-jul): si NO hay ningún cobro online
   // que verificar (monto $0 por configuración o por la naturaleza de la

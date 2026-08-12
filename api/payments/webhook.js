@@ -3,7 +3,6 @@ const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { getMercadoPagoConfig, getMercadoPagoConfigCO, getMercadoPagoConfigPE } = require("../_shared/mercadopago-config");
 const {
   getPayment,
-  getPreapproval,
   validateWebhookSignature,
   parseExternalReference,
 } = require("../_shared/mercadopago-client");
@@ -54,11 +53,8 @@ async function resolveQuoteIdFromEvent(mpConfig, { type, dataId }) {
     return ref?.quoteId || null;
   }
 
-  if (type === "subscription_preapproval" || type === "preapproval") {
-    const preapproval = await getPreapproval(mpConfig, dataId);
-    const ref = parseExternalReference(preapproval?.external_reference);
-    return ref?.quoteId || null;
-  }
+  // Suscripción MP retirada (12-ago): las notificaciones de preapproval ya no
+  // se procesan — no existe flujo que las genere.
 
   return null;
 }

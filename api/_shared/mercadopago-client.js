@@ -6,7 +6,6 @@
  *
  * Cubre lo necesario para el journey del cotizador:
  * - Pago unico:  POST /checkout/preferences  +  GET /v1/payments/search
- * - Suscripcion: POST /preapproval           +  GET /preapproval/search
  * - Validacion de firma de webhook (x-signature, HMAC-SHA256).
  */
 
@@ -88,31 +87,8 @@ async function searchPaymentsByExternalReference(config, externalReference) {
   );
 }
 
-function createPreapproval(config, payload) {
-  return mpRequest(config, "/preapproval", {
-    method: "POST",
-    body: payload,
-    idempotencyKey: payload?.external_reference
-      ? `preapp-${payload.external_reference}`
-      : undefined,
-  });
-}
 
-function getPreapproval(config, preapprovalId) {
-  return mpRequest(config, `/preapproval/${encodeURIComponent(preapprovalId)}`);
-}
 
-async function searchPreapprovalByExternalReference(config, externalReference) {
-  const qs = new URLSearchParams({ external_reference: externalReference }).toString();
-  const result = await mpRequest(config, `/preapproval/search?${qs}`);
-  const all = Array.isArray(result?.results) ? result.results : [];
-  // IMPORTANTE: /preapproval/search de Mercado Pago NO filtra por
-  // external_reference (devuelve otros preapprovals del collector). Filtramos
-  // en cliente para no confundir suscripciones de cotizaciones distintas.
-  return all.filter(
-    (p) => String(p?.external_reference || "") === String(externalReference)
-  );
-}
 
 /**
  * Valida la firma del webhook de Mercado Pago.
@@ -172,7 +148,6 @@ function parseExternalReference(externalReference) {
 }
 
 const APPROVED_PAYMENT_STATUSES = new Set(["approved", "authorized"]);
-const ACTIVE_PREAPPROVAL_STATUSES = new Set(["authorized"]);
 
 function hasApprovedPayment(payments) {
   return (Array.isArray(payments) ? payments : []).some((p) =>
@@ -180,23 +155,15 @@ function hasApprovedPayment(payments) {
   );
 }
 
-function isPreapprovalActive(preapproval) {
-  return ACTIVE_PREAPPROVAL_STATUSES.has(String(preapproval?.status || "").toLowerCase());
-}
 
 module.exports = {
   mpRequest,
   createPreference,
   getPayment,
   searchPaymentsByExternalReference,
-  createPreapproval,
-  getPreapproval,
-  searchPreapprovalByExternalReference,
   validateWebhookSignature,
   buildExternalReference,
   parseExternalReference,
   hasApprovedPayment,
-  isPreapprovalActive,
   APPROVED_PAYMENT_STATUSES,
-  ACTIVE_PREAPPROVAL_STATUSES,
 };
