@@ -982,6 +982,7 @@ async function runNdvHandoff({
   acceptanceData,
   escalerasPrecio,
   userCount,
+  creatorOverrides,
 }) {
   const creatorConfig = getCreatorConfig();
   if (creatorConfig.missing.length > 0) {
@@ -1058,6 +1059,9 @@ async function runNdvHandoff({
       userCount,
       vendedor: resolverEjecutivo(ownerId, ownerUser).nombre,
       creador: "vicky_geovictoria",
+      // Flavor alternativo (crear-ndv-desde-cot): el maestro puede nacer como
+      // "Nota de Venta" convertida sin cambiar el default de la emisión.
+      ...(creatorOverrides && typeof creatorOverrides === "object" ? creatorOverrides : {}),
     },
   });
 

@@ -73,6 +73,10 @@
     },
     "api/quote-acceptance/actualizar-cotizacion.js": {
       "maxDuration": 60
+    },
+    "api/creator/crear-ndv-desde-cot.js": {
+      "memory": 1024,
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -104,12 +108,16 @@
     },
     {
       "src": "^/oportunidades2/?$",
-      "headers": { "Location": "/oportunidades" },
+      "headers": {
+        "Location": "/oportunidades"
+      },
       "status": 308
     },
     {
       "src": "^/telemarketing/?$",
-      "headers": { "Location": "/oportunidades" },
+      "headers": {
+        "Location": "/oportunidades"
+      },
       "status": 308
     },
     {
