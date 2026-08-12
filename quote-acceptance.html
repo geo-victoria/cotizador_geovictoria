@@ -2670,14 +2670,17 @@
               // el chat (la escalera vive en el cotizador).
               const montoMxn = Number(row.subtotalClp || 0);
               const marcaIvaMx = row.afectoIva === true ? " + IVA" : "";
+              // Gancho (12-ago): precio de lista con subtotal $0 (capacitación)
+              // → lista TACHADA y "$0 — incluida" como beneficio visible.
+              const esGanchoMx = montoMxn === 0 && Number(row.precioUnitarioClp || 0) > 0;
               return (
                 "<tr>" +
                 "<td>" + (row.nombre || "-") + "</td>" +
                 "<td>" + inferItemType(row) + "</td>" +
                 "<td>" + normalizeModalidadLabel(row) + "</td>" +
                 "<td>" + Number(row.cantidad || 0) + "</td>" +
-                "<td>" + fmtMXN(row.precioUnitarioClp) + "</td>" +
-                "<td>" + fmtMXN(montoMxn) + marcaIvaMx + "</td>" +
+                "<td>" + (esGanchoMx ? "<s>" + fmtMXN(row.precioUnitarioClp) + "</s>" : fmtMXN(row.precioUnitarioClp)) + "</td>" +
+                "<td>" + (esGanchoMx ? "<s>" + fmtMXN(row.precioUnitarioClp) + "</s> " + fmtMXN(0) + " — incluida" : fmtMXN(montoMxn) + marcaIvaMx) + "</td>" +
                 "</tr>"
               );
             }

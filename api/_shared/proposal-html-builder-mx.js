@@ -215,15 +215,21 @@ function buildProposalHtmlMX({
   const recTot = round2(recNeto + recIva);
 
   const rowItem = (f) => {
-    const totalCellInner = f.afectoIva
-      ? `${formatMXN(f.subtotal)} + IVA`
-      : formatMXN(f.subtotal);
+    // GANCHO (Lalo 12-ago): línea con precio de lista pero subtotal $0 (hoy:
+    // la capacitación online) — el valor de lista sale TACHADO y el total
+    // "$0 — incluida", como beneficio visible.
+    const esGancho = f.subtotal === 0 && f.puMXN > 0 && !f.recurrente;
+    const totalCellInner = esGancho
+      ? `<s>${formatMXN(f.puMXN)}</s> ${formatMXN(0)} — incluida`
+      : f.afectoIva
+        ? `${formatMXN(f.subtotal)} + IVA`
+        : formatMXN(f.subtotal);
     return (
       `<tr>` +
       `<td class="c-nom">${f.nombre}</td>` +
       `<td class="c-modal">${f.modalidad}</td>` +
       `<td class="c-desc">${f.desc}</td>` +
-      `<td class="c-num">${formatMXN(f.puMXN)}</td>` +
+      `<td class="c-num">${esGancho ? `<s>${formatMXN(f.puMXN)}</s>` : formatMXN(f.puMXN)}</td>` +
       `<td class="c-num">${f.cant}</td>` +
       `<td class="c-num c-tot">${totalCellInner}</td>` +
       `</tr>`

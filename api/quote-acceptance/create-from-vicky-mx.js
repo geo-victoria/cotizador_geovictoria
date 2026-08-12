@@ -214,7 +214,7 @@ const TARIFAS_MX = {
   envioVentaPorPuntoMXN: 400, // pago único, NO descontable
   envioArriendoPorPuntoMXN: 0,
   instalacionCdmxMetroPorPuntoMXN: 700, // SOLO zona "cdmx_metro"; zona "resto"/auto-instalada: SIN ítem
-  capacitacionOnlineMXN: 600, // pago único COBRADO, siempre presente
+  capacitacionOnlineMXN: 600, // precio de LISTA — se cobra $0 (gancho tachado, Lalo 12-ago)
   iva: IVA_RATE_MX, // 0.16
   descuentoRecurrenteEscalera: [10, 15], // % — la negocia el agente
 };
@@ -451,8 +451,10 @@ function esItemCapacitacion(item) {
 /**
  * Garantiza la fila de "Capacitación online" ($600 MXN, pago único COBRADO).
  * Es el equivalente estructural de ensureActivacion en CO (fila que va SIEMPRE
- * en Zoho, PDF y página de aceptación), pero con la regla MX: la capacitación
- * SE COBRA — nada de "100 % de descuento". Si el agente ya la mandó (con otro
+ * en Zoho, PDF y página de aceptación), pero con la regla MX
+ * (Lalo 12-ago): la capacitación va SIN COSTO como gancho — el valor de lista
+ * ($600) viaja como unitario para mostrarse TACHADO y el subtotal es $0. Si
+ * el agente ya la mandó (con otro
  * precio negociado, por ejemplo), se respeta la suya.
  * afectoIva=true: es un servicio gravado con IVA 16% como el resto en MX.
  */
@@ -464,11 +466,11 @@ function ensureCapacitacion(items) {
       tipo: "servicio",
       id: "capacitacion_online",
       nombre: "Capacitación online",
-      descripcion: "Capacitación online al equipo administrador en el uso de la plataforma.",
+      descripcion: "Capacitación online al equipo administrador. Valor normal $600 MXN — incluida sin costo.",
       modalidad: "Cobro único",
       cantidad: 1,
       precioUnitarioMXN: TARIFAS_MX.capacitacionOnlineMXN,
-      subtotalMXN: TARIFAS_MX.capacitacionOnlineMXN,
+      subtotalMXN: 0,
       esRecurrente: false,
       afectoIva: true,
     },
