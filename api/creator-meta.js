@@ -6,6 +6,7 @@
 //   GET /api/creator-meta?secret=<QUOTE_ACCEPTANCE_SECRET>
 //   GET /api/creator-meta?secret=...&form=Servicio_Recurrente   (un solo form)
 //   GET /api/creator-meta?secret=...&forms=1                    (solo lista de forms)
+//   GET /api/creator-meta?secret=...&reports=1                  (solo lista de reportes)
 //   GET /api/creator-meta?secret=...&form=X&full=1              (campos SIN resumir)
 //   GET /api/creator-meta?secret=...&record=COT-58504&full=1   (registro ALL_DATA completo)
 //
@@ -162,11 +163,17 @@ module.exports = async function handler(req, res) {
         report, field, value, status: resp.status, count: rows.length,
         rows: rows.map((r) => ({
           ID: r.ID,
+          ID_Formulario: r.ID_Formulario,
           Servicio_Recurrente: r.Servicio_Recurrente,
           FORM_STATUS: r.FORM_STATUS,
           Tabla_len: Array.isArray(r.Tabla_de_Cobro) ? r.Tabla_de_Cobro.length : 0,
           JsonPdf_present: Boolean(r.JsonPdf),
           Fecha_de_Inicio: r.Fecha_de_Inicio,
+          // Los dos grids de Formulario_de_Equipos van completos: son
+          // exactamente el dato que falta para saber qué acepta la columna
+          // Items, y un registro hecho a mano trae el valor bueno.
+          ...(Array.isArray(r.Equipos) && r.Equipos.length ? { Equipos: r.Equipos } : {}),
+          ...(Array.isArray(r.Servicios) && r.Servicios.length ? { Servicios: r.Servicios } : {}),
         })),
       };
       res.statusCode = 200; res.end(JSON.stringify(out, null, 2)); return;
@@ -278,6 +285,38 @@ module.exports = async function handler(req, res) {
       res.statusCode = 500;
       res.end(JSON.stringify(out, null, 2));
       return;
+    }
+  }
+
+  // Lista de reportes de la app. Hace falta para LEER registros de formularios
+  // que no son el maestro: la API de datos se consulta por reporte, no por
+  // formulario, y el link_name del reporte no tiene por qué parecerse al del
+  // form. Con esto se puede ir a ver qué guardó un registro hecho a mano
+  // —la fuente de verdad para los valores que Creator sí acepta— en vez de
+  // adivinar contra la Meta API, que en las picklist dinámicas solo devuelve
+  // "Cargando...".
+  if (req.query?.reports) {
+    try {
+      const resp = await creatorApiFetch(`${base}/reports`, { method: "GET" });
+      const payload = await readJson(resp);
+      const reports = Array.isArray(payload?.reports) ? payload.reports : [];
+      out.ok = true;
+      out.reportsList = {
+        status: resp.status,
+        count: reports.length,
+        reports: reports.length
+          ? reports.map((r) => ({
+              link_name: r.link_name || r.report_link_name,
+              display: r.display_name,
+              form: r.form_link_name || r.form_name,
+              type: r.type,
+            }))
+          : payload,
+      };
+      res.statusCode = 200; res.end(JSON.stringify(out, null, 2)); return;
+    } catch (e) {
+      out.error = String((e && e.stack) || (e && e.message) || e);
+      res.statusCode = 500; res.end(JSON.stringify(out, null, 2)); return;
     }
   }
 
