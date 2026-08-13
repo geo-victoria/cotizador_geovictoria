@@ -1982,27 +1982,33 @@
         if (stageVerifyCardEl) stageVerifyCardEl.classList.toggle("hidden", !isStep2);
         const billingModalEl = document.getElementById("billingModal");
         if (billingModalEl) billingModalEl.classList.toggle("hidden", !isStep2 || esFlujoNatural());
-        if (isStep2 && esFlujoNatural()) {
-          if (fields.companyGiro && !fields.companyGiro.value.trim()) fields.companyGiro.value = "Persona Natural";
-          if (stageVerifyCardEl && !document.getElementById("naturalFacturaLink")) {
-            const nfl = document.createElement("div");
-            nfl.id = "naturalFacturaLink";
-            nfl.style.cssText = "margin-top:10px;font-size:12.5px;color:#64748b";
-            nfl.innerHTML =
-              'Con tu RUT de persona natural no necesitas completar datos de facturación. ¿Necesitas factura de empresa? <a href="#" id="naturalFacturaAbrir" style="font-weight:600">Completar datos aquí</a>';
-            stageVerifyCardEl.appendChild(nfl);
-            const abrir = document.getElementById("naturalFacturaAbrir");
-            if (abrir)
-              abrir.addEventListener("click", function (ev) {
-                ev.preventDefault();
-                flowState.quiereFacturaEmpresa = true;
-                if (fields.companyGiro && fields.companyGiro.value.trim() === "Persona Natural") fields.companyGiro.value = "";
-                const link = document.getElementById("naturalFacturaLink");
-                if (link) link.remove();
-                renderStage();
-              });
-          }
+        if (isStep2 && esFlujoNatural() && fields.companyGiro && !fields.companyGiro.value.trim()) {
+          fields.companyGiro.value = "Persona Natural";
         }
+      }
+
+      // Link "¿necesitas factura?" del flujo natural: vive junto al checkbox
+      // de términos (el paso 2 no existe para este flujo).
+      function mostrarLinkFacturaNatural() {
+        if (!esFlujoNatural() || document.getElementById("naturalFacturaLink")) return;
+        const ancla = termsAcceptedInput && termsAcceptedInput.closest("div");
+        if (!ancla) return;
+        const nfl = document.createElement("div");
+        nfl.id = "naturalFacturaLink";
+        nfl.style.cssText = "margin-top:8px;font-size:12.5px;color:#64748b";
+        nfl.innerHTML =
+          'Con tu RUT de persona natural no te pedimos datos de facturación. ¿Necesitas factura de empresa? <a href="#" id="naturalFacturaAbrir" style="font-weight:600">Completar datos aquí</a>';
+        ancla.appendChild(nfl);
+        const abrir = document.getElementById("naturalFacturaAbrir");
+        if (abrir)
+          abrir.addEventListener("click", function (ev) {
+            ev.preventDefault();
+            flowState.quiereFacturaEmpresa = true;
+            if (fields.companyGiro && fields.companyGiro.value.trim() === "Persona Natural") fields.companyGiro.value = "";
+            const link = document.getElementById("naturalFacturaLink");
+            if (link) link.remove();
+            goToStage(2);
+          });
       }
 
       function goToStage(step) {
@@ -2658,6 +2664,7 @@
               !esCO && !esMX && !esPE && rutDecl.length >= 7 && Number.isFinite(numDecl) && numDecl > 0 && numDecl < 50000000;
           } catch (e) { flowState.personaNatural = false; }
           flowState.quiereFacturaEmpresa = false;
+          try { mostrarLinkFacturaNatural(); } catch (e) {}
           // PRELLENADO SII (Lalo 10-ago): con el RUT de la cotización se piden
           // giro/comuna/dirección al padrón público y se rellenan SOLO los
           // campos que el chat dejó vacíos (lo declarado en la conversación
@@ -3310,7 +3317,7 @@
           return;
         }
 
-        if (!isEmailVerifiedForCurrentInput()) {
+        if (!esFlujoNatural() && !isEmailVerifiedForCurrentInput()) {
           flowState.pendingConfirmAfterVerification = true;
           setVerifyPromptVisible(true);
           const remaining = getCodeRemainingSeconds();
@@ -3448,6 +3455,16 @@
           journeyHintEl.textContent = "Debes aceptar los términos y condiciones para continuar.";
           termsAcceptedInput.focus();
           updateJourneyState();
+          return;
+        }
+        // PERSONA NATURAL (Lalo 13-ago): checkbox + aceptar → DIRECTO al pago.
+        // Sin pop-up de facturación (los datos salen del chat) y sin paso de
+        // verificación: el paso 2 del flujo normal vive dentro del modal que
+        // este flujo no levanta — por eso el botón confirma aquí mismo.
+        if (esFlujoNatural()) {
+          if (fields.companyGiro && !fields.companyGiro.value.trim()) fields.companyGiro.value = "Persona Natural";
+          const cb = document.getElementById("confirmBtn");
+          if (cb) cb.click();
           return;
         }
         goToStage(2);
