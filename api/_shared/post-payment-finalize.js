@@ -182,7 +182,15 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
       ? computePaymentAmountsCO(items)
       : pais === "pe"
         ? computePaymentAmountsPE(items)
-        : computePaymentAmounts(items, descuentoPct, { includeIva: mpConfig.includeIva });
+        : computePaymentAmounts(items, descuentoPct, {
+            includeIva: mpConfig.includeIva,
+            // FIX Gescor/COT395 (13-ago): el checkout cobra el PRIMER MES en el
+            // pago inicial (oneShotIncludeFirstMonth), pero el finalize lo
+            // calculaba sin él — toda cotización SOLO SOFTWARE daba oneShot=0,
+            // 'no hay cobro online' y el pago aprobado en MP quedaba invisible
+            // para siempre. Misma fórmula en ambas caras, siempre.
+            includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
+          });
 
   const hasOneShot = amounts.oneShotClp > 0;
   // Suscripción MP RETIRADA (Lalo 12-ago): la mensualidad va SIEMPRE por
