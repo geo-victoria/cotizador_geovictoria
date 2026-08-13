@@ -1898,7 +1898,21 @@
         // redirigir. Solo el correo de contacto sigue readonly (markup).
         sendCodeBtn.disabled = true;
         verifyCodeBtn.disabled = true;
-        toVerifyBtn.classList.add("hidden");
+        // BOTÓN SIEMPRE VISIBLE (Lalo 13-ago): aceptada SIN pagar debe mostrar
+        // "Ir a pagar" en la página principal — el confirmBtn vive dentro del
+        // pop-up de facturación, que en el flujo de persona natural nunca se
+        // abre (y en mobile quedaba la página sin ningún botón). El click de
+        // toVerifyBtn ya resuelve ambos flujos: natural → confirma directo;
+        // empresa → abre el pop-up con el mismo botón.
+        if (flowState.onboardingUrl) {
+          toVerifyBtn.textContent = "Ir a mi auto-onboarding";
+          toVerifyBtn.classList.remove("hidden");
+        } else if (flowState.needsPayment && flowState.paymentUrl) {
+          toVerifyBtn.textContent = "Ir a pagar";
+          toVerifyBtn.classList.remove("hidden");
+        } else {
+          toVerifyBtn.classList.add("hidden");
+        }
 
         const confirmBtn = document.getElementById("confirmBtn");
         if (confirmBtn) {
