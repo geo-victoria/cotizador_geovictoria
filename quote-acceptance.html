@@ -1962,6 +1962,14 @@
         });
       }
 
+      // PERSONA NATURAL: sin pop-up de facturación — los datos de la boleta
+      // salen del chat (RUT + correo + teléfono) y el giro queda "Persona
+      // Natural". El link del paso 2 reabre el formulario completo para quien
+      // sí necesita factura de empresa.
+      function esFlujoNatural() {
+        return Boolean(flowState.personaNatural) && !flowState.quiereFacturaEmpresa;
+      }
+
       function renderStage() {
         const step = Number(stageState.current || 1);
         const isStep1 = step === 1;
@@ -1973,7 +1981,28 @@
         if (stageInfoCardEl) stageInfoCardEl.classList.remove("hidden");
         if (stageVerifyCardEl) stageVerifyCardEl.classList.toggle("hidden", !isStep2);
         const billingModalEl = document.getElementById("billingModal");
-        if (billingModalEl) billingModalEl.classList.toggle("hidden", !isStep2);
+        if (billingModalEl) billingModalEl.classList.toggle("hidden", !isStep2 || esFlujoNatural());
+        if (isStep2 && esFlujoNatural()) {
+          if (fields.companyGiro && !fields.companyGiro.value.trim()) fields.companyGiro.value = "Persona Natural";
+          if (stageVerifyCardEl && !document.getElementById("naturalFacturaLink")) {
+            const nfl = document.createElement("div");
+            nfl.id = "naturalFacturaLink";
+            nfl.style.cssText = "margin-top:10px;font-size:12.5px;color:#64748b";
+            nfl.innerHTML =
+              'Con tu RUT de persona natural no necesitas completar datos de facturación. ¿Necesitas factura de empresa? <a href="#" id="naturalFacturaAbrir" style="font-weight:600">Completar datos aquí</a>';
+            stageVerifyCardEl.appendChild(nfl);
+            const abrir = document.getElementById("naturalFacturaAbrir");
+            if (abrir)
+              abrir.addEventListener("click", function (ev) {
+                ev.preventDefault();
+                flowState.quiereFacturaEmpresa = true;
+                if (fields.companyGiro && fields.companyGiro.value.trim() === "Persona Natural") fields.companyGiro.value = "";
+                const link = document.getElementById("naturalFacturaLink");
+                if (link) link.remove();
+                renderStage();
+              });
+          }
+        }
       }
 
       function goToStage(step) {
@@ -2492,15 +2521,17 @@
 
       function validateRequired(options) {
         const requireVerification = Boolean(options && options.requireVerification);
-        const requiredTextFields = [
-          "contactEmail",
-          "billingEmail",
-          "billingPhone",
-          "companyRut",
-          "companyGiro",
-          "companyComuna",
-          "companyAddress",
-        ];
+        const requiredTextFields = esFlujoNatural()
+          ? ["contactEmail", "billingEmail", "billingPhone", "companyRut"]
+          : [
+              "contactEmail",
+              "billingEmail",
+              "billingPhone",
+              "companyRut",
+              "companyGiro",
+              "companyComuna",
+              "companyAddress",
+            ];
         for (const key of requiredTextFields) {
           const input = fields[key];
           if (!input || !String(input.value || "").trim()) {
@@ -2617,6 +2648,16 @@
           fields.companyGiro.value = q.companyGiro || "";
           fields.companyComuna.value = q.companyComuna || "";
           fields.companyAddress.value = q.companyAddress || "";
+          // PERSONA NATURAL (Lalo 12-ago): RUT declarado en el chat bajo
+          // 50.000.000 = persona natural → el pop-up de facturación NO se
+          // levanta; checkbox + aceptar pasan directo al pago. Solo Chile.
+          try {
+            var rutDecl = String(q.companyRut || "").replace(/[^0-9kK]/g, "");
+            var numDecl = parseInt(rutDecl.slice(0, -1), 10);
+            flowState.personaNatural =
+              !esCO && !esMX && !esPE && rutDecl.length >= 7 && Number.isFinite(numDecl) && numDecl > 0 && numDecl < 50000000;
+          } catch (e) { flowState.personaNatural = false; }
+          flowState.quiereFacturaEmpresa = false;
           // PRELLENADO SII (Lalo 10-ago): con el RUT de la cotización se piden
           // giro/comuna/dirección al padrón público y se rellenan SOLO los
           // campos que el chat dejó vacíos (lo declarado en la conversación
@@ -3239,6 +3280,7 @@
                     companyGiro: fields.companyGiro.value.trim(),
                     companyComuna: fields.companyComuna.value.trim(),
                     companyAddress: fields.companyAddress.value.trim(),
+                    personaNatural: esFlujoNatural() || undefined,
                   },
                 }),
               });
@@ -3304,6 +3346,7 @@
                 companyGiro: fields.companyGiro.value.trim(),
                 companyComuna: fields.companyComuna.value.trim(),
                 companyAddress: fields.companyAddress.value.trim(),
+                personaNatural: esFlujoNatural() || undefined,
               },
             }),
           });

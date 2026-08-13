@@ -58,14 +58,24 @@ async function parseBody(req) {
 }
 
 function validateRequiredInput(fields) {
-  const required = [
-    ["billingEmail", "correo de facturacion"],
-    ["billingPhone", "telefono de facturacion"],
-    ["companyGiro", "giro"],
-    ["companyRut", "RUT de empresa"],
-    ["companyComuna", "comuna"],
-    ["companyAddress", "direccion"],
-  ];
+  // PERSONA NATURAL (Lalo 12-ago): con RUT natural declarado en el chat el
+  // pop-up no se levanta — giro/comuna/direccion no aplican a la boleta y no
+  // se exigen (el giro llega "Persona Natural" desde la pagina).
+  const natural = fields?.personaNatural === true;
+  const required = natural
+    ? [
+        ["billingEmail", "correo de facturacion"],
+        ["billingPhone", "telefono de facturacion"],
+        ["companyRut", "RUT"],
+      ]
+    : [
+        ["billingEmail", "correo de facturacion"],
+        ["billingPhone", "telefono de facturacion"],
+        ["companyGiro", "giro"],
+        ["companyRut", "RUT de empresa"],
+        ["companyComuna", "comuna"],
+        ["companyAddress", "direccion"],
+      ];
   const missing = required
     .filter(([key]) => !toText(fields?.[key]))
     .map(([, label]) => label);
