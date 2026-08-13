@@ -11,7 +11,7 @@
  *     MISMOS campos que CO usa para el NIT: RUT_Empresa (Accounts, convención
  *     "documento tributario del país") y RUT_Cliente (cabecera cotización).
  *   - SIN fila de Activación (no existe en la tropicalización MX). En su lugar
- *     se garantiza SIEMPRE la fila de "Capacitación online" COBRADA ($600 MXN
+ *     se garantiza SIEMPRE la fila de "Capacitación online" incluida sin costo
  *     pago único) — sin la leyenda de regalo/100 % dcto de CL/CO.
  *   - CON correo al cliente (tuteo, espejo del diseño chileno adaptado y sin
  *     regalos falsos), asunto "Tu cotización GeoVictoria — {empresa}".
@@ -28,7 +28,7 @@
  *   - Instalación: $700 por punto SOLO zona "cdmx_metro". En zona "resto" (o
  *     auto-instalada) el payload simplemente NO trae el ítem de instalación y
  *     el PDF no lo muestra — este endpoint no agrega ni exige ese ítem.
- *   - Capacitación online: $600 MXN pago único COBRADO (ítem siempre presente).
+ *   - Capacitación online: incluida sin costo (ítem siempre presente; Lalo 13-ago).
  *   - Escalera de descuento recurrente 10→15 %: la negocia el agente y los
  *     items llegan con el precio final (igual que CO v1, sin campos de
  *     descuento acá). El clamp de 40 % de quote-pricing no interfiere.
@@ -214,7 +214,7 @@ const TARIFAS_MX = {
   envioVentaPorPuntoMXN: 400, // pago único, NO descontable
   envioArriendoPorPuntoMXN: 0,
   instalacionCdmxMetroPorPuntoMXN: 700, // SOLO zona "cdmx_metro"; zona "resto"/auto-instalada: SIN ítem
-  capacitacionOnlineMXN: 600, // precio de LISTA — se cobra $0 (gancho tachado, Lalo 12-ago)
+  capacitacionOnlineMXN: 0, // Lalo 13-ago: el $600 se retiró del discurso — ítem incluido sin costo
   iva: IVA_RATE_MX, // 0.16
   descuentoRecurrenteEscalera: [10, 15], // % — la negocia el agente
 };
@@ -449,7 +449,7 @@ function esItemCapacitacion(item) {
 }
 
 /**
- * Garantiza la fila de "Capacitación online" ($600 MXN, pago único COBRADO).
+ * Garantiza la fila de "Capacitación online" (incluida sin costo).
  * Es el equivalente estructural de ensureActivacion en CO (fila que va SIEMPRE
  * en Zoho, PDF y página de aceptación), pero con la regla MX
  * (Lalo 12-ago): la capacitación va SIN COSTO como gancho — el valor de lista
@@ -466,10 +466,10 @@ function ensureCapacitacion(items) {
       tipo: "servicio",
       id: "capacitacion_online",
       nombre: "Capacitación online",
-      descripcion: "Capacitación online al equipo administrador. Valor normal $600 MXN — incluida sin costo.",
+      descripcion: "Capacitación online al equipo administrador — incluida sin costo.",
       modalidad: "Cobro único",
       cantidad: 1,
-      precioUnitarioMXN: TARIFAS_MX.capacitacionOnlineMXN,
+      precioUnitarioMXN: 0,
       subtotalMXN: 0,
       esRecurrente: false,
       afectoIva: true,
