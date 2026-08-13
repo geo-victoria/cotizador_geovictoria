@@ -1842,6 +1842,14 @@
         }
       }
 
+      // Feedback INMEDIATO al aceptar (Lalo 13-ago): el overlay de carga se
+      // muestra apenas se presiona el botón — ANTES del fetch de confirmación,
+      // que puede tardar varios segundos (Zoho) y hacía parecer que el botón
+      // no funcionaba. Si la confirmación falla, se oculta y se muestra el error.
+      function hideRedirectOverlay() {
+        if (redirectOverlayEl) redirectOverlayEl.classList.add("hidden");
+      }
+
       function showRedirectOverlay(title, detail) {
         if (redirectTitleEl) {
           redirectTitleEl.textContent = title || "Estamos preparando todo para ti";
@@ -3274,6 +3282,11 @@
             const btnPagar = document.getElementById("confirmBtn");
             if (btnPagar) btnPagar.disabled = true;
             setMessage("Guardando tus datos de facturación...");
+            // Feedback inmediato: overlay ANTES del fetch (puede tardar segundos).
+            showRedirectOverlay(
+              "Te llevamos a tu pago inicial",
+              "Estamos guardando tus datos y preparando tu pago seguro. Esto toma solo unos segundos."
+            );
             let urlPago = flowState.paymentUrl;
             try {
               const res = await fetch("/api/quote-acceptance/confirm", {
@@ -3340,6 +3353,12 @@
         btn.disabled = true;
         flowState.redirectPending = false;
         setMessage("Procesando aceptación...");
+        // Feedback inmediato: overlay ANTES del fetch de confirmación — sin
+        // esto, los segundos de espera parecían un botón muerto.
+        showRedirectOverlay(
+          "Procesando tu aceptación…",
+          "Estamos registrando tu aceptación y preparando el siguiente paso. Esto toma solo unos segundos."
+        );
         try {
           const res = await fetch("/api/quote-acceptance/confirm", {
             method: "POST",
@@ -3380,6 +3399,7 @@
           // el paso siguiente es la transferencia + comprobante por WhatsApp.
           // Sin redirect: el cliente lee los datos bancarios y vuelve al chat.
           if (data.mxTransfer) {
+            hideRedirectOverlay();
             flowState.acceptedLocked = true;
             flowState.acceptedAt = data.acceptedAt || flowState.acceptedAt;
             const dt = data.datosTransferencia || {};
@@ -3419,9 +3439,11 @@
               delayMs: 1700,
             });
           } else {
+            hideRedirectOverlay();
             setMessage("Cotización aceptada. Tu ejecutivo comercial te compartira el enlace de onboarding.", "ok");
           }
         } catch (error) {
+          hideRedirectOverlay();
           setMessage((error && error.message) || "Error de aceptación.", "error");
         } finally {
           if (!flowState.redirectPending) {
