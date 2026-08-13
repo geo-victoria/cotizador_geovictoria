@@ -82,9 +82,16 @@ async function searchPaymentsByExternalReference(config, externalReference) {
   const all = Array.isArray(result?.results) ? result.results : [];
   // El search de MP no siempre filtra de forma estricta por external_reference,
   // asi que filtramos en cliente para quedarnos solo con los de esta cotizacion.
-  return all.filter(
+  const matched = all.filter(
     (p) => String(p?.external_reference || "") === String(externalReference)
   );
+  // DIAGNOSTICO (caso Gescor 13-ago: pago aprobado en MP invisible para el
+  // reconciliador): dejar rastro de que devuelve el search realmente.
+  console.log(
+    `[mp-search] ref=${externalReference} crudos=${all.length} match=${matched.length} ` +
+      `estados=[${all.slice(0, 5).map((p) => `${String(p?.external_reference || "?").slice(0, 40)}:${p?.status}`).join(", ")}]`
+  );
+  return matched;
 }
 
 
