@@ -1735,6 +1735,17 @@
       function setMessage(text, level) {
         messageEl.textContent = text || "";
         messageEl.className = "message" + (level ? " " + level : "");
+        // El #message vive DENTRO del pop-up de facturación. En el flujo de
+        // persona natural el pop-up nunca se abre, así que cualquier error se
+        // pintaba en un modal oculto y el botón parecía muerto (caso Rodrigo
+        // 13-ago). Con el pop-up cerrado, el texto se espeja en el hint del
+        // checkbox, que siempre está a la vista.
+        try {
+          const bm = document.getElementById("billingModal");
+          if (text && bm && bm.classList.contains("hidden") && journeyHintEl) {
+            journeyHintEl.textContent = text;
+          }
+        } catch (e) {}
       }
 
       function setVerifyMessage(text, level) {
@@ -2551,8 +2562,11 @@
 
       function validateRequired(options) {
         const requireVerification = Boolean(options && options.requireVerification);
+        // Persona natural: el teléfono NO se exige — la boleta no lo necesita
+        // y las cotizaciones creadas desde el editor pueden venir sin fono
+        // (caso Rodrigo 13-ago: billingPhone vacío dejaba el botón mudo).
         const requiredTextFields = esFlujoNatural()
-          ? ["contactEmail", "billingEmail", "billingPhone", "companyRut"]
+          ? ["contactEmail", "billingEmail", "companyRut"]
           : [
               "contactEmail",
               "billingEmail",
@@ -3501,8 +3515,9 @@
         // este flujo no levanta — por eso el botón confirma aquí mismo.
         if (esFlujoNatural()) {
           if (fields.companyGiro && !fields.companyGiro.value.trim()) fields.companyGiro.value = "Persona Natural";
-          const cb = document.getElementById("confirmBtn");
-          if (cb) cb.click();
+          // onConfirm directo: el confirmBtn vive en el pop-up oculto y un
+          // .click() sobre botón disabled se traga el clic sin feedback.
+          onConfirm();
           return;
         }
         goToStage(2);

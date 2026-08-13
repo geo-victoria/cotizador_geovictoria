@@ -62,10 +62,11 @@ function validateRequiredInput(fields) {
   // pop-up no se levanta — giro/comuna/direccion no aplican a la boleta y no
   // se exigen (el giro llega "Persona Natural" desde la pagina).
   const natural = fields?.personaNatural === true;
+  // Natural sin telefono: la boleta no lo necesita y las cotizaciones del
+  // editor pueden venir sin fono (caso Rodrigo 13-ago).
   const required = natural
     ? [
         ["billingEmail", "correo de facturacion"],
-        ["billingPhone", "telefono de facturacion"],
         ["companyRut", "RUT"],
       ]
     : [
