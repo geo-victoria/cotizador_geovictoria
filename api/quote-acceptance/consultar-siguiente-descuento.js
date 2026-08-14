@@ -29,6 +29,7 @@
  */
 
 const { getRecord, updateRecord, toText } = require("../_shared/zoho-crm");
+const { secretoValido } = require("../_shared/secreto-vicky");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const {
   DISCOUNT_LADDER,
@@ -69,9 +70,7 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 405, { ok: false, error: "Metodo no permitido." });
   }
 
-  const expectedSecret = toText(process.env.VICKY_COTIZADORA_SECRET);
-  const providedSecret = toText(req.headers["x-vicky-secret"]);
-  if (expectedSecret && expectedSecret !== providedSecret) {
+  if (!secretoValido(req)) {
     return sendJson(res, 401, { ok: false, error: "Unauthorized" });
   }
 

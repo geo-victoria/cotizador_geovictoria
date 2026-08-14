@@ -24,6 +24,7 @@
  */
 
 const { getRecord, getRecordWithFields, updateRecord, toText } = require("../_shared/zoho-crm");
+const { secretoValido } = require("../_shared/secreto-vicky");
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
@@ -64,7 +65,7 @@ function authorized(req) {
   const bearer = String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "").trim();
   if (cronSecret && bearer === cronSecret) return true;
   const vickySecret = toText(process.env.VICKY_COTIZADORA_SECRET);
-  if (vickySecret && toText(req.headers["x-vicky-secret"]) === vickySecret) return true;
+  if (secretoValido(req)) return true;
   return false;
 }
 

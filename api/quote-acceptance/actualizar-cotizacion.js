@@ -32,6 +32,7 @@ const {
   toText,
 } = require("../_shared/zoho-crm");
 const { actualizarPunteroPdf, marcarPdfPendiente } = require("../_shared/pointer-sync");
+const { secretoValido } = require("../_shared/secreto-vicky");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
@@ -91,7 +92,7 @@ function parseBody(req) {
 
 function authorized(req) {
   const vickySecret = toText(process.env.VICKY_COTIZADORA_SECRET);
-  if (vickySecret && toText(req.headers["x-vicky-secret"]) === vickySecret) return true;
+  if (secretoValido(req)) return true;
   const cronSecret = toText(process.env.CRON_SECRET);
   const bearer = String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "").trim();
   if (cronSecret && bearer === cronSecret) return true;

@@ -37,6 +37,7 @@ const {
   toText,
 } = require("../_shared/zoho-crm");
 const { actualizarPunteroPdf, marcarPdfPendiente } = require("../_shared/pointer-sync");
+const { secretoValido } = require("../_shared/secreto-vicky");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { tramoModuloCL } = require("../_shared/tramos-cl");
 const {
@@ -193,11 +194,9 @@ module.exports = async function handler(req, res) {
   }
   if (req.method !== "POST") return sendJson(res, 405, { ok: false, error: "Metodo no permitido." });
 
-  const expectedSecret = toText(process.env.VICKY_COTIZADORA_SECRET);
-  const providedSecret = toText(req.headers["x-vicky-secret"]);
   const bearer = toText(req.headers.authorization).replace(/^Bearer\s+/i, "");
   const cronSecret = toText(process.env.CRON_SECRET);
-  const ok = (expectedSecret && expectedSecret === providedSecret) || (cronSecret && cronSecret === bearer);
+  const ok = secretoValido(req) || (cronSecret && cronSecret === bearer);
   if (!ok) return sendJson(res, 401, { ok: false, error: "Unauthorized" });
 
   let stage = "init";

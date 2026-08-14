@@ -14,6 +14,7 @@
  * Uso: POST { quoteId, status? }  (status: CONFIRMADA default | PENDIENTE | BORRADOR)
  */
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
+const { secretoValido } = require("../_shared/secreto-vicky");
 const { getRecord, updateRecordBestEffort, toText } = require("../_shared/zoho-crm");
 const { getCreatorConfig, creatorApiFetch } = require("../_shared/zoho-creator-auth");
 const { runNdvHandoff, persistNdvReferences, NdvBusinessError } = require("../_shared/ndv-handoff");
@@ -37,7 +38,7 @@ function parseBody(req) {
 
 function authorized(req) {
   const vickySecret = toText(process.env.VICKY_COTIZADORA_SECRET);
-  if (vickySecret && toText(req.headers["x-vicky-secret"]) === vickySecret) return true;
+  if (secretoValido(req)) return true;
   const cronSecret = toText(process.env.CRON_SECRET);
   const bearer = String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "").trim();
   if (cronSecret && bearer === cronSecret) return true;
