@@ -129,19 +129,24 @@ async function coql(query) {
   return Array.isArray(body?.data) ? body.data : [];
 }
 
-async function crearNotas(items) {
-  if (!items.length) return 0;
-  const res = await zohoApiFetch("/crm/v3/Notes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ data: items }),
-  });
-  const body = await res.json().catch(() => ({}));
-  const ok = (body?.data || []).filter((d) => d?.code === "SUCCESS").length;
-  if (!res.ok || ok !== items.length) {
-    console.warn(`[backfill-nota-precios] Zoho ${res.status}: ${JSON.stringify(body).slice(0, 300)}`);
+/** POST /{modulo}/{id}/Notes — el sub-recurso de related records. El formato
+ * global (POST /Notes con Parent_Id) falla SIEMPRE en silencio en módulos
+ * custom: misma cicatriz del 25-jul con las notas de comprobante. */
+async function crearNota(quoteId, contenido) {
+  const res = await zohoApiFetch(
+    `/crm/v3/${encodeURIComponent(QUOTE_MODULE)}/${encodeURIComponent(quoteId)}/Notes`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: [{ Note_Title: TITULO_NOTA, Note_Content: contenido }] }),
+    },
+  );
+  if (!res.ok) {
+    const detalle = await res.text().catch(() => "");
+    console.warn(`[backfill-nota-precios] quote=${quoteId} Zoho ${res.status}: ${detalle.slice(0, 200)}`);
+    return false;
   }
-  return ok;
+  return true;
 }
 
 function sendJson(res, status, payload) {
@@ -177,15 +182,13 @@ module.exports = async function handler(req, res) {
     );
     const elegibles = filas.filter((q) => toText(q.Estado_Cotizacion) && esDeChile(q));
     const saltadas = filas.length - elegibles.length;
-    const notas = elegibles.map((q) => ({
-      Note_Title: TITULO_NOTA,
-      Note_Content: cuerpoNota(q, q.Created_Time),
-      Parent_Id: { id: toText(q.id), module: { api_name: QUOTE_MODULE } },
-    }));
     let creadas = 0;
     if (!dryRun) {
-      for (let i = 0; i < notas.length; i += 100) {
-        creadas += await crearNotas(notas.slice(i, i + 100));
+      // De a una: el sub-recurso de notas es por registro. Con lotes de 100
+      // cotizaciones por request el tiempo alcanza de sobra.
+      for (const q of elegibles) {
+        const ok = await crearNota(toText(q.id), cuerpoNota(q, q.Created_Time));
+        if (ok) creadas += 1;
       }
     }
     return sendJson(res, 200, {
