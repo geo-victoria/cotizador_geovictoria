@@ -597,7 +597,15 @@ function isInvalidIdError(error) {
     message.includes("id given seems to be invalid") ||
     message.includes("invalid_data") ||
     message.includes("invalid id") ||
-    message.includes("the id is invalid")
+    message.includes("the id is invalid") ||
+    // Registro BORRADO (papelera): Zoho responde 204 con cuerpo vacío y
+    // getRecord lo envuelve como "HTTP 204". Sin esta rama, un contacto
+    // convertido cuyo registro fue eliminado abortaba TODO el plumbing CRM
+    // (caso 14-ago: COT569/COT577 nacieron sin contacto ni deal porque el
+    // $converted_detail apuntaba a un contacto borrado; el fallback a crear
+    // uno nuevo existía pero nunca se alcanzaba).
+    message.includes("http 204") ||
+    message.includes("resource_not_found")
   );
 }
 
