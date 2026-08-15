@@ -144,6 +144,8 @@ function getAcceptanceConfig(req) {
     ),
     ndvCreatorStatusPending: toText(process.env.NDV_CREATOR_STATUS_PENDING || "CONFIRMADA"),
     ndvCreatorEstadoCotAccepted: toText(process.env.NDV_CREATOR_ESTADO_COT_ACCEPTED || "Vigente"),
+    // Canal telemarketing (Vicky). Override sin deploy si cambia la política.
+    ndvCreatorLineaNegocio: toText(process.env.NDV_CREATOR_LINEA_NEGOCIO || "Telemarketing"),
     quoteBillingContactLookupField: toText(
       process.env.QUOTE_BILLING_CONTACT_LOOKUP_FIELD || ""
     ),

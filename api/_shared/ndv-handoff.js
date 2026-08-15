@@ -773,7 +773,7 @@ async function ensureBillingContactId({
   return createdId;
 }
 
-function buildNdvRecord({
+async function buildNdvRecord({
   config,
   quote,
   deal,
@@ -829,16 +829,39 @@ function buildNdvRecord({
     escalerasEnMemoria: escalerasPrecio,
   });
   const chargeTable = chargeTables.master;
-  const resolvedBusinessLine = "Estándar";
+  // Línea de negocio: las cotizaciones sanas del canal telemarketing —el que
+  // atiende Vicky— van como "Telemarketing"; "Estándar" era un hardcode que no
+  // correspondía (COT-59509 sana: Telemarketing · COT-59530 de Vicky: Estándar).
+  const resolvedBusinessLine =
+    toText(creatorOverrides.lineaNegocio) || toText(config.ndvCreatorLineaNegocio) || "Telemarketing";
   const resolvedBillingMilestone = inferBillingMilestoneForTelemarketing(firstServicio);
   const dealsAsociados =
     toText(quote?.Deals_Asociados) ||
     toText(deal?.Deal_Name) ||
     (toText(accountName) ? `${toText(accountName)} (${firstServicio})` : "");
 
+  // EMPRESA EN GEOVICTORIA (15-ago): en Creator estos campos los llena el
+  // workflow `LoadCrmData` al elegir la cuenta a mano — por API nunca corre, y
+  // sin ellos la cotización no se puede convertir a Nota de Venta. El dato
+  // vive en el CRM, así que se resuelve igual que el Deluge.
+  let empresaGv = { idEmpresaGeoVictoria: "", geoCompanyIdCrm: "", razonesSociales: [] };
+  if (accountId) {
+    const { resolverEmpresaGeoVictoria } = require("./empresa-gv");
+    empresaGv = await resolverEmpresaGeoVictoria(accountId).catch(() => empresaGv);
+    console.log(
+      `[ndv-handoff] empresa GV account=${accountId} → id=${empresaGv.idEmpresaGeoVictoria || "∅"}`
+    );
+  }
+
   const record = {
     Formulario: creatorFormulario,
     STATUS: creatorStatus,
+    ...(empresaGv.idEmpresaGeoVictoria
+      ? {
+          ID_Empresa_GeoVictoria: empresaGv.idEmpresaGeoVictoria,
+          GeoCompanyIdCRM: empresaGv.geoCompanyIdCrm || empresaGv.idEmpresaGeoVictoria,
+        }
+      : {}),
     FORM_STATUS: creatorFormStatus,
     ...(creatorEstadoCot ? { ESTADO_COT: creatorEstadoCot } : {}),
     Nombre_del_documento: `${accountName || "Cuenta"} / ${new Date().toISOString().slice(0, 10)}`,
@@ -1035,7 +1058,7 @@ async function runNdvHandoff({
     );
   }
 
-  const { record: ndvRecord, chargeTables } = buildNdvRecord({
+  const { record: ndvRecord, chargeTables } = await buildNdvRecord({
     config,
     quote,
     deal,
@@ -1248,7 +1271,7 @@ async function runNdvHandoffFromDraft({
     ),
   };
 
-  const { record: ndvRecord, chargeTables } = buildNdvRecord({
+  const { record: ndvRecord, chargeTables } = await buildNdvRecord({
     config,
     quote: pseudoQuote,
     deal,
