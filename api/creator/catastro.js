@@ -41,6 +41,63 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 401, { ok: false, error: "Unauthorized" });
   }
 
+  // ── Modo REGISTRO / COMPARAR ────────────────────────────────────────────
+  // Para la prueba de la Nota de Venta hace falta ver los campos CRUDOS de una
+  // cotización sana (creada a mano) contra una de Vicky. El PDF solo muestra
+  // lo que el layout imprime; la brecha real está en los campos que no salen.
+  let cfg;
+  try {
+    cfg = getCreatorConfig();
+  } catch (e) {
+    return sendJson(res, 500, { ok: false, error: `config Creator: ${e.message}` });
+  }
+  const baseDatos = `/creator/v2.1/data/${encodeURIComponent(cfg.ownerName)}/${encodeURIComponent(
+    cfg.appLinkName
+  )}/report/${encodeURIComponent(cfg.reportLinkName)}`;
+
+  const leerRegistro = async (id) => {
+    const r = await creatorApiFetch(`${baseDatos}/${encodeURIComponent(id)}?field_config=all`, {
+      method: "GET",
+    });
+    const j = await r.json().catch(() => ({}));
+    return r.ok ? j?.data || {} : { __error: `${r.status}`, __detalle: JSON.stringify(j).slice(0, 300) };
+  };
+
+  if (req.query?.registro) {
+    const datos = await leerRegistro(String(req.query.registro));
+    const vacios = String(req.query?.vacios || "") === "1";
+    const salida = {};
+    for (const [k, v] of Object.entries(datos)) {
+      const t = texto(v);
+      if (vacios || t) salida[k] = typeof v === "object" && v !== null ? { valor: t, crudo: v } : v;
+    }
+    return sendJson(res, 200, { ok: true, registro: String(req.query.registro), campos: Object.keys(salida).length, datos: salida });
+  }
+
+  if (req.query?.comparar) {
+    const [a1, b1] = String(req.query.comparar).split(",").map((x) => x.trim());
+    if (!a1 || !b1) return sendJson(res, 400, { ok: false, error: "comparar=ID_A,ID_B" });
+    const [ra, rb] = await Promise.all([leerRegistro(a1), leerRegistro(b1)]);
+    const claves = [...new Set([...Object.keys(ra), ...Object.keys(rb)])].sort();
+    const soloA = {}, soloB = {}, distintos = {};
+    for (const k of claves) {
+      const va = texto(ra[k]);
+      const vb = texto(rb[k]);
+      if (va === vb) continue;
+      if (va && !vb) soloA[k] = va;
+      else if (!va && vb) soloB[k] = vb;
+      else distintos[k] = { [a1]: va, [b1]: vb };
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      a: a1,
+      b: b1,
+      solo_en_A: soloA,
+      solo_en_B: soloB,
+      distintos,
+    });
+  }
+
   let config;
   try {
     config = getCreatorConfig();
