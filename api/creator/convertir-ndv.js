@@ -71,6 +71,46 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 500, { ok: false, error: `config Creator: ${e.message}` });
   }
 
+  // Cerrar una nota YA creada, sin volver a convertir. La app rechaza una
+  // segunda NDV del mismo origen ("Ya existe otra NDV proveniente de la misma
+  // cotización"), así que la finalización tiene que poder correr sola.
+  if (req.query?.finalizarNdv) {
+    const ndvSolo = String(req.query.finalizarNdv).trim();
+    const rNdv = await creatorApiFetch(
+      `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(
+        config.appLinkName
+      )}/report/${encodeURIComponent(config.reportLinkName)}/${encodeURIComponent(ndvSolo)}?field_config=all`,
+      { method: "GET" }
+    );
+    const jNdv = await rNdv.json().catch(() => ({}));
+    const ndvRec = jNdv?.data || {};
+    const { finalizarFormulario } = require("../_shared/ndv-subforms");
+    const r = await finalizarFormulario({ ndvId: ndvSolo, ndvRecord: ndvRec }).catch((e) => ({
+      error: e.message,
+    }));
+    await new Promise((x) => setTimeout(x, 5000));
+    const rr = await creatorApiFetch(
+      `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(
+        config.appLinkName
+      )}/report/${encodeURIComponent(config.reportLinkName)}/${encodeURIComponent(ndvSolo)}?field_config=all`,
+      { method: "GET" }
+    );
+    const d = (await rr.json().catch(() => ({})))?.data || {};
+    return sendJson(res, 200, {
+      ok: true,
+      finalizar: r,
+      despues: {
+        ID_NDV: texto(d.ID_NDV),
+        STATUS: texto(d.STATUS),
+        FORM_STATUS: texto(d.FORM_STATUS),
+        PDF_STRING: texto(d.PDF_STRING) ? "presente" : "vacío",
+        TOTAL_SERVICIOS_MENSUALES: texto(d.TOTAL_SERVICIOS_MENSUALES),
+        MESES_PERIODO: texto(d.MESES_PERIODO),
+        SellerName: texto(d.SellerName),
+      },
+    });
+  }
+
   const cotId = String(req.query?.cot || "").trim();
   if (!cotId) return sendJson(res, 400, { ok: false, error: "falta ?cot=<ID interno>" });
   const dryRun = String(req.query?.dryRun || "") === "1";
