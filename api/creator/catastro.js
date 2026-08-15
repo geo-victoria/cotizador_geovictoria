@@ -61,7 +61,10 @@ module.exports = async function handler(req, res) {
   const porCreador = new Map();
   const filas = [];
   let leidos = 0;
-  let cursor = "";
+  // El cursor se puede ENCADENAR entre llamadas: cada página de Creator tarda
+  // varios segundos y ~30 no entran en el tiempo de la función (504). Se
+  // devuelve el cursor final y la siguiente llamada retoma desde ahí.
+  let cursor = String(req.query?.cursor || "").trim();
   const cuenta = (mapa, clave) => mapa.set(clave, (mapa.get(clave) || 0) + 1);
 
   try {
@@ -124,6 +127,8 @@ module.exports = async function handler(req, res) {
     app: `${config.ownerName}/${config.appLinkName}`,
     reporte: config.reportLinkName,
     registros_leidos: leidos,
+    cursor_siguiente: cursor || null,
+    hay_mas: Boolean(cursor),
     por_estado: ordenar(porEstado),
     por_formulario: ordenar(porFormulario),
     por_creador: ordenar(porCreador),
