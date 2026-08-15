@@ -147,6 +147,24 @@ module.exports = async function handler(req, res) {
     );
     const j = await r.json().catch(() => ({}));
     const filas = Array.isArray(j?.data) ? j.data : [];
+    // `crudo=1` devuelve los campos no vacíos tal cual: hace falta para copiar
+    // la estructura de un registro de referencia hecho a mano.
+    if (String(req.query?.crudo || "") === "1") {
+      return sendJson(res, 200, {
+        ok: r.ok,
+        status: r.status,
+        reporte: rep,
+        n: filas.length,
+        filas: filas.map((f) => {
+          const out = {};
+          for (const [k, v] of Object.entries(f)) {
+            const t = texto(v);
+            if (t || Array.isArray(v)) out[k] = v;
+          }
+          return out;
+        }),
+      });
+    }
     return sendJson(res, 200, {
       ok: r.ok,
       status: r.status,
