@@ -253,6 +253,12 @@ module.exports = async function handler(req, res) {
     if (!Object.keys(data).length) {
       return sendJson(res, 200, { ok: true, ndvId, nada_que_completar: true });
     }
+    // LLAVE del candado. `DenyEditions` (on edit → on validate del formulario
+    // Nota_de_Venta) hace `cancel submit` con el alert "Las NDV no pueden ser
+    // editadas" cuando `Formulario == "Nota de Venta" && !UpdateCheckbox`. Es
+    // la misma llave que usa el Deluge interno en cada updateRecord suyo, y
+    // `restoreUpdateCheckbox` la vuelve a dejar en false después.
+    data.UpdateCheckbox = true;
 
     const r = await creatorApiFetch(`${reporte}/${encodeURIComponent(ndvId)}`, {
       method: "PATCH",
