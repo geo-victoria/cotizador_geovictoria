@@ -530,14 +530,35 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
       // recién entonces se puede elegir el equipo.
       const { Equipos: filasEquipos, ...sinGrilla } = arriendoRecord;
       const arriendoId = await createSubformRecord(creatorConfig, "Formulario_de_Equipos", sinGrilla);
-      if (arriendoId && Array.isArray(filasEquipos) && filasEquipos.length > 0) {
+      if (arriendoId && lineasArriendo.length > 0) {
         const path =
           `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}` +
           `/report/HARDWARE_ALL_DATA/${encodeURIComponent(arriendoId)}`;
+        // La grilla NO se escribe directo: el picklist `Item` se llena en
+        // tiempo de ejecución desde Books, así que por API cualquier nombre de
+        // artículo es un valor inválido. Se deja el pedido en
+        // `Equipos_Por_API` y un flujo de Creator resuelve el artículo contra
+        // Books —con la misma conexión que usa la interfaz— e inserta la fila.
+        // De ahí sale además el precio de LISTA del equipo, que nosotros no
+        // tenemos en una cotización de arriendo y que un cálculo posterior
+        // necesita.
+        const pedido = (lineasArriendo || []).map((l) => ({
+          codigo: toText(l.codigo),
+          cantidad: toNumber(l.cantidad) || 1,
+          valorMensual: toNumber(l.valorMensualUnitario),
+        }));
         const resp = await creatorApiFetch(path, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: { Equipos: filasEquipos } }),
+          body: JSON.stringify({
+            data: {
+              Equipos_Por_API: JSON.stringify(pedido),
+              // Sin estos dos, otro workflow del formulario revienta en
+              // `EditNextStep` (currentIndex + 1 sobre nulo).
+              currentEditIndex: 0,
+              maxIndex: 0,
+            },
+          }),
         });
         const payload = await readJsonSafe(resp);
         if (!resp.ok || isCreatorError(payload)) {
