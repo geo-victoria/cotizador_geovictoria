@@ -517,7 +517,29 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
         lineasArriendo,
         servicioProducto,
       });
-      const arriendoId = await createSubformRecord(creatorConfig, "Formulario_de_Equipos", arriendoRecord);
+      // La grilla va en un SEGUNDO paso. El picklist de `Item` se valida contra
+      // el `Servicio_Producto` del registro, y en el mismo POST Creator todavía
+      // no lo tiene guardado: rechaza la fila con "Invalid column value for
+      // Item". En la interfaz pasa lo mismo — primero se elige el servicio y
+      // recién entonces se puede elegir el equipo.
+      const { Equipos: filasEquipos, ...sinGrilla } = arriendoRecord;
+      const arriendoId = await createSubformRecord(creatorConfig, "Formulario_de_Equipos", sinGrilla);
+      if (arriendoId && Array.isArray(filasEquipos) && filasEquipos.length > 0) {
+        const path =
+          `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}` +
+          `/report/HARDWARE_ALL_DATA/${encodeURIComponent(arriendoId)}`;
+        const resp = await creatorApiFetch(path, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: { Equipos: filasEquipos } }),
+        });
+        const payload = await readJsonSafe(resp);
+        if (!resp.ok || isCreatorError(payload)) {
+          const detalle = JSON.stringify(payload).slice(0, 300);
+          console.warn(`[ndv-subforms] grilla del arriendo rechazada: ${detalle}`);
+          errors.push(`Formulario_de_Equipos(arriendo) grilla: ${detalle}`);
+        }
+      }
       console.log(
         `[ndv-subforms] Formulario_de_Equipos(arriendo) → id=${arriendoId} ` +
           `equipos=${JSON.stringify(arriendoRecord.Equipos || [])} mensual=${arriendoRecord.Monto}`
