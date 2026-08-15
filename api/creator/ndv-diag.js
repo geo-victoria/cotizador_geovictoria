@@ -25,7 +25,25 @@
 const { getCreatorConfig, creatorApiFetch } = require("../_shared/zoho-creator-auth");
 const { secretoValido } = require("../_shared/secreto-vicky");
 const { resolverEmpresaGeoVictoria } = require("../_shared/empresa-gv");
-const { searchRecords } = require("../_shared/zoho-crm");
+const { zohoApiFetch } = require("../_shared/zoho-auth");
+
+/**
+ * Ejecutivo por correo. En la UI esto lo resuelve `on user input of Vendedor`
+ * leyendo `JsonSellers`, que la app arma llamando a la API interna
+ * zohointegrationapi. Acá se usa el usuario del CRM, que tiene los mismos
+ * datos (nombre y teléfono) y no exige un token extra.
+ */
+async function usuarioPorCorreo(correo) {
+  const email = String(correo || "").trim().toLowerCase();
+  if (!email) return null;
+  const r = await zohoApiFetch(`/crm/v3/users?type=ActiveUsers&per_page=200`, { method: "GET" }).catch(
+    () => null
+  );
+  if (!r || !r.ok) return null;
+  const j = await r.json().catch(() => ({}));
+  const users = Array.isArray(j?.users) ? j.users : [];
+  return users.find((u) => String(u?.email || "").trim().toLowerCase() === email) || null;
+}
 
 function texto(v) {
   if (v === null || v === undefined) return "";
@@ -180,8 +198,8 @@ module.exports = async function handler(req, res) {
     // desde la UI. Sin `fecha_uf_usd` el PDF no sabe con qué UF convertir.
     poner("Fecha_de_creaci_n", hoyCL());
     poner("fecha_uf_usd", hoyCL());
-    // Contacto: la nota lo hereda como texto, pero `Contacto_CRM` va aparte.
-    poner("Contacto_CRM", ndv.Contact_Name);
+    // `Contacto_CRM` NO se toca: es un lookup al contacto del CRM, y mandarle
+    // el nombre tumba el PATCH entero (code 3001, "Invalid column value").
     // Línea de negocio: lo que nace de Vicky es Telemarketing (vigencia 10 días
     // en el PDF, no 30).
     const linea = String(process.env.NDV_CREATOR_LINEA_NEGOCIO || "Telemarketing").trim();
@@ -203,16 +221,9 @@ module.exports = async function handler(req, res) {
       let nombre = "";
       let fono = "";
       if (correo) {
-        try {
-          const users = await searchRecords("users", `(email:equals:${correo})`, ["full_name", "phone", "mobile"]).catch(
-            () => []
-          );
-          const u = Array.isArray(users) && users.length ? users[0] : null;
-          nombre = texto(u?.full_name);
-          fono = texto(u?.mobile) || texto(u?.phone);
-        } catch {
-          /* best effort */
-        }
+        const u = await usuarioPorCorreo(correo).catch(() => null);
+        nombre = texto(u?.full_name) || [texto(u?.first_name), texto(u?.last_name)].filter(Boolean).join(" ");
+        fono = texto(u?.mobile) || texto(u?.phone);
       }
       if (nombre) {
         data.SellerName = nombre;
