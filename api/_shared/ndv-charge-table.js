@@ -39,6 +39,13 @@ const {
 const { PRICING_TIERS } = require("./proposal-constants");
 const { articuloDeHardware, articuloDeServicio } = require("./creator-articulos");
 
+/** Servicios de Creator cuyo registro va al Formulario_de_Equipos, no a un Servicio_Recurrente. */
+const SERVICIOS_ARRIENDO_HARDWARE = new Set([
+  "Arriendo de Equipos",
+  "Arriendo de Equipos Asistencia",
+  "Arriendo de Chip de Datos",
+]);
+
 // Creator no acepta un tramo abierto: el último de una tabla bien formada llega
 // hasta 9999 (ver las notas de venta de referencia).
 const TOPE_ULTIMO_TRAMO = 9999;
@@ -294,6 +301,16 @@ function buildChargeTables({
   const lineasEquipos = [];
   const lineasServicios = [];
   const lineasSinArticulo = [];
+  // Arriendo de hardware. Va aparte porque en Creator el arriendo es
+  // RECURRENTE pero su registro vive en el Formulario_de_Equipos, no en un
+  // Servicio_Recurrente: `data.getAllEquipmentServices()` lista
+  // "Arriendo de Equipos" entre el hardware, así que cada recorrido del pedido
+  // busca su id en HARDWARE_ALL_DATA. Emitiéndolo como servicio recurrente el
+  // id quedaba en SERVICES_ALL_DATA, la búsqueda no encontraba nada y
+  // reventaban tanto `RegeneratePdfJson` (la nota se quedaba sin PDF) como
+  // `CalculateNDVTotalAmounts` (sin totales). Referencia verificada:
+  // NDV-30721 / EVER CHILE, confirmada a mano, con SO-27629.
+  const lineasArriendo = [];
 
   rows.forEach((row, index) => {
     const nombre = String(row?.nombre || "").trim();
@@ -337,6 +354,35 @@ function buildChargeTables({
         else if (nombre) lineasSinArticulo.push(nombre);
       }
       return;
+    }
+
+    // Arriendo de equipos: su bloque es de EQUIPOS aunque el cobro sea mensual.
+    // Solo se desvía cuando la línea resuelve a un artículo de hardware del
+    // catálogo de Creator; si no resuelve, sigue el camino de antes y al menos
+    // el cobro queda registrado en alguna parte.
+    if (SERVICIOS_ARRIENDO_HARDWARE.has(servicio)) {
+      const codigo = String(row?.codigo || "").trim();
+      const articulo = articuloDeHardware(codigo);
+      if (articulo) {
+        const factor = factorDescuentoLinea(row, descuentos);
+        const unitarioMensual = redondear(
+          (montos.unitario > 0 ? montos.unitario : montos.subtotal / cantidad) * factor
+        );
+        lineasArriendo.push({
+          nombre,
+          codigo,
+          cantidad,
+          item: articulo.item,
+          modelo: articulo.modelo,
+          valorMensualUnitario: unitarioMensual,
+          totalMensual: redondear(montos.subtotal * factor),
+        });
+        return;
+      }
+      console.warn(
+        `[ndv-charge-table] arriendo "${nombre}" sin artículo de hardware en Creator; ` +
+          `se emite como Servicio_Recurrente (la nota podría quedar sin PDF).`
+      );
     }
 
     const previo = acumulado.get(servicio) || {
@@ -454,6 +500,7 @@ function buildChargeTables({
     descuentoPorServicio,
     lineasEquipos,
     lineasServicios,
+    lineasArriendo,
     diagnostico: {
       fallback,
       moneda: moneda || "UF",

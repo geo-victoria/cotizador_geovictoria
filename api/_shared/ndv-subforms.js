@@ -294,6 +294,65 @@ function buildFormularioEquiposRecord({ ndvId, ndvRecord, lineasEquipos, lineasS
   };
 }
 
+/** Servicios de arriendo que Creator resuelve contra el catálogo de hardware. */
+const SERVICIOS_ARRIENDO_HARDWARE = new Set([
+  "Arriendo de Equipos",
+  "Arriendo de Equipos Asistencia",
+  "Arriendo de Chip de Datos",
+]);
+
+/**
+ * Formulario_de_Equipos del ARRIENDO.
+ *
+ * En Creator el arriendo es recurrente en el COBRO pero de equipos en el
+ * REGISTRO: `data.getAllEquipmentServices()` lista "Arriendo de Equipos" junto
+ * a las ventas, así que cada recorrido del pedido va a buscar su id a
+ * HARDWARE_ALL_DATA. Emitiéndolo como Servicio_Recurrente el id quedaba en
+ * SERVICES_ALL_DATA y reventaban `RegeneratePdfJson` y
+ * `CalculateNDVTotalAmounts` — la nota se quedaba sin PDF y sin totales, y por
+ * lo tanto no se podía confirmar.
+ *
+ * Estructura copiada de NDV-30721 (EVER CHILE, confirmada a mano, SO-27629):
+ *
+ *   Servicio_Producto = "Arriendo de Equipos"   SERVICE_TYPE = "Recurrente"
+ *   Monto   = 0.90   (suma de Valor_Mensual)
+ *   MontoHW = 7.00   (suma de Valor, el precio de lista de los equipos)
+ *   Equipos: [{ Item, Valor, Cantidad, Valor_Mensual }]
+ *
+ * `Valor` se omite cuando no lo sabemos: una cotización de arriendo no trae el
+ * precio de venta del equipo, y mandar 0 imprimiría un valor de lista falso.
+ */
+function buildFormularioArriendoRecord({ ndvId, ndvRecord, lineasArriendo, servicioProducto }) {
+  const equipos = (lineasArriendo || []).map((l) => ({
+    Item: l.item,
+    ...(l.modelo ? { Modelo: l.modelo } : {}),
+    Cantidad: toNumber(l.cantidad) || 1,
+    Valor_Mensual: toNumber(l.valorMensualUnitario),
+    ...(toNumber(l.valorListaUnitario) > 0 ? { Valor: toNumber(l.valorListaUnitario) } : {}),
+  }));
+
+  const montoMensual = (lineasArriendo || []).reduce((acc, l) => acc + toNumber(l.totalMensual), 0);
+  const montoHw = equipos.reduce((acc, e) => acc + toNumber(e.Valor) * (toNumber(e.Cantidad) || 1), 0);
+
+  return {
+    ID_Formulario: ndvId,
+    Formulario: "Cotización",
+    FORM_STATUS: "BEING CREATED",
+    IdDuplicatedMasterForm: 0,
+    Linea_de_Negocio: "Estándar",
+    Moneda: toText(ndvRecord.Moneda) || "UF",
+    country: toText(ndvRecord.Pa_s_Facturaci_n) || "Chile",
+    Servicio_Producto: servicioProducto || "Arriendo de Equipos",
+    SERVICE_TYPE: "Recurrente",
+    Hito_de_Facturaci_n: "Otro",
+    Forma_de_Pago: "1 Cuota (100%)",
+    CAN_UPDATE_FIELDS: true,
+    ...(equipos.length > 0 ? { Equipos: equipos } : {}),
+    MontoHW: Number(montoHw.toFixed(5)),
+    Monto: Number(montoMensual.toFixed(5)),
+  };
+}
+
 /**
  * Orquesta la creación de sub-formularios para un NDV recién creado.
  *
@@ -317,12 +376,18 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
   // venta de referencia), pero en el maestro vive en
   // Servicio_Recurrente_Configurado, así que iterando solo esa lista su bloque
   // nunca se creaba y el reloj no aparecía en el PDF.
+  const lineasArriendo = chargeTables?.lineasArriendo || [];
   const recurringServices = Array.from(
     new Set([
       ...(Array.isArray(ndvRecord.Servicios_Recurrentes) ? ndvRecord.Servicios_Recurrentes : []),
       ...Object.keys(chargeTables?.porServicio || {}),
     ])
-  ).filter(Boolean);
+  )
+    .filter(Boolean)
+    // El arriendo se emite como Formulario_de_Equipos más abajo. Si además se
+    // creara su Servicio_Recurrente, el bloque saldría DOS veces en el PDF y se
+    // cobraría dos veces.
+    .filter((s) => !(lineasArriendo.length > 0 && SERVICIOS_ARRIENDO_HARDWARE.has(s)));
 
   console.log(`[ndv-subforms] ndvId=${ndvId} servicios=${JSON.stringify(recurringServices)}`);
 
@@ -406,6 +471,33 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
       equiposRechazado = true;
       console.warn(`[ndv-subforms] Formulario_de_Equipos ERROR: ${err.message}`);
       errors.push(`Formulario_de_Equipos: ${err.message}`);
+    }
+  }
+
+  // 2.a Arriendo de equipos: su propio Formulario_de_Equipos, con
+  //     SERVICE_TYPE="Recurrente". Es un registro APARTE del de venta, igual que
+  //     en las notas hechas a mano: la nota de referencia NDV-30721 tiene uno
+  //     para el arriendo y otro para la venta.
+  if (lineasArriendo.length > 0) {
+    const servicioProducto =
+      (Array.isArray(ndvRecord.Servicios_Recurrentes) ? ndvRecord.Servicios_Recurrentes : []).find((s) =>
+        SERVICIOS_ARRIENDO_HARDWARE.has(s)
+      ) || "Arriendo de Equipos";
+    try {
+      const arriendoRecord = buildFormularioArriendoRecord({
+        ndvId,
+        ndvRecord,
+        lineasArriendo,
+        servicioProducto,
+      });
+      const arriendoId = await createSubformRecord(creatorConfig, "Formulario_de_Equipos", arriendoRecord);
+      console.log(
+        `[ndv-subforms] Formulario_de_Equipos(arriendo) → id=${arriendoId} ` +
+          `equipos=${JSON.stringify(arriendoRecord.Equipos || [])} mensual=${arriendoRecord.Monto}`
+      );
+    } catch (err) {
+      console.warn(`[ndv-subforms] Formulario_de_Equipos(arriendo) ERROR: ${err.message}`);
+      errors.push(`Formulario_de_Equipos(arriendo): ${err.message}`);
     }
   }
 
