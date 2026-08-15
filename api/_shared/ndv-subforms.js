@@ -368,8 +368,10 @@ function buildFormularioArriendoRecord({ ndvId, ndvRecord, lineasArriendo, servi
     country: toText(ndvRecord.Pa_s_Facturaci_n) || "Chile",
     Servicio_Producto: servicioProducto || "Arriendo de Equipos",
     SERVICE_TYPE: "Recurrente",
-    Hito_de_Facturaci_n: "Otro",
-    Forma_de_Pago: "1 Cuota (100%)",
+    // "Cargando..." y no "Otro": el hito real es un picklist dinámico que la
+    // API rechaza ("Invalid column value for Hito_de_Facturaci_n"). Es el mismo
+    // valor estático que ya usa el bloque de venta.
+    Hito_de_Facturaci_n: "Cargando...",
     CAN_UPDATE_FIELDS: true,
     ...(equipos.length > 0 ? { Equipos: equipos } : {}),
     MontoHW: Number(montoHw.toFixed(5)),
