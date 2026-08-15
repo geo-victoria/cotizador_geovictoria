@@ -133,11 +133,35 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
     }
   }
 
+  // El pago CONVIERTE la cotización en nota de venta y la confirma (orden de
+  // Lalo, 15-ago). Hasta hoy ese paso lo hacía una ejecutiva a mano en Creator.
+  //
+  // Va al final y siempre en best-effort: el onboarding y la notificación ya
+  // salieron, y si Creator falla la nota se puede convertir después sin que el
+  // cliente note nada.
+  let notaDeVenta = { status: "skipped" };
+  if (config.ndvHandoffEnabled && String(process.env.NDV_CONVERTIR_POST_PAGO || "1") === "1") {
+    const cotCreatorId = toText(ndv?.ndvId) || toText(quote?.[config.quoteNvdIdTextField]);
+    if (!cotCreatorId) {
+      notaDeVenta = { status: "skipped", reason: "sin cotización en Creator" };
+    } else {
+      try {
+        const { convertirYConfirmar } = require("./ndv-conversion");
+        notaDeVenta = await convertirYConfirmar(cotCreatorId);
+        console.log(`[finalize] nota de venta: ${JSON.stringify(notaDeVenta)}`);
+      } catch (error) {
+        notaDeVenta = { status: "error", error: toText(error?.message || error) };
+        console.warn(`[finalize] conversión a nota de venta falló: ${notaDeVenta.error}`);
+      }
+    }
+  }
+
   return {
     onboardingUrl,
     onboardingId: toText(handoffResult?.onboardingId),
     reused: handoffResult?.reused === true,
     ndv,
+    notaDeVenta,
   };
 }
 
