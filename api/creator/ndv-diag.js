@@ -117,6 +117,42 @@ module.exports = async function handler(req, res) {
     });
   }
 
+  // ── Consulta libre a cualquier reporte ───────────────────────────────────
+  // Para elegir a mano la cotización con la que probar la conversión.
+  if (req.query?.listar) {
+    const rep = String(req.query.listar).trim();
+    const criteria = String(req.query?.criteria || "").trim();
+    const limite = Math.min(200, Math.max(1, Number(req.query?.limite) || 20));
+    const q = criteria ? `criteria=${encodeURIComponent(criteria)}&` : "";
+    const r = await creatorApiFetch(
+      `${base}/report/${encodeURIComponent(rep)}?${q}limit=${limite}&field_config=all`,
+      { method: "GET" }
+    );
+    const j = await r.json().catch(() => ({}));
+    const filas = Array.isArray(j?.data) ? j.data : [];
+    return sendJson(res, 200, {
+      ok: r.ok,
+      status: r.status,
+      reporte: rep,
+      n: filas.length,
+      filas: filas.map((f) => ({
+        id: texto(f.ID),
+        numero: texto(f.ID_NDV),
+        formulario: texto(f.Formulario),
+        status: texto(f.STATUS),
+        formStatus: texto(f.FORM_STATUS),
+        estadoCot: texto(f.ESTADO_COT),
+        cuenta: texto(f.CRM_ACCOUNT_NAME),
+        creado: texto(f.Added_Time),
+        pdf: texto(f.PDF_STRING) ? "sí" : "no",
+        servicios: (Array.isArray(f.Form_Order) ? f.Form_Order : [])
+          .map((x) => `${texto(x.Product_Name)}${x.Selected === true || texto(x.Selected) === "true" ? "" : "(off)"}`)
+          .join(" + "),
+      })),
+      crudo: filas.length ? undefined : JSON.stringify(j).slice(0, 300),
+    });
+  }
+
   // ── Log_NDV ──────────────────────────────────────────────────────────────
   if (req.query?.logs) {
     const idForm = String(req.query.logs).trim();
