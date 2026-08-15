@@ -179,6 +179,12 @@ module.exports = async function handler(req, res) {
         estadoCot: texto(f.ESTADO_COT),
         cuenta: texto(f.CRM_ACCOUNT_NAME),
         creado: texto(f.Added_Time),
+        usuario: texto(f.Added_User),
+        // Para auditar los bloques de equipos: cuántas filas quedaron de verdad.
+        nEquipos: Array.isArray(f.Equipos) ? f.Equipos.length : 0,
+        nServiciosAsoc: Array.isArray(f.Servicios) ? f.Servicios.length : 0,
+        servicioProducto: texto(f.Servicio_Producto),
+        montoHw: texto(f.MontoHW),
         pdf: texto(f.PDF_STRING) ? "sí" : "no",
         servicios: (Array.isArray(f.Form_Order) ? f.Form_Order : [])
           .map((x) => `${texto(x.Product_Name)}${x.Selected === true || texto(x.Selected) === "true" ? "" : "(off)"}`)
