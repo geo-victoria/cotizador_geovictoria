@@ -78,7 +78,8 @@ const COPIAR_DIRECTO = [
  * @param {string} cotId ID interno del registro de Creator (la COTIZACIÓN).
  * @returns {Promise<{ok: boolean, ndvId?: string, idNdv?: string, paso?: string, error?: string, confirmada?: boolean}>}
  */
-async function convertirYConfirmar(cotId) {
+async function convertirYConfirmar(cotId, opciones) {
+  const confirmarAhora = opciones?.confirmar !== false;
   const id = texto(cotId);
   if (!id) return { ok: false, error: "sin id de cotización en Creator" };
 
@@ -196,7 +197,25 @@ async function convertirYConfirmar(cotId) {
   // arranca leyendo FullFormJsonPdf.
   await new Promise((r) => setTimeout(r, 8000));
 
-  // 4. Confirmar.
+  // 4. Confirmar — SEGUNDA PASADA.
+  //
+  // La cadena completa (crear, finalizar, esperar el PDF, confirmar) no cabe en
+  // el tiempo de una función serverless: la llamada se corta y quedamos ciegos,
+  // sin poder distinguir un timeout inofensivo de una falla real. Por eso el
+  // post-pago solo CONVIERTE, y la confirmación la hace una pasada posterior,
+  // cuando el PDF ya existe. Confirmar sin PDF no sirve: `ConfirmNDV` arranca
+  // leyendo `FullFormJsonPdf`.
+  if (!confirmarAhora) {
+    const parcial = await leer(ndvId).catch(() => ({}));
+    return {
+      ok: true,
+      ndvId,
+      idNdv: texto(parcial.ID_NDV),
+      confirmada: false,
+      pendienteDeConfirmar: true,
+      pdf: Boolean(texto(parcial.PDF_STRING)),
+    };
+  }
   const rConf = await creatorApiFetch(`${reporte}/${encodeURIComponent(ndvId)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -217,4 +236,52 @@ async function convertirYConfirmar(cotId) {
   };
 }
 
-module.exports = { convertirYConfirmar };
+/**
+ * SEGUNDA PASADA: confirmar una nota que ya tiene su PDF.
+ *
+ * Se niega si el PDF todavía no está — `ConfirmNDV` empieza leyendo
+ * `FullFormJsonPdf` y sin él aborta dejando la nota a medias. Es idempotente:
+ * una nota ya CONFIRMADA se informa y no se vuelve a tocar.
+ */
+async function confirmarNota(ndvId) {
+  const id = texto(ndvId);
+  if (!id) return { ok: false, error: "sin id de nota" };
+
+  const config = getCreatorConfig();
+  const reporte =
+    `/creator/v2.1/data/${encodeURIComponent(config.ownerName)}/${encodeURIComponent(config.appLinkName)}` +
+    `/report/${encodeURIComponent(config.reportLinkName)}`;
+
+  const leer = async () => {
+    const r = await creatorApiFetch(`${reporte}/${encodeURIComponent(id)}?field_config=all`, { method: "GET" });
+    const j = await r.json().catch(() => ({}));
+    return j?.data || {};
+  };
+
+  const antes = await leer();
+  if (texto(antes.STATUS) === "CONFIRMADA") {
+    return { ok: true, ndvId: id, idNdv: texto(antes.ID_NDV), confirmada: true, yaEstaba: true };
+  }
+  if (!texto(antes.PDF_STRING)) {
+    return { ok: false, ndvId: id, idNdv: texto(antes.ID_NDV), error: "todavía sin PDF", reintentable: true };
+  }
+
+  await creatorApiFetch(`${reporte}/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: { [CAMPO_CONFIRMAR]: true, UpdateCheckbox: true } }),
+  }).catch((e) => console.warn(`[ndv-conversion] confirmar falló: ${e.message}`));
+
+  await new Promise((r) => setTimeout(r, 6000));
+  const d = await leer().catch(() => ({}));
+  return {
+    ok: true,
+    ndvId: id,
+    idNdv: texto(d.ID_NDV),
+    confirmada: texto(d.STATUS) === "CONFIRMADA",
+    totalMensual: texto(d.TOTAL_SERVICIOS_MENSUALES),
+    idSo: texto(d.ID_SO),
+  };
+}
+
+module.exports = { convertirYConfirmar, confirmarNota };

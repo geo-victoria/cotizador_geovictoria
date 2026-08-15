@@ -147,7 +147,11 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
     } else {
       try {
         const { convertirYConfirmar } = require("./ndv-conversion");
-        notaDeVenta = await convertirYConfirmar(cotCreatorId);
+        // Solo CONVIERTE. La confirmación va en una pasada posterior
+        // (api/creator/confirmar-pendientes), cuando el PDF ya existe: la
+        // cadena entera no cabe en el tiempo de una función y el corte nos
+        // dejaba sin saber si había fallado algo de verdad.
+        notaDeVenta = await convertirYConfirmar(cotCreatorId, { confirmar: false });
         console.log(`[finalize] nota de venta: ${JSON.stringify(notaDeVenta)}`);
       } catch (error) {
         notaDeVenta = { status: "error", error: toText(error?.message || error) };
