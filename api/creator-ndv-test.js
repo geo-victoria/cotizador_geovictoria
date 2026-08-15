@@ -54,7 +54,10 @@ module.exports = async function handler(req, res) {
 
   const expected = String(process.env.QUOTE_ACCEPTANCE_SECRET || "");
   const provided = String(req.query?.secret || req.headers["x-diag-secret"] || "");
-  if (!expected || expected !== provided) {
+  // También se acepta la clave compartida con el agente, que es la que usan los
+  // demás endpoints de /api/creator.
+  const { secretoValido } = require("./_shared/secreto-vicky");
+  if (!secretoValido(req) && (!expected || expected !== provided)) {
     res.statusCode = 401;
     res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
     return;
