@@ -182,11 +182,45 @@ module.exports = async function handler(req, res) {
     };
   }
 
+  // 5. FINALIZAR. La nota recién creada queda en FORM_STATUS "BEING CREATED",
+  //    sin PDF y sin totales — la brecha exacta contra las notas confirmadas a
+  //    mano. Ese salto lo da `FinalizeForm`, el workflow "on add" de
+  //    Finalizar_Formulario, que además dispara GeneratePDF. Es el mismo
+  //    mecanismo que ya usa la emisión para que la COTIZACIÓN tenga su PDF.
+  let finalizar = null;
+  if (ndvId && String(req.query?.finalizar || "1") === "1") {
+    try {
+      // SOLO el cierre: los servicios ya viajaron en el Form_Order copiado
+      // desde la cotización; recrearlos duplicaría el cobro.
+      const { finalizarFormulario } = require("../_shared/ndv-subforms");
+      finalizar = await finalizarFormulario({ ndvId, ndvRecord: registro }).catch((e) => ({
+        error: e.message,
+      }));
+    } catch (e) {
+      finalizar = { error: e.message };
+    }
+    await new Promise((r) => setTimeout(r, 4000));
+    const rr = await creatorApiFetch(`${reporte}/${encodeURIComponent(ndvId)}?field_config=all`, {
+      method: "GET",
+    });
+    const jj = await rr.json().catch(() => ({}));
+    const d = jj?.data || {};
+    despues = {
+      ...despues,
+      STATUS: texto(d.STATUS),
+      FORM_STATUS: texto(d.FORM_STATUS),
+      PDF_STRING: texto(d.PDF_STRING) ? "presente" : "vacío",
+      TOTAL_SERVICIOS_MENSUALES: texto(d.TOTAL_SERVICIOS_MENSUALES),
+      MESES_PERIODO: texto(d.MESES_PERIODO),
+    };
+  }
+
   return sendJson(res, 200, {
     ok: rPost.ok,
     status: rPost.status,
     respuesta: JSON.stringify(jPost).slice(0, 600),
     ndvId,
+    finalizar,
     despues,
   });
 };

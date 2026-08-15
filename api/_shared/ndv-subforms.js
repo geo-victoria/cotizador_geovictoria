@@ -462,4 +462,19 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
   };
 }
 
-module.exports = { runNdvSubformSetup };
+/**
+ * Solo el CIERRE de un registro: crea Finalizar_Formulario, que dispara
+ * FinalizeForm (→ FORM_STATUS "CREATED") y GeneratePDF (→ PDF_STRING).
+ *
+ * Se expone aparte porque la conversión a Nota de Venta NO debe recrear los
+ * servicios: esos ya viajaron en el Form_Order copiado desde la cotización, y
+ * volver a crearlos duplicaría el cobro.
+ */
+async function finalizarFormulario({ ndvId, ndvRecord, notasPdf }) {
+  const creatorConfig = getCreatorConfig();
+  const registro = buildFinalizarFormularioRecord({ ndvId, ndvRecord: ndvRecord || {}, notasPdf: notasPdf || "" });
+  const id = await createSubformRecord(creatorConfig, "Finalizar_Formulario", registro);
+  return { finalizarId: id };
+}
+
+module.exports = { runNdvSubformSetup, finalizarFormulario };
