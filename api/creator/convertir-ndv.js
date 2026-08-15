@@ -55,6 +55,14 @@ const COPIAR_DIRECTO = [
   "JsonTradeNamesZoho",
   "Razones_Sociales_Account",
   "MESES_PERIODO",
+  // FECHA de conversión UF/USD. Se HEREDA de la cotización, nunca se re-estampa
+  // con la de hoy: Creator no guarda el VALOR de la UF, solo esta fecha, y con
+  // ella resuelve después la conversión a pesos. Si la nota naciera con la
+  // fecha del día de la conversión, cobraría con una UF distinta a la que el
+  // cliente vio y aceptó.
+  "fecha_uf_usd",
+  "dontUpdateUfDate",
+  "Fecha_de_creaci_n",
   // Empresa en GeoVictoria: en la UI los llena LoadCrmData al elegir la
   // cuenta. Si la cotización ya los trae, la nota los hereda.
   "ID_Empresa_GeoVictoria",

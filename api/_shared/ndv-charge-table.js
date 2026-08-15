@@ -171,6 +171,13 @@ function completarEscaleraSobreTope(escalera) {
   if (tope <= 0) return escalera;
 
   // Razón contra la escalera oficial en los tramos que comparten rango.
+  //
+  // Orden de Lalo (15-ago): la tabla de precios SIEMPRE va completa hasta el
+  // último tramo, aunque Vicky no venda sobre 20 ni sobre 50 — los tramos que
+  // falten se completan con los de la calculadora. Antes, si un módulo no era
+  // múltiplo exacto de la escalera oficial en todos sus tramos, la tabla se
+  // cortaba en el tope del catálogo de Vicky y la nota salía con la escalera
+  // trunca.
   const razones = [];
   for (const tramo of escalera) {
     const oficial = oficiales.find(
@@ -178,16 +185,18 @@ function completarEscaleraSobreTope(escalera) {
     );
     const precioOficial = toNumber(oficial?.uf);
     const precio = toNumber(tramo?.precioUF);
-    if (precioOficial <= 0 || precio <= 0) return escalera; // sin correspondencia: no extender
-    razones.push(precio / precioOficial);
+    if (precioOficial > 0 && precio > 0) razones.push(precio / precioOficial);
   }
-  const razon = razones[0];
+  // Se usa la razón del ÚLTIMO tramo con correspondencia: es el que colinda con
+  // la continuación, así que el precio no da un salto en la frontera. Sin
+  // ninguna correspondencia se toma la escalera oficial tal cual (razón 1).
+  const razon = razones.length > 0 ? razones[razones.length - 1] : 1;
   const constante = razones.every((r) => Math.abs(r - razon) < 1e-9);
   if (!constante) {
     console.warn(
-      "[ndv-charge-table] La escalera no es múltiplo constante de la oficial; no se extiende sobre el tope."
+      `[ndv-charge-table] La escalera no es múltiplo constante de la oficial; ` +
+        `se extiende con la razón del último tramo conocido (${razon.toFixed(4)}).`
     );
-    return escalera;
   }
 
   const continuacion = oficiales
