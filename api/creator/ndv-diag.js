@@ -194,6 +194,16 @@ module.exports = async function handler(req, res) {
     });
   }
 
+  // ── Conversión + confirmación, el camino del post-pago ───────────────────
+  if (req.query?.convertir) {
+    const { convertirYConfirmar } = require("../_shared/ndv-conversion");
+    const r = await convertirYConfirmar(String(req.query.convertir).trim()).catch((e) => ({
+      ok: false,
+      error: e.message,
+    }));
+    return sendJson(res, 200, r);
+  }
+
   // ── Log_NDV ──────────────────────────────────────────────────────────────
   if (req.query?.logs) {
     const idForm = String(req.query.logs).trim();
