@@ -178,7 +178,26 @@ function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTa
 function buildFinalizarFormularioRecord({ ndvId, ndvRecord, notasPdf }) {
   return {
     ID_Formulario: ndvId,
-    Empresa: "Creada en Plataforma",
+    // "Creada en Plataforma" NO significa "créala": significa que la empresa YA
+    // EXISTE en la plataforma. `RegeneratePdfJson` lo lee así —
+    //
+    //   newcompany = serviceResponse.get("Empresa");
+    //   if(newcompany != "Creada en Plataforma") { IsNewCompany = true; }
+    //   else { empresaGv = serviceResponse.get("Empresa_dropdown");
+    //          nombreEmpresa = empresaGv.mid(0,empresaGv.indexOf("-")); ... }
+    //
+    // — y con `Empresa_dropdown` vacío revienta en el `mid()` con "Start index
+    // cannot be greater than the end index", ABORTANDO la generación del PDF.
+    // Ese era el motivo real de que las notas de venta emitidas por API se
+    // quedaran sin PDF y sin FullFormJsonPdf (y por lo tanto sin poder
+    // confirmarse). Verificado sobre NDV-30748 el 15-ago: con este valor
+    // corregido el PDF se generó a la primera.
+    //
+    // Así que el valor depende de si la empresa existe de verdad en GeoVictoria:
+    // solo cuando tenemos su id declaramos que está creada.
+    Empresa: toText(ndvRecord.ID_Empresa_GeoVictoria) || toText(ndvRecord.GeoCompanyIdCRM)
+      ? "Creada en Plataforma"
+      : "Crear desde Nota de Venta",
     Identificador_Tributario_Empresa: toText(ndvRecord.Identificador_Tributario_Empresa),
     country: toText(ndvRecord.Pa_s_Facturaci_n) || "Chile",
     CAN_UPDATE_FIELDS: true,
