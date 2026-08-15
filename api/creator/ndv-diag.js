@@ -106,11 +106,14 @@ module.exports = async function handler(req, res) {
       .split(",")
       .map((x) => x.trim())
       .filter(Boolean);
+    const campo = String(req.query?.campo || "ID_FORMULARIO").trim();
     const intentos = [];
     for (const rep of candidatos) {
-      const criteria = encodeURIComponent(`(ID_FORMULARIO == "${idForm}")`);
+      // `?logs=*` trae las últimas filas sin filtrar: sirve para descubrir cómo
+      // se llaman de verdad los campos del reporte.
+      const filtro = idForm === "*" ? "" : `criteria=${encodeURIComponent(`(${campo} == "${idForm}")`)}&`;
       const r = await creatorApiFetch(
-        `${base}/report/${encodeURIComponent(rep)}?criteria=${criteria}&limit=30&field_config=all`,
+        `${base}/report/${encodeURIComponent(rep)}?${filtro}limit=30&field_config=all`,
         { method: "GET" }
       );
       const j = await r.json().catch(() => ({}));
@@ -121,6 +124,7 @@ module.exports = async function handler(req, res) {
           ok: true,
           reporte: rep,
           intentos,
+          campos: Object.keys(filas[0] || {}),
           logs: filas.map((f) => ({
             id: texto(f.ID),
             tipo: texto(f.TIPO),
