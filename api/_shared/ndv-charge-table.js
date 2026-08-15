@@ -23,8 +23,13 @@
  * la página de aceptación (`computePaymentAmounts` en quote-pricing.js):
  *   · el descuento recurrente aplica al plan de software, NO al arriendo de hardware;
  *   · los descuentos de instalación aplican solo a las líneas de instalación de su zona.
- * El precio viaja YA descontado y `Descuento_Ejecutivo` se deja en 0, para que
- * Creator no vuelva a descontar sobre un precio que ya lo trae.
+ * El descuento se DELEGA a Creator cuando todas las líneas de un servicio
+ * comparten el mismo %: la Tabla_de_Cobro va a precio de LISTA y el % viaja en
+ * `Descuento_Ejecutivo`, que es como lo declaran las notas de venta reales
+ * (Creator agrega solo las columnas `Dcto` y `Valor_Ad_con_Dcto`, sin tocar
+ * `Valor`). Solo si en un mismo servicio conviven dos porcentajes distintos el
+ * descuento se incorpora al precio y el campo va en 0 — un PDF sin la línea de
+ * descuento es preferible a uno que cobre mal.
  */
 
 const {
@@ -36,7 +41,7 @@ const {
   isInstalacionItem,
   getZonaTarifa,
 } = require("./quote-pricing");
-const { PRICING_TIERS } = require("./proposal-constants");
+const { PRICING_TIERS, MESES_DESCUENTO_PLAN, mesesDescuentoNormalizados } = require("./proposal-constants");
 const { articuloDeHardware, articuloDeServicio } = require("./creator-articulos");
 
 /** Servicios de Creator cuyo registro va al Formulario_de_Equipos, no a un Servicio_Recurrente. */
@@ -77,6 +82,17 @@ function normalizar(value) {
  * Descuentos vigentes de la cotización, saneados con los mismos clamps que usa
  * el cobro. Si el registro no los trae, todo queda en 0 (precio de lista).
  */
+/**
+ * Meses de vigencia del descuento del plan. El dato canónico vive en el campo
+ * del CRM cuando está configurado (QUOTE_DISCOUNT_MESES_FIELD); si no, rige la
+ * política por defecto.
+ */
+function mesesVigencia(quote, config) {
+  const campo = String(config?.quoteDiscountMesesField || process.env.QUOTE_DISCOUNT_MESES_FIELD || "").trim();
+  const crudo = campo ? quote?.[campo] : null;
+  return mesesDescuentoNormalizados(crudo);
+}
+
 function resolverDescuentos(quote, config) {
   return {
     recurrentePct: clampDescuentoPct(quote?.[config.quoteDiscountPctField]),
@@ -510,6 +526,10 @@ function buildChargeTables({
     lineasEquipos,
     lineasServicios,
     lineasArriendo,
+    // Vigencia del descuento del plan, para el campo Cantidad_de_Meses_de_descuento
+    // del Servicio_Recurrente. Sin campo configurado en el CRM manda la política
+    // por defecto (6 meses), que es lo que ofrece Vicky.
+    mesesDescuento: mesesVigencia(quote, config),
     diagnostico: {
       fallback,
       moneda: moneda || "UF",

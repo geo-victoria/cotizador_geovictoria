@@ -136,7 +136,20 @@ async function createSubformRecord(creatorConfig, formLinkName, record, timeoutM
 //    JsonPdf desde ella.
 //  - Hito/Plantilla van con el valor estático (los reales son picklists dinámicos
 //    que REST rechaza).
-function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTable, descuentoPct }) {
+/**
+ * ¿Se puede declarar la vigencia del descuento en Creator?
+ *
+ * Solo si hay descuento que acotar y si el plazo cabe en el campo (1-9 meses).
+ * Un 0 significaría "sin plazo declarado", que es justo lo que veníamos
+ * mandando sin querer.
+ */
+function mesesVigenciaValida(meses, descuentoPct, ndvRecord) {
+  const pct = toNumber(descuentoPct) || toNumber(ndvRecord?.Descuento_Ejecutivo) || 0;
+  const n = toNumber(meses);
+  return pct > 0 && Number.isInteger(n) && n >= 1 && n <= 9;
+}
+
+function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTable, descuentoPct, mesesDescuento }) {
   const employees = toNumber(ndvRecord.N_Empleados_Compometidos) || 1;
   const tabla = Array.isArray(chargeTable) && chargeTable.length > 0
     ? chargeTable
@@ -163,6 +176,17 @@ function buildServicioRecurrenteRecord({ ndvId, serviceName, ndvRecord, chargeTa
     // imprime como línea propia ("Descuento 30%") y agrega las columnas
     // "V. con Dcto" a la tabla de cobro, como en las notas de venta bien hechas.
     Descuento_Ejecutivo: toNumber(descuentoPct) || toNumber(ndvRecord.Descuento_Ejecutivo) || 0,
+    // VIGENCIA del descuento. Creator ya tenía el campo (sección oculta del
+    // Servicio_Recurrente) y nunca lo escribíamos: toda nota nuestra salía
+    // declarando el % pero con la duración en 0, o sea "para siempre". Vicky
+    // ofrece 6 meses.
+    //
+    // OJO: el campo es `number` con maxchar = 1, así que solo admite 0-9. Una
+    // vigencia de 12 o 24 meses NO cabe hoy; se omite antes que truncarla y
+    // declarar un plazo falso.
+    ...(mesesVigenciaValida(mesesDescuento, descuentoPct, ndvRecord)
+      ? { Cantidad_de_Meses_de_descuento: toNumber(mesesDescuento) }
+      : {}),
     N_Empleados_Compometidos: employees,
     Cantidad_de_Usuarios: employees,
     Cantidad_de_Usuarios_PDF: employees,
@@ -412,6 +436,7 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
         ndvRecord,
         chargeTable,
         descuentoPct: chargeTables?.descuentoPorServicio?.[serviceName],
+        mesesDescuento: chargeTables?.mesesDescuento,
       });
       let serviceId;
       try {
