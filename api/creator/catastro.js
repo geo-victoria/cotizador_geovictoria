@@ -63,6 +63,39 @@ module.exports = async function handler(req, res) {
     return r.ok ? j?.data || {} : { __error: `${r.status}`, __detalle: JSON.stringify(j).slice(0, 300) };
   };
 
+  // La API de datos indexa por el ID INTERNO (numérico), no por el legible
+  // ("COT-59509" devuelve "Invalid API URL format"). Para encontrarlo se
+  // consulta el reporte con criteria sobre el campo que corresponda.
+  if (req.query?.buscar) {
+    const valor = String(req.query.buscar).trim();
+    const campos = String(req.query?.campos || "ID_Formulario,Numero_Cotizacion,Nombre_del_documento")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const intentos = [];
+    for (const campo of campos) {
+      const criteria = encodeURIComponent(`(${campo} == "${valor}")`);
+      const r = await creatorApiFetch(`${baseDatos}?criteria=${criteria}&limit=5&field_config=all`, {
+        method: "GET",
+      });
+      const j = await r.json().catch(() => ({}));
+      const filas = Array.isArray(j?.data) ? j.data : [];
+      intentos.push({ campo, status: r.status, encontrados: filas.length });
+      if (filas.length) {
+        return sendJson(res, 200, { ok: true, buscado: valor, por: campo, intentos, datos: filas[0] });
+      }
+    }
+    return sendJson(res, 200, { ok: false, buscado: valor, intentos, error: "no encontrado" });
+  }
+
+  // Primer registro del reporte, crudo: sirve para ver el esquema completo.
+  if (String(req.query?.muestra || "") === "1") {
+    const r = await creatorApiFetch(`${baseDatos}?limit=1&field_config=all`, { method: "GET" });
+    const j = await r.json().catch(() => ({}));
+    const fila = Array.isArray(j?.data) ? j.data[0] || {} : {};
+    return sendJson(res, 200, { ok: r.ok, status: r.status, campos: Object.keys(fila), datos: fila });
+  }
+
   if (req.query?.registro) {
     const datos = await leerRegistro(String(req.query.registro));
     const vacios = String(req.query?.vacios || "") === "1";
