@@ -160,9 +160,38 @@ async function convertirYConfirmar(cotId) {
 
   // 3. Finalizar: dispara GeneratePDF.
   const ndvRecord = { ...registro, ID: ndvId };
-  await finalizarFormulario({ ndvId, ndvRecord }).catch((e) => {
+  const fin = await finalizarFormulario({ ndvId, ndvRecord }).catch((e) => {
     console.warn(`[ndv-conversion] finalizar falló: ${e.message}`);
+    return null;
   });
+
+  // CORREGIR `Empresa` DESPUÉS, no antes. La aplicación reescribe ese campo en
+  // sus propios workflows (`input.Empresa = "Creada en Plataforma"`), así que
+  // mandarlo bien en la creación no sirve de nada: queda pisado, y con
+  // `Empresa_dropdown` vacío `RegeneratePdfJson` muere en su `mid()` y la nota
+  // se queda sin PDF — y sin PDF no se puede confirmar.
+  //
+  // Corregirlo por PATCH además VUELVE A DISPARAR GeneratePDF, porque el
+  // workflow es "on add or edit". Es exactamente la secuencia que funcionó a
+  // mano en NDV-30748 y NDV-30750.
+  const finalizarId = texto(fin?.finalizarId);
+  if (finalizarId) {
+    await creatorApiFetch(`${base}/report/FINALIZE_FORM_ALL_DATA/${encodeURIComponent(finalizarId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        data: {
+          Empresa: "Crear desde Nota de Venta",
+          CAN_UPDATE_FIELDS: true,
+          // Sin estos dos, otro workflow del mismo formulario revienta en
+          // `EditNextStep` (currentIndex + 1 sobre nulo) y aborta la cadena
+          // antes de llegar a GeneratePDF.
+          currentEditIndex: 0,
+          maxIndex: 0,
+        },
+      }),
+    }).catch((e) => console.warn(`[ndv-conversion] corrección de Empresa falló: ${e.message}`));
+  }
   // El PDF se genera en background; sin él ConfirmNDV no puede correr, porque
   // arranca leyendo FullFormJsonPdf.
   await new Promise((r) => setTimeout(r, 8000));
