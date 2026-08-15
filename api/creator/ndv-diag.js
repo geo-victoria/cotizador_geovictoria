@@ -117,6 +117,23 @@ module.exports = async function handler(req, res) {
     });
   }
 
+  // ── Campos de un formulario ──────────────────────────────────────────────
+  // Para verificar el NOMBRE DE ENLACE real de un campo recién creado: en
+  // Deluge se referencia por ese nombre, no por la etiqueta visible.
+  if (req.query?.campos) {
+    const form = String(req.query.campos).trim();
+    const r = await creatorApiFetch(`/creator/v2.1/meta/${owner}/${app}/form/${encodeURIComponent(form)}/fields`, {
+      method: "GET",
+    });
+    const j = await r.json().catch(() => ({}));
+    const fs = Array.isArray(j?.fields) ? j.fields : [];
+    const filtro = String(req.query?.contiene || "").trim().toLowerCase();
+    const filas = fs
+      .map((f) => ({ link: f.link_name, nombre: f.display_name, tipo: f.type }))
+      .filter((f) => !filtro || `${f.link} ${f.nombre}`.toLowerCase().includes(filtro));
+    return sendJson(res, 200, { ok: r.ok, status: r.status, form, n: filas.length, campos: filas });
+  }
+
   // ── Consulta libre a cualquier reporte ───────────────────────────────────
   // Para elegir a mano la cotización con la que probar la conversión.
   if (req.query?.listar) {
