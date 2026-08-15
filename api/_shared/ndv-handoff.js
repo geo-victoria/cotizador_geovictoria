@@ -856,6 +856,12 @@ async function buildNdvRecord({
   const record = {
     Formulario: creatorFormulario,
     STATUS: creatorStatus,
+    // Las cuatro cotizaciones sanas creadas a mano traen MESES_PERIODO = 0;
+    // las nuestras lo dejaban vacío. El campo se LEE al armar el resumen
+    // (`resumeMonths = response.get("MESES_PERIODO")`), y un vacío ahí es
+    // justo el dato que produce el "Null value occurred while performing
+    // Addition operation" que ya nos mordió en Formulario_de_Equipos.
+    MESES_PERIODO: 0,
     ...(empresaGv.idEmpresaGeoVictoria
       ? {
           ID_Empresa_GeoVictoria: empresaGv.idEmpresaGeoVictoria,
