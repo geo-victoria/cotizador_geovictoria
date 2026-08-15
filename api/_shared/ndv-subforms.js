@@ -219,9 +219,15 @@ function buildFinalizarFormularioRecord({ ndvId, ndvRecord, notasPdf }) {
     //
     // Así que el valor depende de si la empresa existe de verdad en GeoVictoria:
     // solo cuando tenemos su id declaramos que está creada.
-    Empresa: toText(ndvRecord.ID_Empresa_GeoVictoria) || toText(ndvRecord.GeoCompanyIdCRM)
-      ? "Creada en Plataforma"
-      : "Crear desde Nota de Venta",
+    // La condición NO es "¿existe la empresa?" sino "¿podemos NOMBRARLA?".
+    // Declarar "Creada en Plataforma" obliga a llenar `Empresa_dropdown` con
+    // "NOMBRE-RUT-ID": RegeneratePdfJson lo parte con mid()/indexOf("-") y con
+    // el campo vacío revienta, dejando la nota sin PDF. Tener el id de la
+    // empresa no basta — y ese fue justamente el caso que se coló: las cuentas
+    // que SÍ tienen empresa en GeoVictoria entraban a esta rama sin dropdown.
+    // Mientras no construyamos ese texto, la única rama segura es la otra.
+    Empresa: toText(ndvRecord.Empresa_dropdown) ? "Creada en Plataforma" : "Crear desde Nota de Venta",
+    ...(toText(ndvRecord.Empresa_dropdown) ? { Empresa_dropdown: toText(ndvRecord.Empresa_dropdown) } : {}),
     Identificador_Tributario_Empresa: toText(ndvRecord.Identificador_Tributario_Empresa),
     country: toText(ndvRecord.Pa_s_Facturaci_n) || "Chile",
     CAN_UPDATE_FIELDS: true,
