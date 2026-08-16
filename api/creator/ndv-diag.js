@@ -342,6 +342,26 @@ module.exports = async function handler(req, res) {
       };
     };
 
+    // Mapa código de artículo → id de Books, cosechado de líneas que Books YA
+    // aceptó. Es la fuente autoritativa: no hay que adivinar ids ni bodegas.
+    if (String(req.query?.mapa || "") === "1") {
+      const mapa = {};
+      for (const it of grupo.manual) {
+        for (const li of Array.isArray(it.so?.line_items) ? it.so.line_items : []) {
+          const cod = (texto(li.name) || texto(li.item_name)).split(" ")[0];
+          const id = texto(li.item_id);
+          if (!cod || !id) continue;
+          const k = `${cod}`;
+          mapa[k] = mapa[k] || { item_id: id, nombre: texto(li.name), bodegas: {}, veces: 0 };
+          mapa[k].veces += 1;
+          const b = `${texto(li.warehouse_id)}|${texto(li.warehouse_name)}`;
+          mapa[k].bodegas[b] = (mapa[k].bodegas[b] || 0) + 1;
+          if (mapa[k].item_id !== id) mapa[k].conflicto = id;
+        }
+      }
+      return sendJson(res, 200, { ok: true, n: Object.keys(mapa).length, mapa });
+    }
+
     if (String(req.query?.detalle || "") === "1") {
       const desnudar = (arr) =>
         arr.map((x) => ({
