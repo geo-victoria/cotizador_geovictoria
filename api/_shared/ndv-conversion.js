@@ -148,6 +148,20 @@ async function convertirYConfirmar(cotId, opciones) {
     .filter((f) => f.Form_ID);
   if (formOrder.length) registro.Form_Order = formOrder;
 
+  // HARDWARE → la nota nace declarando que requiere orden de venta.
+  //
+  // `ConfirmNDV` decide si genera el SO con `if(varRequireSO || RequireSO)`, y
+  // esa condición se evalúa ANTES de que el propio script marque el campo. En
+  // la interfaz no molesta porque el ejecutivo llena el formulario y `RequireSO`
+  // ya viene en true al apretar el botón; por API la nota nacía en false y la
+  // PRIMERA confirmación nunca entraba a la rama del SO (verificado en
+  // NDV-30756: quedó CONFIRMADA, con RequireSO en true, y sin orden de venta).
+  //
+  // Acá lo sabemos al momento de crearla: si el pedido trae un bloque de
+  // equipos, requiere orden de venta.
+  const llevaEquipos = formOrder.some((f) => f.FormName === "Formulario_de_Equipos" && f.Selected);
+  if (llevaEquipos) registro.RequireSO = true;
+
   const rPost = await creatorApiFetch(`${base}/form/Nota_de_Venta`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
