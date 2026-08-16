@@ -71,7 +71,13 @@ const PRICING_TIERS = [
   { min: 1, max: 2, type: 'fijo', uf: 0.25 },
   { min: 3, max: 10, type: 'fijo', uf: 0.55 },
   { min: 11, max: 20, type: 'por_usuario', uf: 0.055 },
-  { min: 21, max: 30, type: 'por_usuario', uf: 0.065 },
+  // 21-30 a 0,055 (Lalo, 16-ago). La prueba de precios bajó el 11-20 de 0,07 a
+  // 0,055 y dejó este tramo en 0,065, así que la escalera IMPRESA daba un salto
+  // hacia arriba: el cliente de 19 usuarios veía que crecer a 21 le subía el
+  // precio unitario un 18%, y que recién en 31 volvía a bajar. Vicky no cotiza
+  // este rango (su umbral son 20 usuarios), pero la nota de venta imprime la
+  // escalera completa y ahí el salto quedaba a la vista.
+  { min: 21, max: 30, type: 'por_usuario', uf: 0.055 },
   { min: 31, max: 50, type: 'por_usuario', uf: 0.055 },
   { min: 51, max: 100, type: 'por_usuario', uf: 0.065 },
   { min: 101, max: 200, type: 'por_usuario', uf: 0.06 },
