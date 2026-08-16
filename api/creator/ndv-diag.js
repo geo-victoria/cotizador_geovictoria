@@ -301,6 +301,26 @@ module.exports = async function handler(req, res) {
       };
     };
 
+    if (String(req.query?.detalle || "") === "1") {
+      const desnudar = (arr) =>
+        arr.map((x) => ({
+          ndv: x.ndv,
+          idSo: x.idSo,
+          lineas: (Array.isArray(x.so?.line_items) ? x.so.line_items : []).map((li) => ({
+            name: texto(li.name),
+            item_id: texto(li.item_id),
+            rate: li.rate,
+            quantity: li.quantity,
+            warehouse: texto(li.warehouse_name),
+          })),
+        }));
+      return sendJson(res, 200, {
+        ok: true,
+        nuestras: desnudar(grupo.api),
+        muestra_manual: desnudar(grupo.manual.filter((x) => x.so?.line_items?.length).slice(0, 6)),
+      });
+    }
+
     return sendJson(res, 200, {
       ok: true,
       leidas: filas.length,
