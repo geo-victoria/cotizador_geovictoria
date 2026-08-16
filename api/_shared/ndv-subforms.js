@@ -11,6 +11,7 @@
 
 const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
 const { toText } = require("./zoho-crm");
+const { idBooksDeArticulo, BODEGA_CHILE } = require("./creator-articulos");
 
 /**
  * Términos y condiciones que Creator imprime en el bloque del servicio.
@@ -530,11 +531,18 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
       if (bloque.equipos.length > 0) equiposId = bloqueId;
       // El PRECIO lo mandamos nosotros, siempre. Books solo resuelve QUÉ
       // artículo es; su tarifa de lista borraría el precio negociado.
+      // `idItem` y `bodega` son lo que la interfaz escribe sola al elegir el
+      // artículo del desplegable (campo `IdItemService` de la grilla) y que por
+      // API nadie rellena: sin eso la línea llega a Books sin `item_id`, o sea
+      // como texto libre, sin enlazar al catálogo y sin mover inventario.
       const pedido = (filas) =>
         filas.map((l) => ({
           codigo: toText(l.codigoCreator),
           cantidad: toNumber(l.cantidad) || 1,
           valor: toNumber(l.valorUnitario),
+          idItem: idBooksDeArticulo(l.codigoCreator),
+          bodegaId: BODEGA_CHILE.id,
+          bodega: BODEGA_CHILE.nombre,
         }));
       const data = { currentEditIndex: 0, maxIndex: 0 };
       if (bloque.equipos.length) data.Equipos_Por_API = JSON.stringify(pedido(bloque.equipos));
@@ -597,6 +605,9 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
           codigo: toText(l.codigoCreator) || toText(l.codigo),
           cantidad: toNumber(l.cantidad) || 1,
           valorMensual: toNumber(l.valorMensualUnitario),
+          idItem: idBooksDeArticulo(toText(l.codigoCreator) || toText(l.codigo)),
+          bodegaId: BODEGA_CHILE.id,
+          bodega: BODEGA_CHILE.nombre,
         }));
         const resp = await creatorApiFetch(path, {
           method: "PATCH",

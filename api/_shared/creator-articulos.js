@@ -78,4 +78,57 @@ function articuloDeServicio(codigoItem, zona) {
   return entrada.regiones;
 }
 
-module.exports = { HARDWARE_A_ARTICULO, SERVICIO_A_ARTICULO, articuloDeHardware, articuloDeServicio };
+/**
+ * Código de artículo → id del ítem en Zoho Books.
+ *
+ * NO son ids adivinados: se cosecharon del `FullSoJson` de las notas de venta
+ * hechas a mano de agosto (barrido del 16-ago, 142 líneas, 30 artículos, cero
+ * conflictos). Es decir, son exactamente los ids que Books YA aceptó.
+ *
+ * Para qué sirven: la grilla de Servicios lleva un campo `IdItemService` que la
+ * interfaz rellena al elegir el artículo del desplegable, y de ahí sale el
+ * `item_id` de la línea de la orden de venta. Por API ese script no corre, así
+ * que las líneas de servicio nuestras llegaban a Books SIN `item_id` — entran
+ * como texto libre: no se enlazan al artículo del catálogo, no suman en los
+ * reportes por producto y no mueven inventario.
+ *
+ * Solo los artículos del catálogo de Vicky. El barrido trae 30; agregar acá los
+ * que se vayan habilitando.
+ */
+const ITEM_ID_BOOKS = {
+  "006.10": "1758661000072468396", // Reloj Gama Entrada Facial WIFI/LAN
+  "012": "1758661000001524374", // Huellero URU4500
+  "907": "1758661000044939114", // Envío/Despacho Asistencia
+  "901": "1758661000038441163", // Instalación RM
+  "902": "1758661000038441184", // Instalación Regiones
+  "903": "1758661000038441207", // Instalación Regiones extremas
+  "904": "1758661000038441224", // Visita Técnica RM
+  "905": "1758661000038441241", // Visita Técnica Regiones
+  "909": "1758661000051361009", // Mantención equipo asistencia en Laboratorio
+  "911": "1758661000053903234", // Visita Técnica Levantamiento
+};
+
+/**
+ * Bodega de las líneas chilenas. Las 142 líneas del barrido usan esta y solo
+ * esta, así que es una constante y no algo a resolver por artículo.
+ */
+const BODEGA_CHILE = { id: "1758661000005909009", nombre: "GeoVictoria Chile" };
+
+/**
+ * @param {string} articulo valor de picklist ("907 - [CHI] Envío/Despacho…")
+ * @returns {string} id del ítem en Books, o "" si no está mapeado
+ */
+function idBooksDeArticulo(articulo) {
+  const codigo = String(articulo || "").trim().split(" ")[0];
+  return ITEM_ID_BOOKS[codigo] || "";
+}
+
+module.exports = {
+  HARDWARE_A_ARTICULO,
+  SERVICIO_A_ARTICULO,
+  ITEM_ID_BOOKS,
+  BODEGA_CHILE,
+  articuloDeHardware,
+  articuloDeServicio,
+  idBooksDeArticulo,
+};
