@@ -371,11 +371,20 @@ function buildChargeTables({
         descuentoPct: descuentoPctLinea(row, descuentos),
       };
       const articulo = articuloDeHardware(linea.codigo);
+      // `codigoCreator` es el prefijo del nombre del artículo ("006.10"), que es
+      // lo único que Books reconoce al buscarlo. Nuestro id de catálogo
+      // ("senseface_2a") no existe allá.
+      const codigoDe = (nombre) => String(nombre || "").split(" - ")[0].trim();
       if (articulo) {
-        lineasEquipos.push({ ...linea, item: articulo.item, modelo: articulo.modelo });
+        lineasEquipos.push({
+          ...linea,
+          item: articulo.item,
+          modelo: articulo.modelo,
+          codigoCreator: codigoDe(articulo.item),
+        });
       } else {
         const item = articuloDeServicio(linea.codigo, linea.zona);
-        if (item) lineasServicios.push({ ...linea, item });
+        if (item) lineasServicios.push({ ...linea, item, codigoCreator: codigoDe(item) });
         else if (nombre) lineasSinArticulo.push(nombre);
       }
       return;

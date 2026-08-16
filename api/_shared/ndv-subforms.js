@@ -490,7 +490,47 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
         lineasEquipos,
         lineasServicios,
       });
-      equiposId = await createSubformRecord(creatorConfig, "Formulario_de_Equipos", equiposRecord);
+      // Las grillas NO viajan en el POST. Sus picklists (`Item` y `Items`) se
+      // llenan en tiempo de ejecución desde Books, así que por API cualquier
+      // nombre de artículo es inválido — y el rechazo tumba el registro ENTERO,
+      // no solo la fila: verificado el 15-ago, una cotización con venta + envío
+      // + instalación perdió los tres bloques con
+      // "Equipos, Row No : 1, Invalid column value for Item".
+      //
+      // Van por el mismo puente que ya funciona para el arriendo: dejamos el
+      // pedido en un campo de texto y un flujo de Creator resuelve el artículo
+      // contra Books e inserta las filas.
+      const { Equipos: gridEquipos, Servicios: gridServicios, ...sinGrillas } = equiposRecord;
+      equiposId = await createSubformRecord(creatorConfig, "Formulario_de_Equipos", sinGrillas);
+      if (equiposId) {
+        // El PRECIO lo mandamos nosotros, siempre. Books solo resuelve QUÉ
+        // artículo es. Tomar su tarifa de lista borraría el precio negociado —
+        // en una venta con descuento, cobraría de más.
+        const pedidoEquipos = (lineasEquipos || []).map((l) => ({
+          codigo: toText(l.codigoCreator),
+          cantidad: toNumber(l.cantidad) || 1,
+          valor: toNumber(l.valorUnitario),
+        }));
+        const pedidoServicios = (lineasServicios || []).map((l) => ({
+          codigo: toText(l.codigoCreator),
+          cantidad: toNumber(l.cantidad) || 1,
+          valor: toNumber(l.valorUnitario),
+        }));
+        const data = { currentEditIndex: 0, maxIndex: 0 };
+        if (pedidoEquipos.length) data.Equipos_Por_API = JSON.stringify(pedidoEquipos);
+        if (pedidoServicios.length) data.Servicios_Por_API = JSON.stringify(pedidoServicios);
+        const rGrid = await creatorApiFetch(
+          `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}` +
+            `/report/HARDWARE_ALL_DATA/${encodeURIComponent(equiposId)}`,
+          { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }) }
+        );
+        const pg = await readJsonSafe(rGrid);
+        if (!rGrid.ok || isCreatorError(pg)) {
+          const detalle = JSON.stringify(pg).slice(0, 300);
+          console.warn(`[ndv-subforms] pedido de grillas rechazado: ${detalle}`);
+          errors.push(`Formulario_de_Equipos grillas: ${detalle}`);
+        }
+      }
       console.log(
         `[ndv-subforms] Formulario_de_Equipos → id=${equiposId} ` +
           `equipos=${JSON.stringify(equiposRecord.Equipos || [])} ` +
