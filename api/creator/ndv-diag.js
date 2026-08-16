@@ -204,6 +204,112 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 200, r);
   }
 
+  // ── BARRIDO DE BOOKS, leído desde Creator ────────────────────────────────
+  // `FullSoJson` es literalmente el cuerpo que Creator le POSTea a Books al
+  // generar la Sales Order. Auditarlo acá da los mismos patrones que auditar
+  // Books, sin pedirle scopes nuevos a la integración de producción.
+  if (String(req.query?.sojson || "") === "1") {
+    const limite = Math.min(400, Math.max(1, Number(req.query?.limite) || 200));
+    const criteria = encodeURIComponent('(Formulario == "Nota de Venta")');
+    const r = await creatorApiFetch(
+      `${reporte}?criteria=${criteria}&limit=${limite}&field_config=all`,
+      { method: "GET" }
+    );
+    const j = await r.json().catch(() => ({}));
+    const filas = Array.isArray(j?.data) ? j.data : [];
+
+    const PRODUCTOS_VICKY = new Set([
+      "Control de Asistencia", "Alertas", "Vacaciones", "Calendario Inteligente",
+      "Gestión Documental", "Banco de Horas", "Arriendo de Equipos",
+      "Venta de Equipos Asistencia", "Visitas y Servicios Técnicos",
+    ]);
+    const NUESTRAS = new Set(["zoho_info24610", "mejoracontinua_geovictoria"]);
+
+    const grupo = { manual: [], api: [] };
+    for (const f of filas) {
+      if (texto(f.Pa_s_Facturaci_n) !== "Chile") continue;
+      const productos = (Array.isArray(f.Form_Order) ? f.Form_Order : [])
+        .map((x) => texto(x.Product_Name))
+        .filter(Boolean);
+      if (!productos.some((p) => PRODUCTOS_VICKY.has(p))) continue;
+      let so = null;
+      try {
+        so = JSON.parse(texto(f.FullSoJson) || "null");
+      } catch {
+        so = "ilegible";
+      }
+      if (!so) continue;
+      (NUESTRAS.has(texto(f.Added_User)) ? grupo.api : grupo.manual).push({
+        ndv: texto(f.Numero_de_Nota_de_Venta) || texto(f.ID),
+        idSo: texto(f.ID_SO),
+        so,
+      });
+    }
+
+    const resumen = (arr) => {
+      const cabecera = {};
+      const linea = {};
+      const monedas = {};
+      const impuestos = {};
+      const codigos = {};
+      let conLineas = 0;
+      let totalCero = 0;
+      let ilegibles = 0;
+      let nLineas = 0;
+      for (const it of arr) {
+        if (it.so === "ilegible") { ilegibles += 1; continue; }
+        const so = it.so && typeof it.so === "object" ? it.so : {};
+        for (const k of Object.keys(so)) {
+          const v = so[k];
+          const tiene = Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined && v !== "";
+          if (tiene) cabecera[k] = (cabecera[k] || 0) + 1;
+        }
+        const items = Array.isArray(so.line_items) ? so.line_items : [];
+        if (items.length) conLineas += 1;
+        const total = Number(so.total ?? so.sub_total ?? 0);
+        if (!items.length || !total) totalCero += 1;
+        monedas[texto(so.currency_code) || "(sin)"] = (monedas[texto(so.currency_code) || "(sin)"] || 0) + 1;
+        for (const li of items) {
+          nLineas += 1;
+          for (const k of Object.keys(li)) {
+            const v = li[k];
+            const tiene = Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined && v !== "";
+            if (tiene) linea[k] = (linea[k] || 0) + 1;
+          }
+          const tax = texto(li.tax_id) || texto(li.tax_name) || "(sin impuesto)";
+          impuestos[tax] = (impuestos[tax] || 0) + 1;
+          const cod = (texto(li.name) || texto(li.item_name)).split(" ")[0];
+          if (cod) codigos[cod] = (codigos[cod] || 0) + 1;
+        }
+      }
+      const pct = (obj, n) => Object.fromEntries(
+        Object.entries(obj)
+          .sort((a, b) => b[1] - a[1])
+          .map(([k, v]) => [k, `${v}/${n} (${n ? Math.round((v / n) * 100) : 0}%)`])
+      );
+      return {
+        notas: arr.length,
+        ilegibles,
+        con_lineas: `${conLineas}/${arr.length}`,
+        sin_lineas_o_total_cero: totalCero,
+        lineas_totales: nLineas,
+        cabecera: pct(cabecera, arr.length - ilegibles),
+        linea_items: pct(linea, nLineas),
+        monedas,
+        impuestos_por_linea: pct(impuestos, nLineas),
+        codigos_de_articulo: pct(codigos, nLineas),
+      };
+    };
+
+    return sendJson(res, 200, {
+      ok: true,
+      leidas: filas.length,
+      manual: resumen(grupo.manual),
+      nuestras: resumen(grupo.api),
+      nuestras_detalle: grupo.api.map((x) => ({ ndv: x.ndv, idSo: x.idSo })),
+    });
+  }
+
   // ── AUDITORÍA del mes ────────────────────────────────────────────────────
   // Qué campos traen SIEMPRE las notas hechas a mano y cuáles traen las
   // nuestras. Devuelve solo estadísticas: traerse cientos de registros
