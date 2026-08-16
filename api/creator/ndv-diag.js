@@ -210,17 +210,30 @@ module.exports = async function handler(req, res) {
   // proxy del agente no deja pasar paréntesis.
   if (req.query?.bloques) {
     const idNdv = String(req.query.bloques).trim();
-    const criteria = encodeURIComponent(`(ID_Formulario == ${idNdv})`);
-    const r = await creatorApiFetch(
-      `${base}/report/HARDWARE_ALL_DATA?criteria=${criteria}&limit=10&field_config=all`,
-      { method: "GET" }
-    );
-    const j = await r.json().catch(() => ({}));
-    const filas = Array.isArray(j?.data) ? j.data : [];
+    const campo = String(req.query?.campo || "ID_Formulario,QuotationFormID").split(",");
+    let j = {};
+    let filas = [];
+    let r = { ok: false, status: 0 };
+    const intentos = [];
+    for (const c of campo) {
+      for (const valor of [`"${idNdv}"`, idNdv]) {
+        const criteria = encodeURIComponent(`(${c.trim()} == ${valor})`);
+        r = await creatorApiFetch(
+          `${base}/report/HARDWARE_ALL_DATA?criteria=${criteria}&limit=10&field_config=all`,
+          { method: "GET" }
+        );
+        j = await r.json().catch(() => ({}));
+        filas = Array.isArray(j?.data) ? j.data : [];
+        intentos.push(`${c.trim()}=${valor}:${r.status}:${filas.length}`);
+        if (filas.length) break;
+      }
+      if (filas.length) break;
+    }
     return sendJson(res, 200, {
       ok: r.ok,
       status: r.status,
       idNdv,
+      intentos,
       bloques: filas.map((f) => ({
         id: texto(f.ID),
         producto: texto(f.Servicio_Producto),
