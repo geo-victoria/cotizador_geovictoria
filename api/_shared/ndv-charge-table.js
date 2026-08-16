@@ -399,6 +399,10 @@ function buildChargeTables({
           cantidad,
           item: articulo.item,
           modelo: articulo.modelo,
+          // Código con el que Creator busca el artículo en Books. NO es nuestro
+          // id de catálogo ("senseface_2a"): es el prefijo del nombre del
+          // artículo ("006.10"), que es lo único que Books reconoce.
+          codigoCreator: String(articulo.item || "").split(" - ")[0].trim(),
           valorMensualUnitario: unitarioMensual,
           totalMensual: redondear(montos.subtotal * factor),
         });

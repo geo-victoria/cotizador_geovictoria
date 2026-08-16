@@ -543,7 +543,7 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
         // tenemos en una cotización de arriendo y que un cálculo posterior
         // necesita.
         const pedido = (lineasArriendo || []).map((l) => ({
-          codigo: toText(l.codigo),
+          codigo: toText(l.codigoCreator) || toText(l.codigo),
           cantidad: toNumber(l.cantidad) || 1,
           valorMensual: toNumber(l.valorMensualUnitario),
         }));
