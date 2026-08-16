@@ -110,6 +110,22 @@ export default async function handler(req, res) {
       }
     }
 
+    // SEGUNDA PASADA de la nota de venta. El pago solo CONVIERTE: el PDF lo
+    // genera Creator en segundo plano y sin PDF no se puede confirmar, así que
+    // la confirmación necesita una mirada posterior. No hace falta agendar nada
+    // nuevo — la página de aceptación consulta este endpoint varias veces
+    // mientras el cliente espera, que es justo la ventana en que el PDF
+    // aparece. Es best-effort y nunca altera lo que se le responde al cliente.
+    if (paymentsComplete && String(process.env.NDV_CONVERTIR_POST_PAGO || "1") === "1") {
+      try {
+        const { confirmarNota } = require("../_shared/ndv-conversion");
+        const ndvCreatorId = toText(quote?.[acceptanceConfig.quoteNvdIdTextField]);
+        if (ndvCreatorId) await confirmarNota(ndvCreatorId);
+      } catch (error) {
+        console.warn(`[status] confirmación de nota de venta falló: ${toText(error?.message || error)}`);
+      }
+    }
+
     sendJson(res, 200, {
       success: true,
       quote: { id: quoteId, name: quoteName },
