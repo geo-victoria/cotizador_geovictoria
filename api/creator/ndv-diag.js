@@ -204,6 +204,34 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 200, r);
   }
 
+  // ── Bloques Formulario_de_Equipos de una NDV ─────────────────────────────
+  // Para comparar fila a fila las grillas que llena la interfaz contra las que
+  // inserta el puente por API. El criterio va acá y no en la URL porque el
+  // proxy del agente no deja pasar paréntesis.
+  if (req.query?.bloques) {
+    const idNdv = String(req.query.bloques).trim();
+    const criteria = encodeURIComponent(`(ID_Formulario == ${idNdv})`);
+    const r = await creatorApiFetch(
+      `${base}/report/HARDWARE_ALL_DATA?criteria=${criteria}&limit=10&field_config=all`,
+      { method: "GET" }
+    );
+    const j = await r.json().catch(() => ({}));
+    const filas = Array.isArray(j?.data) ? j.data : [];
+    return sendJson(res, 200, {
+      ok: r.ok,
+      status: r.status,
+      idNdv,
+      bloques: filas.map((f) => ({
+        id: texto(f.ID),
+        producto: texto(f.Servicio_Producto),
+        tipo: texto(f.SERVICE_TYPE),
+        equipos: (Array.isArray(f.Equipos) ? f.Equipos : []).map((x) => x),
+        servicios: (Array.isArray(f.Servicios) ? f.Servicios : []).map((x) => x),
+      })),
+      crudo: filas.length ? undefined : JSON.stringify(j).slice(0, 300),
+    });
+  }
+
   // ── BARRIDO DE BOOKS, leído desde Creator ────────────────────────────────
   // `FullSoJson` es literalmente el cuerpo que Creator le POSTea a Books al
   // generar la Sales Order. Auditarlo acá da los mismos patrones que auditar
