@@ -29,7 +29,7 @@
  * `x-vicky-secret = ${VICKY_COTIZADORA_SECRET}` (disparo manual).
  */
 
-const { toText } = require("../_shared/zoho-crm");
+const { toText, getRecord } = require("../_shared/zoho-crm");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { getMercadoPagoConfig } = require("../_shared/mercadopago-config");
@@ -131,6 +131,21 @@ module.exports = async function handler(req, res) {
       revisadas++;
       try {
         const out = await maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId });
+        // SEGUNDA PASADA de la nota de venta, para el cliente que pagó y cerró
+        // la pestaña: ahí el polling de `payments/status` —que es quien
+        // normalmente confirma— nunca llega a correr, y la nota se quedaría en
+        // PENDIENTE para siempre. Confirmar exige PDF, así que si Creator aún
+        // no lo generó, `confirmarNota` se niega y la próxima pasada reintenta.
+        try {
+          const { confirmarNota } = require("../_shared/ndv-conversion");
+          // La referencia a Creator se relee del registro: `maybeFinalizeQuote`
+          // no la devuelve, y acabamos de crearla en esta misma pasada.
+          const quoteRow = await getRecord(acceptanceConfig.quoteModule, quoteId).catch(() => null);
+          const ndvCreatorId = toText(quoteRow?.[acceptanceConfig.quoteNvdIdTextField]);
+          if (ndvCreatorId) await confirmarNota(ndvCreatorId);
+        } catch (errNota) {
+          console.warn(`[reconcile] confirmación de nota falló: ${toText(errNota?.message || errNota)}`);
+        }
         if (out.finalized) {
           reconciliadas++;
           resultados.push({ quoteId, ok: true, finalized: true, onboardingReady: Boolean(out.onboardingUrl) });
