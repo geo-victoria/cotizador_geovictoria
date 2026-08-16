@@ -11,7 +11,7 @@
 
 const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
 const { toText } = require("./zoho-crm");
-const { idBooksDeArticulo, BODEGA_CHILE } = require("./creator-articulos");
+const { idBooksDeArticulo, valorListaDeArticulo, BODEGA_CHILE } = require("./creator-articulos");
 
 /**
  * Términos y condiciones que Creator imprime en el bloque del servicio.
@@ -605,6 +605,11 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
           codigo: toText(l.codigoCreator) || toText(l.codigo),
           cantidad: toNumber(l.cantidad) || 1,
           valorMensual: toNumber(l.valorMensualUnitario),
+          // `Valor` (precio de lista) va aunque la línea sea de arriendo: las
+          // filas hechas a mano lo traen siempre y de ahí sale el `rate` de la
+          // orden de venta. Lo mandamos nosotros para no depender de que la
+          // Deluge lo alcance a resolver contra Books.
+          valor: valorListaDeArticulo(toText(l.codigoCreator) || toText(l.codigo)),
           idItem: idBooksDeArticulo(toText(l.codigoCreator) || toText(l.codigo)),
           bodegaId: BODEGA_CHILE.id,
           bodega: BODEGA_CHILE.nombre,

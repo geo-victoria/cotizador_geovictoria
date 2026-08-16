@@ -25,6 +25,11 @@ const HARDWARE_A_ARTICULO = {
   senseface_2a: {
     item: "006.10 - Reloj Gama Entrada Facial WIFI/LAN",
     modelo: "Senseface 2A",
+    // Precio de LISTA de venta. La grilla lo lleva en `Valor` incluso cuando la
+    // línea es de arriendo (ahí `Valor_Mensual` lleva la mensualidad), y de ahí
+    // sale el `rate` de la orden de venta. Verificado en 59 bloques de arriendo
+    // de agosto: los 8 revisados traen Valor=5.000 sin excepción.
+    valorListaUF: 5,
   },
   // Lector de huella USB, la alternativa económica al reloj de pared. Está
   // habilitado para Vicky (`disponibleParaVicky: true` en el catálogo, venta 3
@@ -34,6 +39,7 @@ const HARDWARE_A_ARTICULO = {
   uru4500: {
     item: "012 - Huellero URU4500",
     modelo: "URU4500",
+    valorListaUF: 3,
   },
 };
 
@@ -123,6 +129,20 @@ function idBooksDeArticulo(articulo) {
   return ITEM_ID_BOOKS[codigo] || "";
 }
 
+/**
+ * Precio de lista de venta a partir del código o del valor de picklist. Se usa
+ * para llenar `Valor` en las filas de ARRIENDO, donde nuestra cotización solo
+ * conoce la mensualidad. Sin esto la línea llega a Books con `rate: null`.
+ * @returns {number} 0 si no está mapeado
+ */
+function valorListaDeArticulo(articulo) {
+  const codigo = String(articulo || "").trim().split(" ")[0];
+  const hw = Object.values(HARDWARE_A_ARTICULO).find(
+    (x) => String(x.item || "").split(" ")[0] === codigo
+  );
+  return Number(hw?.valorListaUF) || 0;
+}
+
 module.exports = {
   HARDWARE_A_ARTICULO,
   SERVICIO_A_ARTICULO,
@@ -131,4 +151,5 @@ module.exports = {
   articuloDeHardware,
   articuloDeServicio,
   idBooksDeArticulo,
+  valorListaDeArticulo,
 };
