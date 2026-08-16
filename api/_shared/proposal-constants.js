@@ -58,9 +58,19 @@ const PRICING_TIERS = [
   // Ajuste de tramos (Lalo, 31-jul-2026): el micro-plan cubre 1-2 personas
   // y el tramo fijo estándar parte en 3. Espejo de lib/catalogo/modulos.ts
   // del agente — si cambia allá, cambiar acá en el mismo movimiento.
+  //
+  // DESINCRONIZACIÓN CORREGIDA (16-ago): estos dos tramos tenían los precios
+  // VIEJOS (0,6 y 0,07) mientras el agente ya cotizaba con la baja (0,55 y
+  // 0,055). Como esta escalera es la que completa la tabla de cobro de la nota
+  // de venta, la nota habría impreso un precio distinto al que Vicky ofreció
+  // por WhatsApp. El agente manda; acá se espeja.
+  //
+  // El agente tiene un interruptor `VICKY_PRECIOS_CLASICOS` que restaura
+  // 0,6/0,07. Si algún día se prende, estos dos valores TIENEN que moverse en
+  // el mismo acto o vuelve la contradicción.
   { min: 1, max: 2, type: 'fijo', uf: 0.25 },
-  { min: 3, max: 10, type: 'fijo', uf: 0.6 },
-  { min: 11, max: 20, type: 'por_usuario', uf: 0.07 },
+  { min: 3, max: 10, type: 'fijo', uf: 0.55 },
+  { min: 11, max: 20, type: 'por_usuario', uf: 0.055 },
   { min: 21, max: 30, type: 'por_usuario', uf: 0.065 },
   { min: 31, max: 50, type: 'por_usuario', uf: 0.055 },
   { min: 51, max: 100, type: 'por_usuario', uf: 0.065 },

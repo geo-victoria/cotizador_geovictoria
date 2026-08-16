@@ -267,7 +267,13 @@ function escaleraAFilas(escalera, factorDescuento) {
  * preferimos un tramo fijo que respete el monto que el cliente vio.
  */
 function esLineaPorUsuario(row, cantidad, empleados) {
-  return normalizar(row?.modalidad) === "recurrente" && cantidad === empleados;
+  // La modalidad que traen las cotizaciones de Vicky es "Por usuario", no
+  // "Recurrente": la comparación literal contra "recurrente" nunca daba true y
+  // TODA tabla salía como "Rango Fijo" con el monto total del tramo. Eso
+  // contradice los propios términos de la nota, que dicen que se factura según
+  // los usuarios activos del mes.
+  const m = normalizar(row?.modalidad);
+  return (m === "recurrente" || m.includes("por usuario")) && cantidad === empleados;
 }
 
 /**
@@ -465,6 +471,30 @@ function buildChargeTables({
       if (filas.length > 0) {
         porServicio[servicio] = filas;
         serviciosConEscalera.push(servicio);
+        continue;
+      }
+    }
+
+    // Sin escalera propia: se arma la COMPLETA desde la oficial. La tabla nunca
+    // debe quedar con un solo tramo — orden de Lalo (16-ago): "los tramos del
+    // agente tienen la preferencia, y lo que falta se complementa con la
+    // calculadora". La escalera oficial ya espeja la de Vicky en 1-50 y trae
+    // los tramos del canal ejecutivo de 51 en adelante.
+    //
+    // Solo aplica al cobro POR USUARIO. Un servicio de tarifa fija (un módulo
+    // plano, un cobro único) no tiene escalera que mostrar.
+    if (montos.todasPorUsuario) {
+      const completa = escaleraAFilas(
+        PRICING_TIERS.filter((t) => toNumber(t?.uf) > 0).map((t) => ({
+          desde: toPositiveInt(t.min),
+          hasta: Number.isFinite(Number(t.max)) ? toPositiveInt(t.max) : TOPE_ULTIMO_TRAMO,
+          modalidad: normalizar(t.type) === "fijo" ? "fijo" : "por_usuario",
+          precioUF: toNumber(t.uf),
+        })),
+        factorIncorporado
+      );
+      if (completa.length > 0) {
+        porServicio[servicio] = completa;
         continue;
       }
     }
