@@ -480,6 +480,7 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
   //    todos los bloques tienen que existir.
   let equiposId = "";
   let equiposRechazado = false;
+  let pedidosEnviados = null;
   const lineasEquipos = chargeTables?.lineasEquipos || [];
   const lineasServicios = chargeTables?.lineasServicios || [];
   if (lineasEquipos.length > 0 || lineasServicios.length > 0) {
@@ -516,6 +517,13 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
           cantidad: toNumber(l.cantidad) || 1,
           valor: toNumber(l.valorUnitario),
         }));
+        // El pedido se devuelve en el resultado, no solo al log: es el único
+        // eslabón de la cadena que nunca habíamos podido mirar. Lo que llega a
+        // Creator y lo que tiene la cotización ya los vemos; lo que MANDAMOS,
+        // no — y ahí es donde aparecieron un artículo, una cantidad y un precio
+        // que no existen en la cotización.
+        pedidosEnviados = { equipos: pedidoEquipos, servicios: pedidoServicios };
+        console.log(`[ndv-subforms] pedido equipos=${JSON.stringify(pedidoEquipos)} servicios=${JSON.stringify(pedidoServicios)}`);
         const data = { currentEditIndex: 0, maxIndex: 0 };
         if (pedidoEquipos.length) data.Equipos_Por_API = JSON.stringify(pedidoEquipos);
         if (pedidoServicios.length) data.Servicios_Por_API = JSON.stringify(pedidoServicios);
@@ -683,6 +691,7 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
   );
   return {
     serviceCount,
+    pedidosEnviados,
     equiposId,
     finalizarId,
     errors,
