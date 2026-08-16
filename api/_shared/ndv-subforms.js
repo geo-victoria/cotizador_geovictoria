@@ -483,75 +483,78 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
   let pedidosEnviados = null;
   const lineasEquipos = chargeTables?.lineasEquipos || [];
   const lineasServicios = chargeTables?.lineasServicios || [];
-  if (lineasEquipos.length > 0 || lineasServicios.length > 0) {
+  // UN REGISTRO POR PRODUCTO. Creator declara una fila de Form_Order por cada
+  // servicio no recurrente, y cada una tiene que tener SU propio
+  // Formulario_de_Equipos detrás. Metíamos la venta y los servicios técnicos en
+  // un solo registro con dos grillas, así que una de las dos declaraciones
+  // quedaba huérfana: sin `FormName`, y `CalculateNDVTotalAmounts` reventaba
+  // con "Expected BIGINT" al no saber en qué reporte buscarla — abortando la
+  // cadena antes de generar el PDF.
+  //
+  // La nota de referencia NDV-30721 lo hace así: tres registros separados, uno
+  // para el arriendo, otro para la venta y otro para las visitas técnicas.
+  const bloques = [];
+  if (lineasEquipos.length > 0) {
+    bloques.push({
+      producto: "Venta de Equipos Asistencia",
+      tipo: "No Recurrente",
+      equipos: lineasEquipos,
+      servicios: [],
+    });
+  }
+  if (lineasServicios.length > 0) {
+    bloques.push({
+      producto: "Visitas y Servicios Técnicos",
+      tipo: "No Recurrente",
+      equipos: [],
+      servicios: lineasServicios,
+    });
+  }
+
+  for (const bloque of bloques) {
     try {
       const equiposRecord = buildFormularioEquiposRecord({
         ndvId,
         ndvRecord,
-        lineasEquipos,
-        lineasServicios,
+        lineasEquipos: bloque.equipos,
+        lineasServicios: bloque.servicios,
       });
-      // Las grillas NO viajan en el POST. Sus picklists (`Item` y `Items`) se
-      // llenan en tiempo de ejecución desde Books, así que por API cualquier
-      // nombre de artículo es inválido — y el rechazo tumba el registro ENTERO,
-      // no solo la fila: verificado el 15-ago, una cotización con venta + envío
-      // + instalación perdió los tres bloques con
-      // "Equipos, Row No : 1, Invalid column value for Item".
-      //
-      // Van por el mismo puente que ya funciona para el arriendo: dejamos el
-      // pedido en un campo de texto y un flujo de Creator resuelve el artículo
-      // contra Books e inserta las filas.
-      const { Equipos: gridEquipos, Servicios: gridServicios, ...sinGrillas } = equiposRecord;
-      equiposId = await createSubformRecord(creatorConfig, "Formulario_de_Equipos", sinGrillas);
-      if (equiposId) {
-        // El PRECIO lo mandamos nosotros, siempre. Books solo resuelve QUÉ
-        // artículo es. Tomar su tarifa de lista borraría el precio negociado —
-        // en una venta con descuento, cobraría de más.
-        const pedidoEquipos = (lineasEquipos || []).map((l) => ({
+      equiposRecord.Servicio_Producto = bloque.producto;
+      equiposRecord.SERVICE_TYPE = bloque.tipo;
+      // Las grillas NO viajan en el POST: sus picklists se llenan en tiempo de
+      // ejecución desde Books, así que por API cualquier nombre de artículo es
+      // inválido y el rechazo tumba el registro entero. Van por el puente.
+      const { Equipos: _e, Servicios: _s, ...sinGrillas } = equiposRecord;
+      const bloqueId = await createSubformRecord(creatorConfig, "Formulario_de_Equipos", sinGrillas);
+      if (!bloqueId) continue;
+      if (bloque.equipos.length > 0) equiposId = bloqueId;
+      // El PRECIO lo mandamos nosotros, siempre. Books solo resuelve QUÉ
+      // artículo es; su tarifa de lista borraría el precio negociado.
+      const pedido = (filas) =>
+        filas.map((l) => ({
           codigo: toText(l.codigoCreator),
           cantidad: toNumber(l.cantidad) || 1,
           valor: toNumber(l.valorUnitario),
         }));
-        const pedidoServicios = (lineasServicios || []).map((l) => ({
-          codigo: toText(l.codigoCreator),
-          cantidad: toNumber(l.cantidad) || 1,
-          valor: toNumber(l.valorUnitario),
-        }));
-        // El pedido se devuelve en el resultado, no solo al log: es el único
-        // eslabón de la cadena que nunca habíamos podido mirar. Lo que llega a
-        // Creator y lo que tiene la cotización ya los vemos; lo que MANDAMOS,
-        // no — y ahí es donde aparecieron un artículo, una cantidad y un precio
-        // que no existen en la cotización.
-        pedidosEnviados = { equipos: pedidoEquipos, servicios: pedidoServicios };
-        console.log(`[ndv-subforms] pedido equipos=${JSON.stringify(pedidoEquipos)} servicios=${JSON.stringify(pedidoServicios)}`);
-        const data = { currentEditIndex: 0, maxIndex: 0 };
-        if (pedidoEquipos.length) data.Equipos_Por_API = JSON.stringify(pedidoEquipos);
-        if (pedidoServicios.length) data.Servicios_Por_API = JSON.stringify(pedidoServicios);
-        const rGrid = await creatorApiFetch(
-          `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}` +
-            `/report/HARDWARE_ALL_DATA/${encodeURIComponent(equiposId)}`,
-          { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }) }
-        );
-        const pg = await readJsonSafe(rGrid);
-        if (!rGrid.ok || isCreatorError(pg)) {
-          const detalle = JSON.stringify(pg).slice(0, 300);
-          console.warn(`[ndv-subforms] pedido de grillas rechazado: ${detalle}`);
-          errors.push(`Formulario_de_Equipos grillas: ${detalle}`);
-        }
-      }
-      console.log(
-        `[ndv-subforms] Formulario_de_Equipos → id=${equiposId} ` +
-          `equipos=${JSON.stringify(equiposRecord.Equipos || [])} ` +
-          `servicios=${JSON.stringify(equiposRecord.Servicios || [])}`
+      const data = { currentEditIndex: 0, maxIndex: 0 };
+      if (bloque.equipos.length) data.Equipos_Por_API = JSON.stringify(pedido(bloque.equipos));
+      if (bloque.servicios.length) data.Servicios_Por_API = JSON.stringify(pedido(bloque.servicios));
+      pedidosEnviados = { ...(pedidosEnviados || {}), [bloque.producto]: data };
+      const rGrid = await creatorApiFetch(
+        `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}` +
+          `/report/HARDWARE_ALL_DATA/${encodeURIComponent(bloqueId)}`,
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }) }
       );
+      const pg = await readJsonSafe(rGrid);
+      if (!rGrid.ok || isCreatorError(pg)) {
+        const detalle = JSON.stringify(pg).slice(0, 300);
+        console.warn(`[ndv-subforms] grillas de ${bloque.producto} rechazadas: ${detalle}`);
+        errors.push(`Formulario_de_Equipos(${bloque.producto}) grillas: ${detalle}`);
+      }
     } catch (err) {
-      // Solo un RECHAZO cuenta como fallo. createSubformRecord también devuelve
-      // "" por timeout, y ahí Creator sí recibió el registro y lo crea en
-      // background: limpiar en ese caso borraría la declaración de un bloque que
-      // sí va a existir.
       equiposRechazado = true;
-      console.warn(`[ndv-subforms] Formulario_de_Equipos ERROR: ${err.message}`);
-      errors.push(`Formulario_de_Equipos: ${err.message}`);
+      console.warn(`[ndv-subforms] Formulario_de_Equipos(${bloque.producto}) ERROR: ${err.message}`);
+      errors.push(`Formulario_de_Equipos(${bloque.producto}): ${err.message}`);
     }
   }
 
