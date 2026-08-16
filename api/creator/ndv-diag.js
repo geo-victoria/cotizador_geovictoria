@@ -204,6 +204,71 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 200, r);
   }
 
+  // ── AUDITORÍA del mes ────────────────────────────────────────────────────
+  // Qué campos traen SIEMPRE las notas hechas a mano y cuáles traen las
+  // nuestras. Devuelve solo estadísticas: traerse cientos de registros
+  // completos no cabe en una respuesta.
+  if (String(req.query?.auditoria || "") === "1") {
+    const limite = Math.min(400, Math.max(1, Number(req.query?.limite) || 200));
+    const criteria = encodeURIComponent('(Formulario == "Nota de Venta")');
+    const r = await creatorApiFetch(
+      `${reporte}?criteria=${criteria}&limit=${limite}&field_config=all`,
+      { method: "GET" }
+    );
+    const j = await r.json().catch(() => ({}));
+    const filas = Array.isArray(j?.data) ? j.data : [];
+
+    // "Como las de Vicky": Chile, y con algún producto de su catálogo.
+    const PRODUCTOS_VICKY = new Set([
+      "Control de Asistencia", "Alertas", "Vacaciones", "Calendario Inteligente",
+      "Gestión Documental", "Banco de Horas", "Arriendo de Equipos",
+      "Venta de Equipos Asistencia", "Visitas y Servicios Técnicos",
+    ]);
+    const CAMPOS = [
+      "PDF_STRING", "FullFormJsonPdf", "FullConfigurationJson", "JsonToFacturacion",
+      "JsonCrmContacts", "FullSoJson", "ESTADOS_INTEGRACION_FACTURACION",
+      "Razones_Sociales_Account", "JsonTradeNamesZoho", "Contacto_CRM", "Account_Owner",
+      "SellerName", "SellerPersonalInformation", "ID_Empresa_GeoVictoria", "GeoCompanyIdCRM",
+      "fecha_uf_usd", "Fecha_de_creaci_n", "CRM_REFERENCE_ID", "ID_SO", "MESES_PERIODO",
+      "TOTAL_SERVICIOS_MENSUALES", "Mes_de_Inicio_de_Facturacion", "Linea_de_Negocio",
+    ];
+    const NUESTRAS = new Set(["zoho_info24610", "mejoracontinua_geovictoria"]);
+
+    const grupo = { manual: [], api: [] };
+    for (const f of filas) {
+      if (texto(f.Pa_s_Facturaci_n) !== "Chile") continue;
+      const productos = (Array.isArray(f.Form_Order) ? f.Form_Order : [])
+        .map((x) => texto(x.Product_Name))
+        .filter(Boolean);
+      if (!productos.some((p) => PRODUCTOS_VICKY.has(p))) continue;
+      (NUESTRAS.has(texto(f.Added_User)) ? grupo.api : grupo.manual).push(f);
+    }
+
+    const stats = (arr) => {
+      const out = {};
+      for (const c of CAMPOS) {
+        const n = arr.filter((f) => texto(f[c])).length;
+        out[c] = arr.length ? `${n}/${arr.length} (${Math.round((n / arr.length) * 100)}%)` : "—";
+      }
+      return out;
+    };
+
+    return sendJson(res, 200, {
+      ok: true,
+      leidas: filas.length,
+      chile_con_productos_de_vicky: { manual: grupo.manual.length, api: grupo.api.length },
+      presencia_manual: stats(grupo.manual),
+      presencia_api: stats(grupo.api),
+      productos_vistos: [
+        ...new Set(
+          [...grupo.manual, ...grupo.api].flatMap((f) =>
+            (Array.isArray(f.Form_Order) ? f.Form_Order : []).map((x) => texto(x.Product_Name))
+          )
+        ),
+      ].filter(Boolean),
+    });
+  }
+
   // ── Log_NDV ──────────────────────────────────────────────────────────────
   if (req.query?.logs) {
     const idForm = String(req.query.logs).trim();
