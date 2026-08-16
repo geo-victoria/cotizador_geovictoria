@@ -14,14 +14,26 @@
 
 /**
  * Hardware: id del catálogo → artículo de Creator.
- * Hoy Vicky solo tiene habilitado el senseface_2a; el resto del catálogo existe
- * pero no es vendible por ella. Si algún día se habilita otro, agregar su código
- * acá — sin eso la línea queda fuera del PDF y se avisa por log.
+ * Vicky tiene habilitados DOS equipos (`disponibleParaVicky` en
+ * lib/catalogo/hardware.ts del agente): el Senseface 2A y el huellero URU4500.
+ * Los otros 14 del catálogo existen pero no son vendibles por ella.
+ *
+ * Si algún día se habilita otro, agregar su código acá — sin eso la línea queda
+ * fuera del PDF y de la orden de venta, y solo se avisa por log.
  */
 const HARDWARE_A_ARTICULO = {
   senseface_2a: {
     item: "006.10 - Reloj Gama Entrada Facial WIFI/LAN",
     modelo: "Senseface 2A",
+  },
+  // Lector de huella USB, la alternativa económica al reloj de pared. Está
+  // habilitado para Vicky (`disponibleParaVicky: true` en el catálogo, venta 3
+  // UF y arriendo 0,25) y NO estaba acá: una venta con huellero perdía su línea
+  // en Creator y no llegaba a la orden de venta. Verificado en Books el 16-ago:
+  // "012 - Huellero URU4500", SKU CHL-BIO-U4500-HID-USB-HI, rate 3, IVA 19%.
+  uru4500: {
+    item: "012 - Huellero URU4500",
+    modelo: "URU4500",
   },
 };
 
