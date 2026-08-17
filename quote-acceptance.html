@@ -1118,13 +1118,7 @@
       <p class="prep-text">Estamos cargando los datos de tu cotización en línea. Esto toma solo unos segundos.</p>
     </div>
     <div class="wrap">
-      <!-- TARJETA SUPERIOR OCULTA (Eduardo 17-ago, "elimina la primera tarjeta
-           por completo"): logo, estado, nombre de la cotización, vigencia y el
-           link al PDF. Se OCULTA en vez de borrarse porque el JS escribe en
-           #status, #qName, #qExpiry y #pdfLink sin comprobar que existan —
-           borrar el nodo tumba la carga de la página. Mismo criterio que
-           journeyHint/stepInfo más abajo. -->
-      <section class="hero" style="display:none">
+      <section class="hero">
         <!-- Hero en 2 líneas (Rodrigo 09-ago): logo + título + estado / línea de la cotización. -->
         <div class="hero-top" style="align-items: center">
           <div style="display: flex; align-items: center; gap: 14px; flex-wrap: nowrap; min-width: 0">
@@ -1135,13 +1129,16 @@
                  el logo + nombre de la cotización bastan; aplica a desktop y mobile
                  (era el mismo h1 responsivo). -->
           </div>
-          <div id="status" class="status">Cargando...</div>
+          <!-- Estado ("Cotización vigente") oculto — Eduardo 17-ago. Se oculta y
+               no se borra: el JS le escribe sin guard (setStatus). -->
+          <div id="status" class="status" style="display:none">Cargando...</div>
         </div>
         <div style="margin-top:8px;font-size:14px;color:#374151;display:flex;flex-wrap:wrap;align-items:center;gap:8px">
           <strong id="qName" style="font-weight:700">-</strong>
           <span style="color:#9ca3af">·</span>
           <span>Vigencia: <span id="qExpiry">-</span></span>
-          <a id="pdfLink" class="pdf-link" target="_blank" rel="noopener noreferrer" style="margin-left:4px">Ver PDF de cotización</a>
+          <!-- Link al PDF oculto (Eduardo 17-ago): el cliente lo recibe por correo. Se oculta, no se borra: el JS le escribe href/textContent sin guard. -->
+          <a id="pdfLink" class="pdf-link" target="_blank" rel="noopener noreferrer" style="margin-left:4px;display:none">Ver PDF de cotización</a>
         </div>
         <!-- Franjas del hero eliminadas (Rodrigo 09-ago): nota de diferencias,
              píldoras de pasos y línea de estado. journeyHint queda OCULTO (no
