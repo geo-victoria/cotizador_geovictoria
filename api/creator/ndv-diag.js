@@ -204,6 +204,38 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 200, r);
   }
 
+  // ── Borrar un registro ───────────────────────────────────────────────────
+  // Existe para limpiar notas de prueba y notas que hay que rehacer. Exige
+  // `confirmo=1` aparte del id: un borrado no se deshace.
+  if (req.query?.borrar) {
+    const id = String(req.query.borrar).trim();
+    const rep = String(req.query?.reporte || config.reportLinkName).trim();
+    if (String(req.query?.confirmo || "") !== "1") {
+      return sendJson(res, 400, { ok: false, error: "falta confirmo=1", id, reporte: rep });
+    }
+    // Se lee ANTES para dejar en la respuesta qué se borró: sin esto no queda
+    // rastro de un registro que ya no existe.
+    const antes = await leerNdv(id).catch(() => ({}));
+    const r = await creatorApiFetch(`${base}/report/${encodeURIComponent(rep)}/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    const j = await r.json().catch(() => ({}));
+    return sendJson(res, 200, {
+      ok: r.ok,
+      status: r.status,
+      id,
+      reporte: rep,
+      borrado: {
+        idNdv: texto(antes.ID_NDV),
+        formulario: texto(antes.Formulario),
+        estado: texto(antes.STATUS),
+        cuenta: texto(antes.CRM_ACCOUNT_NAME),
+        idSo: texto(antes.ID_SO),
+      },
+      respuesta: JSON.stringify(j).slice(0, 400),
+    });
+  }
+
   // ── Ver un registro por id, y buscar por empresa/RUT ─────────────────────
   // El criterio se arma acá y no en la URL porque el proxy del agente no deja
   // pasar paréntesis ni espacios.
