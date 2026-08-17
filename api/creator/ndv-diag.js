@@ -391,6 +391,36 @@ module.exports = async function handler(req, res) {
     });
   }
 
+  // ── Mover el STATUS de una nota ──────────────────────────────────────────
+  // Anular deja la cotización de origen trabada en la interfaz, así que hay que
+  // poder volver atrás. Lista blanca: nada de estados inventados.
+  if (req.query?.estado) {
+    const id = String(req.query.estado).trim();
+    const valor = String(req.query?.valor || "").trim().toUpperCase();
+    const PERMITIDOS = new Set(["PENDIENTE", "BORRADOR", "ANULADA"]);
+    if (!PERMITIDOS.has(valor)) {
+      return sendJson(res, 400, { ok: false, error: `valor inválido (${valor})`, permitidos: [...PERMITIDOS] });
+    }
+    if (String(req.query?.confirmo || "") !== "1") {
+      return sendJson(res, 400, { ok: false, error: "falta confirmo=1", id, valor });
+    }
+    const antes = await leerNdv(id).catch(() => ({}));
+    const r = await creatorApiFetch(`${reporte}/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { STATUS: valor, UpdateCheckbox: true } }),
+    });
+    const despues = await leerNdv(id).catch(() => ({}));
+    return sendJson(res, 200, {
+      ok: r.ok,
+      status: r.status,
+      id,
+      idNdv: texto(antes.ID_NDV),
+      estadoAntes: texto(antes.STATUS),
+      estadoDespues: texto(despues.STATUS),
+    });
+  }
+
   // ── Anular una nota ──────────────────────────────────────────────────────
   // Alternativa al borrado, que nuestro token no puede hacer (scope DELETE
   // ausente, code 2945). Anular es solo `STATUS = ANULADA` —así se ve
