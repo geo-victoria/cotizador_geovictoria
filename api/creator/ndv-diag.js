@@ -242,6 +242,39 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 200, { ok: true, leidas: filas.length, notas, n: afectadas.length, afectadas });
   }
 
+  // ── Anular una nota ──────────────────────────────────────────────────────
+  // Alternativa al borrado, que nuestro token no puede hacer (scope DELETE
+  // ausente, code 2945). Anular es solo `STATUS = ANULADA` —así se ve
+  // NDV-30748— y a diferencia del borrado se puede revertir.
+  if (req.query?.anular) {
+    const id = String(req.query.anular).trim();
+    if (String(req.query?.confirmo || "") !== "1") {
+      return sendJson(res, 400, { ok: false, error: "falta confirmo=1", id });
+    }
+    const antes = await leerNdv(id).catch(() => ({}));
+    if (texto(antes.STATUS) === "ANULADA") {
+      return sendJson(res, 200, { ok: true, id, idNdv: texto(antes.ID_NDV), yaEstaba: true });
+    }
+    const r = await creatorApiFetch(`${reporte}/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      // `UpdateCheckbox` va siempre: sin él, `DenyEditions` cancela la edición.
+      body: JSON.stringify({ data: { STATUS: "ANULADA", UpdateCheckbox: true } }),
+    });
+    const j = await r.json().catch(() => ({}));
+    const despues = await leerNdv(id).catch(() => ({}));
+    return sendJson(res, 200, {
+      ok: r.ok,
+      status: r.status,
+      id,
+      idNdv: texto(antes.ID_NDV),
+      cuenta: texto(antes.CRM_ACCOUNT_NAME),
+      estadoAntes: texto(antes.STATUS),
+      estadoDespues: texto(despues.STATUS),
+      respuesta: JSON.stringify(j).slice(0, 400),
+    });
+  }
+
   // ── Borrar un registro ───────────────────────────────────────────────────
   // Existe para limpiar notas de prueba y notas que hay que rehacer. Exige
   // `confirmo=1` aparte del id: un borrado no se deshace.
