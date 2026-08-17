@@ -2180,7 +2180,18 @@
         if (stageInfoCardEl) stageInfoCardEl.classList.remove("hidden");
         if (stageVerifyCardEl) stageVerifyCardEl.classList.toggle("hidden", !isStep2);
         const billingModalEl = document.getElementById("billingModal");
-        if (billingModalEl) billingModalEl.classList.toggle("hidden", !isStep2 || esFlujoNatural());
+        // EL MODAL DE FACTURACIÓN NO APARECE ANTES DEL PAGO (Eduardo 17-ago,
+        // segunda vuelta: el reingreso a una cotización ya aceptada forzaba el
+        // paso 2 y lo levantaba igual). Solo se muestra como RESPALDO cuando
+        // faltan los datos mínimos que el confirm exige (correo + RUT) — con
+        // datos completos, "Ir a pagar" va directo a las opciones de pago y la
+        // facturación la confirma Vicky post-pago (cobrar primero, Rodrigo).
+        const faltanDatosMinimos =
+          !String((fields.contactEmail && fields.contactEmail.value) || "").trim() ||
+          !String((fields.billingEmail && fields.billingEmail.value) || "").trim() ||
+          !String((fields.companyRut && fields.companyRut.value) || "").trim();
+        if (billingModalEl)
+          billingModalEl.classList.toggle("hidden", !isStep2 || esFlujoNatural() || !faltanDatosMinimos);
         if (isStep2 && esFlujoNatural() && fields.companyGiro && !fields.companyGiro.value.trim()) {
           fields.companyGiro.value = "Persona Natural";
         }
