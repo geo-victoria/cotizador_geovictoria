@@ -2168,6 +2168,13 @@
       // Link "¿necesitas factura?" del flujo natural: vive junto al checkbox
       // de términos (el paso 2 no existe para este flujo).
       function mostrarLinkFacturaNatural() {
+        // RETIRADO (Eduardo 17-ago): la tarjeta del checkbox va limpia, sin el
+        // aviso de persona natural ni el link "Completar datos aquí". La
+        // función queda como no-op (y no borrada) porque la llaman varios
+        // puntos del flujo; si un natural necesita factura de empresa, hoy el
+        // camino es pedirla por el chat.
+        return;
+        // eslint-disable-next-line no-unreachable
         if (!esFlujoNatural() || document.getElementById("naturalFacturaLink")) return;
         const ancla = termsAcceptedInput && termsAcceptedInput.closest("div");
         if (!ancla) return;
