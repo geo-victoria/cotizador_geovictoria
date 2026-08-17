@@ -255,9 +255,10 @@ module.exports = async function handler(req, res) {
       return sendJson(res, 400, { ok: false, error: "falta confirmo=1", quoteId });
     }
     const estado = String(req.query?.status || "PENDIENTE").trim().toUpperCase();
+    const formulario = String(req.query?.formulario || "").trim();
     const handler = require("./crear-ndv-desde-cot");
     return handler(
-      { method: "POST", headers: req.headers, query: {}, body: { quoteId, status: estado } },
+      { method: "POST", headers: req.headers, query: {}, body: { quoteId, status: estado, formulario } },
       res
     );
   }

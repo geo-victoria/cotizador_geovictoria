@@ -121,6 +121,9 @@ module.exports = async function handler(req, res) {
     const quoteId = toText(body.quoteId).replace(/\D/g, "");
     if (!quoteId) return sendJson(res, 400, { ok: false, error: "Falta quoteId." });
 
+    // "Nota de Venta" por defecto (el uso original del endpoint); "Cotización"
+    // cuando lo que se quiere es rehacer el ESPEJO de Creator.
+    const formularioPedido = /cotiza/i.test(toText(body.formulario)) ? "Cotización" : "Nota de Venta";
     const statusPedido = toText(body.status).toUpperCase() || "CONFIRMADA";
     if (!STATUS_PERMITIDOS.has(statusPedido)) {
       return sendJson(res, 400, { ok: false, error: `status inválido (${statusPedido}). Usa CONFIRMADA, PENDIENTE o BORRADOR.` });
@@ -158,7 +161,13 @@ module.exports = async function handler(req, res) {
       dealId,
       acceptanceData,
       creatorOverrides: {
-        formulario: "Nota de Venta",
+        // Los constructores de bloques declaran `Formulario: "Cotización"` fijo,
+        // y `CreateNextStep` no appendea una fila de Form_Order cuando ese valor
+        // no calza con el del maestro: naciendo como "Nota de Venta" los bloques
+        // quedan huérfanos y la nota sale sin productos (NDV-30764/30765).
+        // Por eso se puede pedir el espejo como "Cotización" y convertirlo
+        // después por el camino normal.
+        formulario: formularioPedido,
         status: statusPedido,
         formStatus: "BEING EDITED",
         hitoFacturacion: "Cargando...",
