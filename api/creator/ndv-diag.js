@@ -454,6 +454,17 @@ module.exports = async function handler(req, res) {
     });
   }
 
+  // ── Código corto firmado de una cotización ───────────────────────────────
+  // Solo lectura: calcula `<quoteId>-<firma>` para pasarlo como `params.codigo`
+  // de la plantilla con botón. El secreto vive acá, no en el agente.
+  if (req.query?.codcorto) {
+    const { codigoCortoDeCotizacion, linkCortoDeCotizacion } = require("../_shared/codigo-corto");
+    const id = String(req.query.codcorto).replace(/\D/g, "");
+    const codigo = codigoCortoDeCotizacion(id);
+    if (!codigo) return sendJson(res, 400, { ok: false, error: "id inválido o falta el secreto" });
+    return sendJson(res, 200, { ok: true, quoteId: id, codigo, link: linkCortoDeCotizacion(id) });
+  }
+
   // ── Borrar un registro ───────────────────────────────────────────────────
   // Existe para limpiar notas de prueba y notas que hay que rehacer. Exige
   // `confirmo=1` aparte del id: un borrado no se deshace.
