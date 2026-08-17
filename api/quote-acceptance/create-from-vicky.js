@@ -363,8 +363,38 @@ async function recoverConvertedIds(leadId) {
 }
 
 // ── Helper: enviar email via Zoho CRM send_mail ──
+/**
+ * Sube un archivo a Zoho Files y devuelve su id encriptado, que es lo único
+ * que `send_mail` acepta como adjunto. Va a content.zohoapis.com (dominio de
+ * archivos, distinto del de la API normal) con el mismo access token.
+ * Best-effort: si falla, el correo sale sin adjunto — jamás sin correo.
+ */
+async function subirArchivoZohoParaAdjunto(buffer, filename) {
+  try {
+    const { getZohoAccessToken } = require("../_shared/zoho-auth");
+    const token = await getZohoAccessToken();
+    const form = new FormData();
+    form.append("file", new Blob([buffer], { type: "application/pdf" }), filename);
+    const r = await fetch("https://content.zohoapis.com/crm/v3/files", {
+      method: "POST",
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+      body: form,
+    });
+    const j = await r.json().catch(() => ({}));
+    const id = j?.data?.[0]?.details?.id || j?.data?.[0]?.id || "";
+    if (!r.ok || !id) {
+      console.warn(`[send_mail] subida de adjunto falló (${r.status}): ${JSON.stringify(j).slice(0, 200)}`);
+      return "";
+    }
+    return String(id);
+  } catch (e) {
+    console.warn(`[send_mail] subida de adjunto lanzó: ${e.message}`);
+    return "";
+  }
+}
+
 async function sendQuoteEmailViaZoho({
-  quoteModule, quoteId, fromEmail, replyToEmail, toEmail, toName, subject, htmlBody, ccEmail, ccEmails,
+  quoteModule, quoteId, fromEmail, replyToEmail, toEmail, toName, subject, htmlBody, ccEmail, ccEmails, attachmentId,
 }) {
   const path = `/crm/v3/${encodeURIComponent(quoteModule)}/${encodeURIComponent(quoteId)}/actions/send_mail`;
   const dataPayload = {
@@ -374,6 +404,11 @@ async function sendQuoteEmailViaZoho({
     content: htmlBody,
     mail_format: "html",
   };
+  // PDF adjunto (Eduardo 17-ago): el respaldo viaja EN el correo; el botón
+  // del cuerpo lleva a la aceptación online, no al PDF.
+  if (attachmentId) {
+    dataPayload.attachments = [{ id: attachmentId }];
+  }
   if (replyToEmail && replyToEmail !== fromEmail) {
     dataPayload.reply_to = { email: replyToEmail };
   }
@@ -446,7 +481,7 @@ function buildDocFila(href, label, nota) {
 // PDF de la cotización (desde ahí se llega a la aceptación online); los
 // documentos van como botones de descarga a archivos hosteados. La ficha del
 // reloj solo se incluye si la cotización tiene hardware.
-function buildEmailHtml({ contacto, empresa, pdfUrl, tieneReloj, ejecutivo }) {
+function buildEmailHtml({ contacto, empresa, pdfUrl, acceptanceUrl, tieneReloj, ejecutivo }) {
   // El bloque "Te presento a tu ejecutivo" usa al DUEÑO REAL sorteado por la
   // tómbola (caso Grey, 31-jul: el correo decía Eddyluz fija mientras el deal
   // era de Grey). Sin dato, cae al ejecutivo por defecto de siempre.
@@ -488,11 +523,11 @@ function buildEmailHtml({ contacto, empresa, pdfUrl, tieneReloj, ejecutivo }) {
     <tr><td style="padding:36px 32px 8px 32px;">
       <p style="margin:0 0 6px 0;font-size:14px;color:#1a73e8;font-weight:600;">${saludo}</p>
       <h1 style="margin:0 0 12px 0;font-size:24px;line-height:1.3;color:#1a202c;">Tu cotización para <span style="color:#0d47a1;">${empresa}</span> está lista</h1>
-      <p style="margin:0;font-size:15px;line-height:1.6;color:#4a5568;">Preparé tu propuesta de Control de Asistencia. Ábrela en el PDF y, desde ahí mismo, puedes aceptarla en línea cuando quieras.</p>
+      <p style="margin:0;font-size:15px;line-height:1.6;color:#4a5568;">Preparé tu propuesta de Control de Asistencia. Revísala y acéptala en línea con el botón — el PDF de respaldo va adjunto.</p>
     </td></tr>
     <tr><td align="center" style="padding:28px 32px 8px 32px;">
-      <a href="${pdfUrl}" style="display:inline-block;background:#1a73e8;color:#ffffff;padding:14px 30px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;">📄 Ver tu cotización (PDF)</a>
-      <p style="margin:12px 0 0 0;font-size:12px;color:#a0aec0;">Dentro del PDF encuentras el botón para aceptarla en línea.</p>
+      <a href="${acceptanceUrl || pdfUrl}" style="display:inline-block;background:#1a73e8;color:#ffffff;padding:14px 30px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;">📄 Ver tu cotización (PDF)</a>
+      <p style="margin:12px 0 0 0;font-size:12px;color:#a0aec0;">El PDF de respaldo va adjunto en este correo.</p>
     </td></tr>
     <tr><td style="padding:28px 32px 0 32px;">
       <h3 style="margin:0 0 14px 0;font-size:15px;color:#1a202c;">Cómo seguimos 🚀</h3>
@@ -1952,6 +1987,12 @@ module.exports = async function handler(req, res) {
         if (sinCorreoCliente) {
           console.log(`[create-from-vicky] correo al cliente SUPRIMIDO (canal ejecutivo) quote=${quoteId}`);
         }
+        // PDF ADJUNTO (Eduardo 17-ago): se sube a Zoho Files para que viaje
+        // dentro del correo. Best-effort — sin adjunto el correo sale igual,
+        // con el link del PDF en la sección de documentos.
+        const adjuntoId = cliente.contactoEmail && !sinCorreoCliente
+          ? await subirArchivoZohoParaAdjunto(pdfBuffer, `cotizacion_${numeroParaPdf(numeroCotizacion, quoteId)}.pdf`)
+          : "";
         if (cliente.contactoEmail && !sinCorreoCliente) await sendQuoteEmailViaZoho({
           quoteModule: config.quoteModule,
           quoteId,
@@ -1966,10 +2007,12 @@ module.exports = async function handler(req, res) {
           toEmail: cliente.contactoEmail,
           toName: cliente.contacto,
           subject: `Tu cotización GeoVictoria — ${cliente.empresa}`,
+          attachmentId: adjuntoId,
           htmlBody: buildEmailHtml({
             contacto: cliente.contacto,
             empresa: cliente.empresa,
             pdfUrl,
+            acceptanceUrl,
             tieneReloj,
             // El dueño sorteado por la tómbola es quien se presenta (Grey 31-jul).
             ejecutivo: { nombre: quoteOwnerNombre, email: quoteOwnerEmail, telefono: quoteOwnerTelefono },

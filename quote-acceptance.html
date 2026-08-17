@@ -2125,6 +2125,21 @@
         if (mode) el.classList.add(mode);
       }
 
+      // DESKTOP DESPLEGADO, MÓVIL COMPRIMIDO (Eduardo 17-ago): en pantalla
+      // grande el detalle de costos parte abierto (hay espacio y se ve como
+      // siempre); en teléfono parte colapsado para que el monto y el botón de
+      // pagar queden a la vista sin scroll.
+      function ajustarDetalleSegunPantalla() {
+        const section = document.getElementById("sectionCosts");
+        if (!section) return;
+        const toggle = section.querySelector(".acc-toggle");
+        const body = section.querySelector(".acc-body");
+        if (!toggle || !body) return;
+        const esDesktop = window.innerWidth >= 768;
+        toggle.setAttribute("aria-expanded", String(esDesktop));
+        body.classList.toggle("hidden", !esDesktop);
+      }
+
       function bindAccordions() {
         const toggles = document.querySelectorAll(".acc-toggle");
         toggles.forEach((toggle) => {
@@ -3960,6 +3975,8 @@
       }
 
       bindAccordions();
+
+      ajustarDetalleSegunPantalla();
       renderStage();
       updateJourneyState();
       // loadFormCatalogs() ya no se llama acá: la dispara boot() SOLO cuando
