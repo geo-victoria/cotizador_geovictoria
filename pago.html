@@ -373,20 +373,25 @@
               '<p class="pay-note">El pago con tarjeta es inmediato y seguro. Todo lo gestiona Mercado Pago.</p>' +
               "</div>"
             : (function () {
-                // Recargo tarjeta >$100.000 (Lalo 10-ago): espejo de la regla
-                // del servidor (MP_RECARGO_UMBRAL_CLP/MP_RECARGO_PCT, defaults
-                // 100000/3). El botón muestra el TOTAL real con recargo y la
-                // transferencia queda explícita como camino sin costo extra.
-                var RECARGO_UMBRAL = 100000;
-                var RECARGO_PCT = 3;
-                var conRecargo = a.oneShotClp > RECARGO_UMBRAL;
+                // Recargo tarjeta sobre el umbral (Rodrigo 17-ago: $200.000;
+                // antes $100.000). La regla YA NO se espeja hardcodeada: viene
+                // del servidor en /api/payments/status (state.recargo, misma
+                // fuente que usa create-preference al cobrar) — botón y cobro
+                // no pueden desalinearse. El fallback solo cubre respuestas
+                // viejas cacheadas sin el campo.
+                var rcfg = state.recargo || {};
+                var RECARGO_UMBRAL = Number.isFinite(rcfg.umbralClp) ? rcfg.umbralClp : 200000;
+                var RECARGO_PCT = Number.isFinite(rcfg.pct) ? rcfg.pct : 3;
+                var conRecargo = RECARGO_PCT > 0 && a.oneShotClp > RECARGO_UMBRAL;
                 // MISMA aritmética que el servidor (create-preference):
                 // base + round(base × 3%). round(base × 1.03) podía diferir
                 // en $1 del cobro real — el botón debe calzar al peso.
                 var recargoClp = conRecargo ? Math.round((a.oneShotClp * RECARGO_PCT) / 100) : 0;
                 var totalTarjeta = a.oneShotClp + recargoClp;
                 var nota = conRecargo
-                  ? '<p class="pay-note">El pago con tarjeta es inmediato y seguro; sobre $100.000 incluye un ' +
+                  ? '<p class="pay-note">El pago con tarjeta es inmediato y seguro; sobre ' +
+                    fmtMonto(RECARGO_UMBRAL) +
+                    ' incluye un ' +
                     RECARGO_PCT +
                     "% de recargo del medio de pago. Por transferencia pagas " +
                     fmtMonto(a.oneShotClp) +
@@ -395,7 +400,7 @@
                     "Por transferencia, te mostramos los datos y le envías el comprobante a Vicky por WhatsApp.</p>";
                 return (
                   '<div id="payMethods">' +
-                  // REGLA DE ORO (Lalo 11-ago): sobre $100.000, el propio BOTÓN
+                  // REGLA DE ORO (Lalo 11-ago): sobre el umbral, el propio BOTÓN
                   // dice que el monto incluye el 3% del medio de pago — el
                   // cliente jamás descubre el recargo recién en el checkout.
                   // Bajo el umbral, botón limpio sin mención alguna.

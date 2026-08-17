@@ -115,18 +115,21 @@ export default async function handler(req, res) {
       });
     }
 
-    // RECARGO TARJETA sobre $100.000 (Lalo 10-ago): hasta ese monto, pagar
-    // con Mercado Pago no tiene costo extra para el cliente; sobre el umbral
-    // se traspasa un 3% como LÍNEA VISIBLE del checkout (transparencia — y
-    // en montos grandes el camino sin recargo es la transferencia). Umbral y
-    // porcentaje por env; MP_RECARGO_PCT=0 lo apaga. Solo Chile: la regla es
-    // en CLP y Colombia no tiene transferencia como alternativa.
+    // RECARGO TARJETA sobre $200.000 (Rodrigo 17-ago; antes $100.000, Lalo
+    // 10-ago): hasta ese monto, pagar con Mercado Pago no tiene costo extra
+    // para el cliente; sobre el umbral se traspasa un 3% como LÍNEA VISIBLE
+    // del checkout (transparencia — y en montos grandes el camino sin recargo
+    // es la transferencia). Umbral y porcentaje por env; MP_RECARGO_PCT=0 lo
+    // apaga. Solo Chile: la regla es en CLP y Colombia no tiene transferencia
+    // como alternativa. OJO: pago.html ya NO espeja estos valores hardcodeados
+    // — los lee de /api/payments/status (misma fuente), así botón y cobro no
+    // se desalinean aunque alguien cambie el env.
     let recargoClp = 0;
     // Solo CHILE: el umbral es en CLP y la alternativa sin recargo es la
     // transferencia local. CO nunca lo tuvo; PE (montos en PEN) tampoco —
     // aplicarle el umbral chileno a soles cobraría 3% casi nunca/mal.
     if (session.pais !== "co" && session.pais !== "pe") {
-      const recargoUmbral = Number(process.env.MP_RECARGO_UMBRAL_CLP || 100000);
+      const recargoUmbral = Number(process.env.MP_RECARGO_UMBRAL_CLP || 200000);
       const recargoPct = Number(process.env.MP_RECARGO_PCT || 3);
       if (recargoPct > 0 && amounts.oneShotClp > recargoUmbral) {
         recargoClp = Math.round((amounts.oneShotClp * recargoPct) / 100);

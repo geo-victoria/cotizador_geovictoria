@@ -133,6 +133,13 @@ export default async function handler(req, res) {
       pais,
       currencyId: mpConfig.currencyId,
       includeIva: amounts.includeIva,
+      // Regla del recargo tarjeta — MISMA fuente que create-preference
+      // (Rodrigo 17-ago: umbral $200.000). pago.html la lee de acá en vez de
+      // espejarla hardcodeada: botón y cobro jamás se desalinean.
+      recargo: {
+        umbralClp: Number(process.env.MP_RECARGO_UMBRAL_CLP || 200000),
+        pct: Number(process.env.MP_RECARGO_PCT || 3),
+      },
       amounts: {
         oneShotClp: amounts.oneShotClp,
         oneShotItemsClp: amounts.oneShotItemsClp,
