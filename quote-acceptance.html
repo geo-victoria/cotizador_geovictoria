@@ -3743,6 +3743,18 @@
           onConfirm();
           return;
         }
+        // EMPRESA SIN POP-UP (Eduardo 17-ago): el modal de facturación ya no
+        // se muestra ANTES del pago. Con "cobrar primero" (Rodrigo 17-ago) lo
+        // único que el confirm exige es correo + RUT, y ambos vienen
+        // prellenados del chat — así que checkbox + aceptar van DIRECTO al
+        // pago, igual que persona natural. Los datos de facturación los
+        // confirma Vicky post-pago. El modal queda solo de RESPALDO para el
+        // caso raro de una cotización sin correo o sin RUT.
+        const check = validateRequired({ requireVerification: false });
+        if (check.ok) {
+          onConfirm();
+          return;
+        }
         goToStage(2);
       });
 
