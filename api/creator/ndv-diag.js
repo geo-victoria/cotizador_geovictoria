@@ -262,6 +262,77 @@ module.exports = async function handler(req, res) {
     );
   }
 
+  // ── Completar los bloques de una nota que quedó sin productos ────────────
+  // `crear-ndv-desde-cot` puede dejar el maestro creado y sin ningún bloque
+  // (caso NDV-30765: ProductServices vacío). Esto corre el MISMO
+  // `runNdvSubformSetup` sobre la nota existente, con la tabla de cobro armada
+  // desde la cotización de Zoho. No crea notas nuevas.
+  if (req.query?.completarbloques) {
+    const ndvId = String(req.query.completarbloques).trim();
+    const quoteId = String(req.query?.quote || "").replace(/\D/g, "");
+    if (String(req.query?.confirmo || "") !== "1") {
+      return sendJson(res, 400, { ok: false, error: "falta confirmo=1", ndvId, quoteId });
+    }
+    if (!quoteId) return sendJson(res, 400, { ok: false, error: "falta quote=<idCotizacionZoho>" });
+
+    const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
+    const { getRecord } = require("../_shared/zoho-crm");
+    const { buildChargeTables } = require("../_shared/ndv-charge-table");
+    const { resolveServiciosRecurrentesDeFila } = require("../_shared/ndv-handoff");
+    const { runNdvSubformSetup } = require("../_shared/ndv-subforms");
+
+    const cfg = getAcceptanceConfig();
+    const quote = await getRecord(cfg.quoteModule, quoteId);
+    if (!quote) return sendJson(res, 404, { ok: false, error: `no existe la cotización ${quoteId}` });
+
+    const ndvRecord = await leerNdv(ndvId);
+    if (!texto(ndvRecord.ID_NDV)) return sendJson(res, 404, { ok: false, error: `no existe la nota ${ndvId}` });
+    if (Array.isArray(ndvRecord.Form_Order) && ndvRecord.Form_Order.length) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: "la nota YA tiene bloques; no se duplican",
+        idNdv: texto(ndvRecord.ID_NDV),
+        bloques: ndvRecord.Form_Order.length,
+      });
+    }
+
+    const moneda = texto(quote?.Moneda) || texto(ndvRecord.Moneda) || "UF";
+    const servicios = Array.isArray(ndvRecord.Servicios_Recurrentes) ? ndvRecord.Servicios_Recurrentes : [];
+    const servicioPrincipal = texto(servicios[0]) || "Control de Asistencia";
+    const empleados = Number(req.query?.empleados) || 0;
+
+    const chargeTables = buildChargeTables({
+      quote,
+      config: cfg,
+      committedEmployees: empleados || undefined,
+      moneda,
+      servicioPrincipal,
+      resolveServicios: resolveServiciosRecurrentesDeFila,
+    });
+
+    const setup = await runNdvSubformSetup({
+      ndvId,
+      ndvRecord,
+      chargeTables,
+      notasPdf: undefined,
+    });
+
+    const despues = await leerNdv(ndvId).catch(() => ({}));
+    return sendJson(res, 200, {
+      ok: true,
+      idNdv: texto(ndvRecord.ID_NDV),
+      servicioPrincipal,
+      moneda,
+      setup: { serviceCount: setup?.serviceCount, finalizarId: setup?.finalizarId, errors: setup?.errors },
+      despues: {
+        formOrder: Array.isArray(despues.Form_Order) ? despues.Form_Order.length : 0,
+        requireSo: texto(despues.RequireSO),
+        pdf: Boolean(texto(despues.PDF_STRING)),
+        totalMensual: texto(despues.TOTAL_SERVICIOS_MENSUALES),
+      },
+    });
+  }
+
   // ── Anular una nota ──────────────────────────────────────────────────────
   // Alternativa al borrado, que nuestro token no puede hacer (scope DELETE
   // ausente, code 2945). Anular es solo `STATUS = ANULADA` —así se ve
