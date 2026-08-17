@@ -70,12 +70,12 @@ function validateRequiredInput(fields) {
         ["companyRut", "RUT"],
       ]
     : [
+        // COBRAR PRIMERO (Rodrigo 17-ago, punto 4 del rediseño): giro, comuna,
+        // direccion y telefono ya NO frenan el pago de empresa — el prefill
+        // del SII los trae casi siempre y Vicky los confirma post-pago antes
+        // de emitir la factura. Solo el correo y el RUT separan del cobro.
         ["billingEmail", "correo de facturacion"],
-        ["billingPhone", "telefono de facturacion"],
-        ["companyGiro", "giro"],
         ["companyRut", "RUT de empresa"],
-        ["companyComuna", "comuna"],
-        ["companyAddress", "direccion"],
       ];
   const missing = required
     .filter(([key]) => !toText(fields?.[key]))

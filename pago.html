@@ -182,6 +182,23 @@
         var paisPago = "cl";
         var monedaPago = "CLP";
 
+        // ── Telemetría del último metro (Rodrigo 17-ago): pings best-effort
+        // al agente (vic-pago-evento) — primer timestamp por evento; jamás
+        // afecta el pago. Los lee el panel "Funnel de pago" del dash.
+        var __pfQuoteId = "";
+        function pfPing(evento) {
+          try {
+            var qid = String(__pfQuoteId || "").replace(/\D/g, "");
+            if (!qid) return;
+            var device = /Mobi|Android/i.test(navigator.userAgent) ? "movil" : "desktop";
+            var url = "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app/api/vic-pago-evento";
+            var body = JSON.stringify({ quoteId: qid, evento: evento, device: device });
+            if (navigator.sendBeacon) navigator.sendBeacon(url, body);
+            else if (window.fetch) fetch(url, { method: "POST", body: body, keepalive: true }).catch(function () {});
+          } catch (e) {}
+        }
+        window.pfPing = pfPing;
+
         function fmtMonto(value) {
           try {
             var locale = paisPago === "co" ? "es-CO" : paisPago === "pe" ? "es-PE" : "es-CL";
@@ -314,6 +331,7 @@
               return;
             }
             if (data.initPoint) {
+              pfPing("salida_mp");
               window.location.href = data.initPoint;
               return;
             }
@@ -424,6 +442,7 @@
             '<p class="lead">' + lead + "</p>" +
             methodsHtml;
           document.getElementById("payCardBtn").addEventListener("click", function () {
+            pfPing("metodo_tarjeta");
             startStep("/api/payments/create-preference", "Conectando con Mercado Pago...");
           });
           var payTransferBtn = document.getElementById("payTransferBtn");
@@ -432,6 +451,7 @@
           var transferPanelEl = document.getElementById("transferPanel");
           if (payTransferBtn && transferPanelEl) {
             payTransferBtn.addEventListener("click", function () {
+              pfPing("metodo_transferencia");
               payMethodsEl.classList.add("hidden");
               transferPanelEl.classList.remove("hidden");
               setMessage("", "");
@@ -463,7 +483,7 @@
           var waLink = transferWhatsappLink(state);
           var waBtn = waLink
             ? '<a class="btn" id="transferWaBtn" href="' + waLink +
-              '" target="_blank" rel="noopener noreferrer">Enviar comprobante por WhatsApp</a>'
+              '" target="_blank" rel="noopener noreferrer" onclick="pfPing(&quot;transfer_wsp_click&quot;)">Enviar comprobante por WhatsApp</a>'
             : '<p class="transfer-help">Env&iacute;ale el comprobante a Vicky por WhatsApp ' +
               "(+56 9 6730 8227) para procesar tu pedido.</p>";
           return (
@@ -576,6 +596,10 @@
             // condicionados por CO dependen de estas dos variables.
             paisPago = String(state.pais || "cl").toLowerCase();
             monedaPago = String(state.currencyId || (paisPago === "co" ? "COP" : paisPago === "pe" ? "PEN" : "CLP"));
+            if (state.quote && state.quote.id && !__pfQuoteId) {
+              __pfQuoteId = String(state.quote.id);
+              pfPing("pago_abierto");
+            }
             loadingEl.classList.add("hidden");
             contentEl.classList.remove("hidden");
             if (state.quote && state.quote.name) {

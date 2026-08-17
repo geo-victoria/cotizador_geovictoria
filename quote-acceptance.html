@@ -1220,7 +1220,7 @@
               <input id="billingEmail" type="email" />
             </div>
             <div>
-              <label for="billingPhone">Teléfono de facturación *</label>
+              <label for="billingPhone">Teléfono de facturación (opcional)</label>
               <input id="billingPhone" type="text" />
             </div>
             <div>
@@ -1228,21 +1228,21 @@
               <input id="companyRut" type="text" />
             </div>
             <div>
-              <label for="companyGiro">Giro *</label>
+              <label for="companyGiro">Giro (opcional — se prellena del SII)</label>
               <div class="combo" id="comboGiro">
                 <input id="companyGiro" type="text" autocomplete="off" placeholder="Escribe para buscar tu giro" />
                 <ul class="combo-list hidden"></ul>
               </div>
             </div>
             <div>
-              <label for="companyComuna">Comuna *</label>
+              <label for="companyComuna">Comuna (opcional — se prellena del SII)</label>
               <div class="combo" id="comboComuna">
                 <input id="companyComuna" type="text" autocomplete="off" placeholder="Escribe tu comuna" />
                 <ul class="combo-list hidden"></ul>
               </div>
             </div>
             <div class="full">
-              <label for="companyAddress">Dirección *</label>
+              <label for="companyAddress">Dirección (opcional — se prellena del SII)</label>
               <input id="companyAddress" type="text" />
             </div>
           </div>
@@ -2565,17 +2565,13 @@
         // Persona natural: el teléfono NO se exige — la boleta no lo necesita
         // y las cotizaciones creadas desde el editor pueden venir sin fono
         // (caso Rodrigo 13-ago: billingPhone vacío dejaba el botón mudo).
+        // COBRAR PRIMERO (Rodrigo 17-ago, punto 4): giro/comuna/dirección/
+        // teléfono ya NO frenan el pago — el SII los prellena y Vicky los
+        // confirma post-pago antes de emitir la factura. Empresa y natural
+        // exigen lo mismo: correos + RUT.
         const requiredTextFields = esFlujoNatural()
           ? ["contactEmail", "billingEmail", "companyRut"]
-          : [
-              "contactEmail",
-              "billingEmail",
-              "billingPhone",
-              "companyRut",
-              "companyGiro",
-              "companyComuna",
-              "companyAddress",
-            ];
+          : ["contactEmail", "billingEmail", "companyRut"];
         for (const key of requiredTextFields) {
           const input = fields[key];
           if (!input || !String(input.value || "").trim()) {
@@ -2648,12 +2644,36 @@
         return data;
       }
 
+      // ── Telemetría del último metro (Rodrigo 17-ago) ──────────────────
+      // Pings best-effort al agente (vic-pago-evento): primer timestamp por
+      // evento y cotización, para medir dónde se fuga la gente entre abrir la
+      // página y pagar. JAMÁS afecta el flujo (sendBeacon/keepalive, sin
+      // await). Los lee el panel "Funnel de pago" del dash.
+      window.__pfQuoteId = "";
+      function pfPing(evento) {
+        try {
+          var qid = String(window.__pfQuoteId || "").replace(/\D/g, "");
+          if (!qid) return;
+          var device = /Mobi|Android/i.test(navigator.userAgent) ? "movil" : "desktop";
+          var url = "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app/api/vic-pago-evento";
+          var body = JSON.stringify({ quoteId: qid, evento: evento, device: device });
+          if (navigator.sendBeacon) navigator.sendBeacon(url, body);
+          else if (window.fetch) fetch(url, { method: "POST", body: body, keepalive: true }).catch(function () {});
+        } catch (e) {}
+      }
+      window.pfPing = pfPing;
+      document.addEventListener("change", function (e) {
+        if (e.target && e.target.id === "termsAccepted" && e.target.checked) pfPing("terminos");
+      });
+
       async function boot() {
         try {
           const data = await loadSession();
           if (!data) return;
 
           const q = data.quote || {};
+          window.__pfQuoteId = String(q.id || "");
+          pfPing("abrio");
           // Vigencia del descuento de ESTA cotización, antes de pintar nada.
           aplicarVigenciaDescuento(data.descuento);
           // País de la cotización ("co" = Colombia). TODO el ajuste CO de esta
@@ -3335,6 +3355,7 @@
                 }),
               });
               const data = await res.json().catch(() => ({}));
+              pfPing("acepto");
               if (data && data.paymentUrl) urlPago = data.paymentUrl;
             } catch (e) {
               // El guardado es best-effort: el pago no se frena por esto.
@@ -3410,6 +3431,7 @@
           if (!res.ok || !data.success) {
             throw new Error(data.error || "No se pudo confirmar aceptación.");
           }
+          pfPing("acepto");
 
           if (data.requiresPayment && data.paymentUrl) {
             flowState.acceptedAt = data.acceptedAt || flowState.acceptedAt;
