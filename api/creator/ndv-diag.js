@@ -349,6 +349,27 @@ module.exports = async function handler(req, res) {
     });
   }
 
+  // ── Confirmar una nota ya creada ─────────────────────────────────────────
+  // `confirmarNota` es idempotente y se niega sola si falta el PDF (sin él
+  // `ConfirmNDV` aborta a media máquina y deja la nota rota).
+  if (req.query?.confirmar) {
+    const id = String(req.query.confirmar).trim();
+    if (String(req.query?.confirmo || "") !== "1") {
+      return sendJson(res, 400, { ok: false, error: "falta confirmo=1", id });
+    }
+    const { confirmarNota } = require("../_shared/ndv-conversion");
+    const r = await confirmarNota(id).catch((e) => ({ ok: false, error: e.message }));
+    const d = await leerNdv(id).catch(() => ({}));
+    return sendJson(res, 200, {
+      ...r,
+      estado: texto(d.STATUS),
+      totalMensual: texto(d.TOTAL_SERVICIOS_MENSUALES),
+      idSo: texto(d.ID_SO),
+      facturacion: Boolean(texto(d.JsonToFacturacion)),
+      estadosIntegracion: texto(d.ESTADOS_INTEGRACION_FACTURACION),
+    });
+  }
+
   // ── Anular una nota ──────────────────────────────────────────────────────
   // Alternativa al borrado, que nuestro token no puede hacer (scope DELETE
   // ausente, code 2945). Anular es solo `STATUS = ANULADA` —así se ve
