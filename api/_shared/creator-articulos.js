@@ -56,10 +56,45 @@ const SERVICIO_A_ARTICULO = {
   envio_reloj: "907 - [CHI] Envío/Despacho Asistencia",
 };
 
+/**
+ * Alias de código → id de nuestro catálogo.
+ *
+ * El canal EJECUTIVO no manda ids: la calculadora comercial arma su snapshot
+ * solo con nombres visibles y `itemsDesdeSnapshot` los convierte en código
+ * haciendo slug de ese nombre ("Senseface 2A (Promoción)" →
+ * `senseface_2a_promocion`). Como esos códigos no existían acá, la línea del
+ * equipo se degradaba a un Servicio_Recurrente genérico —sin equipo, sin bodega
+ * y sin orden de venta— y la del servicio desaparecía sin ruido.
+ * Caso que lo destapó: COT575 / NDV-30762 (MASTERDENT SPA, 17-ago).
+ */
+const ALIAS_CODIGO = {
+  // Promo del Senseface 2A: es el MISMO equipo, cambia solo la tarifa.
+  senseface_2a_promocion: "senseface_2a",
+  senseface_2a_promo: "senseface_2a",
+  huellero_uru4500: "uru4500",
+  uru_4500: "uru4500",
+  // Servicios asociados: la Cotizadora de Ejecutivos usa ids cortos
+  // ("envio", "instalacion") y la calculadora el slug del nombre con zona.
+  envio: "envio_reloj",
+  envio_region: "envio_reloj",
+  envio_regiones: "envio_reloj",
+  envio_rm: "envio_reloj",
+  envio_despacho: "envio_reloj",
+  instalacion: "instalacion_reloj",
+  instalacion_rm: "instalacion_reloj",
+  instalacion_region: "instalacion_reloj",
+  instalacion_regiones: "instalacion_reloj",
+};
+
+/** Resuelve alias del canal ejecutivo al id de nuestro catálogo. */
+function normalizarCodigo(codigoItem) {
+  const codigo = String(codigoItem || "").trim().toLowerCase();
+  return ALIAS_CODIGO[codigo] || codigo;
+}
+
 /** @returns {{item: string, modelo: string} | null} */
 function articuloDeHardware(codigoItem) {
-  const codigo = String(codigoItem || "").trim().toLowerCase();
-  return HARDWARE_A_ARTICULO[codigo] || null;
+  return HARDWARE_A_ARTICULO[normalizarCodigo(codigoItem)] || null;
 }
 
 /**
@@ -68,12 +103,16 @@ function articuloDeHardware(codigoItem) {
  * @returns {string} valor de picklist, o "" si no hay correspondencia
  */
 function articuloDeServicio(codigoItem, zona) {
-  const codigo = String(codigoItem || "").trim().toLowerCase();
+  const crudo = String(codigoItem || "").trim().toLowerCase();
+  const codigo = normalizarCodigo(crudo);
   const entrada = SERVICIO_A_ARTICULO[codigo];
   if (!entrada) return "";
   if (typeof entrada === "string") return entrada;
 
-  const z = String(zona || "").trim().toLowerCase();
+  // Cuando el código del canal ejecutivo ya trae la zona en el nombre
+  // ("instalacion_rm"), vale como respaldo si la línea no la declaró.
+  const zonaDelCodigo = /_rm$/.test(crudo) ? "rm" : /_regi/.test(crudo) ? "regiones" : "";
+  const z = String(zona || zonaDelCodigo || "").trim().toLowerCase();
   if (z === "rm") return entrada.RM;
   if (z === "regiones" || z === "region") return entrada.regiones;
   // Instalación sin zona: se asume regiones, que es la tarifa mayor. Preferimos
