@@ -371,13 +371,16 @@ async function recoverConvertedIds(leadId) {
  */
 async function subirArchivoZohoParaAdjunto(buffer, filename) {
   try {
-    const { getZohoAccessToken } = require("../_shared/zoho-auth");
-    const token = await getZohoAccessToken();
+    // OJO: el endpoint de archivos vive en el MISMO api domain que el resto
+    // (www.zohoapis.com/crm/v3/files). El primer intento fue contra
+    // content.zohoapis.com y devolvió 404 (17-ago, prueba de Rodrigo) — ese
+    // dominio es de otra API. zohoApiFetch pone el token y no fuerza
+    // Content-Type, así que el FormData define su propio boundary.
+    const { zohoApiFetch } = require("../_shared/zoho-auth");
     const form = new FormData();
     form.append("file", new Blob([buffer], { type: "application/pdf" }), filename);
-    const r = await fetch("https://content.zohoapis.com/crm/v3/files", {
+    const r = await zohoApiFetch("/crm/v3/files", {
       method: "POST",
-      headers: { Authorization: `Zoho-oauthtoken ${token}` },
       body: form,
     });
     const j = await r.json().catch(() => ({}));

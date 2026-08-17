@@ -481,6 +481,11 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     const isExpired = toText(error?.code) === "TOKEN_EXPIRED";
+    // El detalle solo viajaba al navegador: un 500 acá era invisible en los
+    // logs (17-ago, página en blanco de Lalo sin forma de diagnosticar).
+    if (!isExpired) {
+      console.error(`[session] 500: ${String(error?.message || error).slice(0, 300)}`);
+    }
     sendJson(res, isExpired ? 410 : 500, {
       success: false,
       error: isExpired
