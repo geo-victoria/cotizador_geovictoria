@@ -242,6 +242,26 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 200, { ok: true, leidas: filas.length, notas, n: afectadas.length, afectadas });
   }
 
+  // ── Nota de venta directa desde la cotización de Zoho ────────────────────
+  // Atajo GET para `crear-ndv-desde-cot`, que es POST y por eso no se alcanza
+  // desde el proxy de solo-lectura del agente. Sirve para rehacer una nota sin
+  // pasar por el espejo de Creator: cuando ese espejo nació con los bloques mal
+  // traducidos (caso COT575), convertirlo otra vez repite el mismo error —los
+  // bloques se heredan, no se reconstruyen—, mientras que este camino los arma
+  // de nuevo desde los ítems de la cotización.
+  if (req.query?.desdecot) {
+    const quoteId = String(req.query.desdecot).replace(/\D/g, "");
+    if (String(req.query?.confirmo || "") !== "1") {
+      return sendJson(res, 400, { ok: false, error: "falta confirmo=1", quoteId });
+    }
+    const estado = String(req.query?.status || "PENDIENTE").trim().toUpperCase();
+    const handler = require("./crear-ndv-desde-cot");
+    return handler(
+      { method: "POST", headers: req.headers, query: {}, body: { quoteId, status: estado } },
+      res
+    );
+  }
+
   // ── Anular una nota ──────────────────────────────────────────────────────
   // Alternativa al borrado, que nuestro token no puede hacer (scope DELETE
   // ausente, code 2945). Anular es solo `STATUS = ANULADA` —así se ve
