@@ -204,6 +204,40 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 200, r);
   }
 
+  // ── Notas con arriendo degradado ─────────────────────────────────────────
+  // Firma del bug de códigos del canal ejecutivo: la nota declara "Arriendo de
+  // Equipos" como servicio recurrente pero NO tiene ningún Formulario_de_Equipos,
+  // así que no hay equipo, no hay bodega y `RequireSO` queda en false.
+  if (String(req.query?.degradadas || "") === "1") {
+    const limite = Math.min(400, Math.max(1, Number(req.query?.limite) || 200));
+    const r = await creatorApiFetch(`${reporte}?limit=${limite}&field_config=all`, { method: "GET" });
+    const j = await r.json().catch(() => ({}));
+    const filas = Array.isArray(j?.data) ? j.data : [];
+    const afectadas = [];
+    let notas = 0;
+    for (const f of filas) {
+      if (texto(f.Formulario) !== "Nota de Venta") continue;
+      notas += 1;
+      const fo = Array.isArray(f.Form_Order) ? f.Form_Order : [];
+      const productos = fo.filter((x) => texto(x.Selected) === "true");
+      const arriendo = productos.some((x) => /arriendo/i.test(texto(x.Product_Name)));
+      const tieneBloqueEquipos = productos.some((x) => texto(x.FormName) === "Formulario_de_Equipos");
+      if (arriendo && !tieneBloqueEquipos) {
+        afectadas.push({
+          idNdv: texto(f.ID_NDV),
+          id: texto(f.ID),
+          cuenta: texto(f.CRM_ACCOUNT_NAME),
+          estado: texto(f.STATUS),
+          idSo: texto(f.ID_SO),
+          creada: texto(f.Added_Time),
+          usuario: texto(f.Added_User),
+          productos: productos.map((x) => texto(x.Product_Name)),
+        });
+      }
+    }
+    return sendJson(res, 200, { ok: true, leidas: filas.length, notas, n: afectadas.length, afectadas });
+  }
+
   // ── Borrar un registro ───────────────────────────────────────────────────
   // Existe para limpiar notas de prueba y notas que hay que rehacer. Exige
   // `confirmo=1` aparte del id: un borrado no se deshace.
