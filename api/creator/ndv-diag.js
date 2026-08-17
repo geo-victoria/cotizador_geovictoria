@@ -357,8 +357,29 @@ module.exports = async function handler(req, res) {
     if (String(req.query?.confirmo || "") !== "1") {
       return sendJson(res, 400, { ok: false, error: "falta confirmo=1", id });
     }
+    // Con `quote` se calcula el mensual VENDIDO (suma de los ítems recurrentes
+    // de la cotización aceptada) y `confirmarNota` se niega si la nota no calza.
+    let esperadoUF;
+    const quoteId = String(req.query?.quote || "").replace(/\D/g, "");
+    if (quoteId) {
+      const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
+      const { getRecord } = require("../_shared/zoho-crm");
+      const cfg = getAcceptanceConfig();
+      const q = await getRecord(cfg.quoteModule, quoteId).catch(() => null);
+      const items = Array.isArray(q?.[cfg.quoteItemsSubformField]) ? q[cfg.quoteItemsSubformField] : [];
+      const recurrentes = items.filter((x) => x?.Es_Recurrente === true || texto(x?.Es_Recurrente) === "true");
+      if (recurrentes.length) {
+        esperadoUF = Number(
+          recurrentes.reduce((acc, x) => acc + (Number(x?.Subtotal_UF) || 0), 0).toFixed(5)
+        );
+      }
+    }
+
     const { confirmarNota } = require("../_shared/ndv-conversion");
-    const r = await confirmarNota(id).catch((e) => ({ ok: false, error: e.message }));
+    const r = await confirmarNota(id, {
+      esperadoUF,
+      forzar: String(req.query?.forzar || "") === "1",
+    }).catch((e) => ({ ok: false, error: e.message }));
     const d = await leerNdv(id).catch(() => ({}));
     return sendJson(res, 200, {
       ...r,

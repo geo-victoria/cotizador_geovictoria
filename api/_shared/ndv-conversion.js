@@ -257,9 +257,11 @@ async function convertirYConfirmar(cotId, opciones) {
  * `FullFormJsonPdf` y sin él aborta dejando la nota a medias. Es idempotente:
  * una nota ya CONFIRMADA se informa y no se vuelve a tocar.
  */
-async function confirmarNota(ndvId) {
+async function confirmarNota(ndvId, opciones) {
   const id = texto(ndvId);
   if (!id) return { ok: false, error: "sin id de nota" };
+  const esperadoUF = Number(opciones?.esperadoUF);
+  const forzar = opciones?.forzar === true;
 
   const config = getCreatorConfig();
   const reporte =
@@ -278,6 +280,28 @@ async function confirmarNota(ndvId) {
   }
   if (!texto(antes.PDF_STRING)) {
     return { ok: false, ndvId: id, idNdv: texto(antes.ID_NDV), error: "todavía sin PDF", reintentable: true };
+  }
+
+  // GUARDA DE MONTO (17-ago, caso Loumar NDV-30766). El espejo de Creator puede
+  // traer bloques que la cotización aceptada NO tiene: COT-59555 cargaba un
+  // "Arriendo de Equipos" de 0,30 UF inexistente en Zoho, y la nota se confirmó
+  // en 0,85 cuando el cliente pagó 0,55. Confirmar es lo que habilita a
+  // facturación, así que el total de la nota tiene que calzar con lo vendido
+  // ANTES de confirmar, no después.
+  if (Number.isFinite(esperadoUF) && esperadoUF > 0) {
+    const total = Number(texto(antes.TOTAL_SERVICIOS_MENSUALES)) || 0;
+    // Tolerancia por redondeo de Creator (5 decimales), no por diferencias reales.
+    if (total > 0 && Math.abs(total - esperadoUF) > 0.005 && !forzar) {
+      return {
+        ok: false,
+        ndvId: id,
+        idNdv: texto(antes.ID_NDV),
+        error: `el total mensual de la nota (${total} UF) no calza con lo vendido (${esperadoUF} UF)`,
+        totalNota: total,
+        esperadoUF,
+        descuadre: Number((total - esperadoUF).toFixed(5)),
+      };
+    }
   }
 
   await creatorApiFetch(`${reporte}/${encodeURIComponent(id)}`, {
