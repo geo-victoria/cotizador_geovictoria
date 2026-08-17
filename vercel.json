@@ -72,10 +72,14 @@
     },
     "api/creator/crear-ndv-desde-cot.js": {
       "memory": 1024,
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/quote-acceptance/backfill-nota-precios.js": {
       "maxDuration": 60
+    },
+    "api/creator/ndv-diag.js": {
+      "memory": 1024,
+      "maxDuration": 300
     }
   },
   "crons": [
