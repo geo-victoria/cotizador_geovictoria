@@ -1,3 +1,4 @@
+const { codigoCortoDeCotizacion, linkCortoDeCotizacion } = require("../_shared/codigo-corto");
 const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
@@ -1879,6 +1880,10 @@ module.exports = async function handler(req, res) {
       ok: true,
       quoteId, dealId, accountId, contactId,
       acceptanceUrl,
+      // Código corto firmado: es lo que viaja como `params.codigo` en la
+      // plantilla de WhatsApp con botón (el token largo no cabe en un botón).
+      codigoCorto: codigoCortoDeCotizacion(quoteId),
+      linkCorto: linkCortoDeCotizacion(quoteId, config.baseUrl),
       pdfUrl: "",
       pdfPendiente: true,
       sectorAplicado: sectorParaZoho,
