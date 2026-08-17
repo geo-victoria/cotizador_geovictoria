@@ -310,12 +310,27 @@ module.exports = async function handler(req, res) {
       resolveServicios: resolveServiciosRecurrentesDeFila,
     });
 
+    // Hipótesis a probar: `CreateNextStep` solo appendea la fila de Form_Order
+    // mientras el maestro está en "BEING EDITED". Los maestros ya creados están
+    // en "CREATED", y por eso los bloques quedaban huérfanos.
+    const abrir = String(req.query?.editando || "") === "1";
+    const ponerEstado = async (valor) =>
+      creatorApiFetch(`${reporte}/${encodeURIComponent(ndvId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: { FORM_STATUS: valor, UpdateCheckbox: true } }),
+      }).catch((e) => console.warn(`[ndv-diag] FORM_STATUS=${valor} falló: ${e.message}`));
+
+    if (abrir) await ponerEstado("BEING EDITED");
+
     const setup = await runNdvSubformSetup({
       ndvId,
       ndvRecord,
       chargeTables,
       notasPdf: undefined,
     });
+
+    if (abrir) await ponerEstado("CREATED");
 
     const despues = await leerNdv(ndvId).catch(() => ({}));
     return sendJson(res, 200, {
