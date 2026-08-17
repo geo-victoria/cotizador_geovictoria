@@ -1155,12 +1155,17 @@
         <div class="content">
           <div class="acc-list">
             <section id="sectionCosts" class="brand-band acc-section">
-              <button type="button" class="brand-band-h acc-toggle" aria-expanded="true">
+              <!-- El desglose parte COLAPSADO (Eduardo 17-ago, "lo más simple
+                   posible"): el cliente ve solo el/los montos destacados de
+                   costHighlight; la tabla de ítems se abre con el toggle. El
+                   mecanismo es el mismo acordeón de siempre (bindAccordions):
+                   aria-expanded=false + .hidden en el cuerpo. -->
+              <button type="button" class="brand-band-h acc-toggle" aria-expanded="false">
                 <span>Detalle de Costos</span>
                 <span class="acc-chevron" aria-hidden="true">▾</span>
               </button>
               <div id="costHighlight" class="cost-highlight" aria-live="polite"></div>
-              <div class="brand-band-b acc-body">
+              <div class="brand-band-b acc-body hidden">
                 <table class="cost-table">
                   <thead>
                     <tr>
@@ -3182,6 +3187,20 @@
                   fmtCOP(co.mensualidadCop) + "/mes</strong></div>";
               }
             } else {
+            // Solo-recurrentes (Eduardo 17-ago): sin ningún pago único, separar
+            // "pago inicial" de "plan mensual" es mostrar el MISMO monto dos
+            // veces (el inicial ES el primer mes). Una sola fila lo dice todo.
+            // `noRecurrenteClp/Uf` vienen del servidor (computeTotals): la
+            // condición es determinista, no una heurística del texto.
+            const soloRecurrentes =
+              recClp > 0 &&
+              Number(totals.noRecurrenteClp || 0) <= 0 &&
+              Number(totals.noRecurrenteUf || 0) <= 0;
+            if (soloRecurrentes) {
+              chHtml =
+                '<div class="ch-item"><span>Plan mensual — a pagar ahora (incluye primer mes)</span><strong>' +
+                fmtCLP(totals.totalClp) + "/mes</strong></div>";
+            } else {
             chHtml =
               '<div class="ch-item"><span>Pago inicial — a pagar ahora (incluye 1er mes)</span><strong>' +
               fmtCLP(totals.totalClp) + "</strong></div>";
@@ -3190,6 +3209,7 @@
                 '<div class="ch-item"><span>Plan mensual — desde el 2&ordm; mes (referencial)</span><strong>' +
                 fmtCLP(mensualClp) + "/mes</strong></div>";
             }
+            } // fin split con pago único
             } // fin else Chile (monto destacado)
             costHighlight.innerHTML = chHtml;
           }
