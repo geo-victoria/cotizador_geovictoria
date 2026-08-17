@@ -3671,10 +3671,46 @@
       backToInfoBtn.addEventListener("click", () => {
         closeBillingModal();
       });
+      // Aviso VISIBLE cuando falta el checkbox (Eduardo 17-ago): el mensaje
+      // anterior se escribía en journeyHint, que está display:none desde el
+      // 09-ago — el botón parecía no hacer nada y se leía como error. Este se
+      // inserta junto al checkbox, con resaltado y scroll hasta él.
+      function avisarTerminosPendientes() {
+        const ancla = termsAcceptedInput && termsAcceptedInput.closest("div");
+        let aviso = document.getElementById("termsWarn");
+        if (!aviso && ancla) {
+          aviso = document.createElement("div");
+          aviso.id = "termsWarn";
+          aviso.setAttribute("role", "alert");
+          aviso.style.cssText =
+            "margin-top:8px;padding:8px 12px;border-radius:8px;background:#fef2f2;" +
+            "border:1px solid #fecaca;color:#b91c1c;font-size:13.5px;font-weight:600";
+          ancla.appendChild(aviso);
+        }
+        if (aviso) {
+          aviso.textContent = "Para continuar al pago, marca el recuadro aceptando los Términos y Condiciones.";
+          aviso.style.display = "";
+        }
+        if (ancla) {
+          ancla.style.outline = "2px solid #ef4444";
+          ancla.style.outlineOffset = "2px";
+          ancla.style.borderRadius = "8px";
+          ancla.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        termsAcceptedInput.focus();
+      }
+      // Al marcar el checkbox, el aviso y el resaltado se van solos.
+      termsAcceptedInput.addEventListener("change", () => {
+        if (!termsAcceptedInput.checked) return;
+        const aviso = document.getElementById("termsWarn");
+        if (aviso) aviso.style.display = "none";
+        const ancla = termsAcceptedInput.closest("div");
+        if (ancla) ancla.style.outline = "";
+      });
+
       toVerifyBtn.addEventListener("click", () => {
         if (!termsAcceptedInput.checked) {
-          journeyHintEl.textContent = "Debes aceptar los términos y condiciones para continuar.";
-          termsAcceptedInput.focus();
+          avisarTerminosPendientes();
           updateJourneyState();
           return;
         }
