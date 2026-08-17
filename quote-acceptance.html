@@ -1118,7 +1118,13 @@
       <p class="prep-text">Estamos cargando los datos de tu cotización en línea. Esto toma solo unos segundos.</p>
     </div>
     <div class="wrap">
-      <section class="hero">
+      <!-- TARJETA SUPERIOR OCULTA (Eduardo 17-ago, "elimina la primera tarjeta
+           por completo"): logo, estado, nombre de la cotización, vigencia y el
+           link al PDF. Se OCULTA en vez de borrarse porque el JS escribe en
+           #status, #qName, #qExpiry y #pdfLink sin comprobar que existan —
+           borrar el nodo tumba la carga de la página. Mismo criterio que
+           journeyHint/stepInfo más abajo. -->
+      <section class="hero" style="display:none">
         <!-- Hero en 2 líneas (Rodrigo 09-ago): logo + título + estado / línea de la cotización. -->
         <div class="hero-top" style="align-items: center">
           <div style="display: flex; align-items: center; gap: 14px; flex-wrap: nowrap; min-width: 0">
