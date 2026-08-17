@@ -220,10 +220,14 @@ module.exports = async function handler(req, res) {
       notas += 1;
       const fo = Array.isArray(f.Form_Order) ? f.Form_Order : [];
       const productos = fo.filter((x) => texto(x.Selected) === "true");
+      // Dos firmas del mismo bug: el producto declara equipos (en arriendo o en
+      // venta) pero no existe el bloque que los detalla.
       const arriendo = productos.some((x) => /arriendo/i.test(texto(x.Product_Name)));
+      const venta = productos.some((x) => /venta de equipos/i.test(texto(x.Product_Name)));
       const tieneBloqueEquipos = productos.some((x) => texto(x.FormName) === "Formulario_de_Equipos");
-      if (arriendo && !tieneBloqueEquipos) {
+      if ((arriendo || venta) && !tieneBloqueEquipos) {
         afectadas.push({
+          firma: arriendo && venta ? "arriendo+venta" : arriendo ? "arriendo" : "venta",
           idNdv: texto(f.ID_NDV),
           id: texto(f.ID),
           cuenta: texto(f.CRM_ACCOUNT_NAME),
