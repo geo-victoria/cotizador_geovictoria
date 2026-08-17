@@ -204,6 +204,66 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 200, r);
   }
 
+  // ── Ver un registro por id, y buscar por empresa/RUT ─────────────────────
+  // El criterio se arma acá y no en la URL porque el proxy del agente no deja
+  // pasar paréntesis ni espacios.
+  if (req.query?.ver) {
+    const id = String(req.query.ver).trim();
+    const rep = String(req.query?.reporte || config.reportLinkName).trim();
+    const r = await creatorApiFetch(
+      `${base}/report/${encodeURIComponent(rep)}/${encodeURIComponent(id)}?field_config=all`,
+      { method: "GET" }
+    );
+    const j = await r.json().catch(() => ({}));
+    const d = j?.data || {};
+    const out = {};
+    for (const [k, v] of Object.entries(d)) {
+      const t = texto(v);
+      if (t || Array.isArray(v)) out[k] = Array.isArray(v) ? v : t.slice(0, 400);
+    }
+    return sendJson(res, 200, { ok: r.ok, status: r.status, reporte: rep, id, registro: out });
+  }
+
+  if (req.query?.buscar) {
+    const q = String(req.query.buscar).trim();
+    const campos = String(req.query?.por || "CRM_ACCOUNT_NAME,RUT_Cliente,ID_COT_CRM")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const intentos = [];
+    for (const c of campos) {
+      const criteria = encodeURIComponent(`(${c}.contains("${q}"))`);
+      const r = await creatorApiFetch(
+        `${reporte}?criteria=${criteria}&limit=20&field_config=all`,
+        { method: "GET" }
+      );
+      const j = await r.json().catch(() => ({}));
+      const filas = Array.isArray(j?.data) ? j.data : [];
+      intentos.push(`${c}:${r.status}:${filas.length}`);
+      if (!filas.length) continue;
+      return sendJson(res, 200, {
+        ok: true,
+        por: c,
+        intentos,
+        n: filas.length,
+        filas: filas.map((f) => ({
+          id: texto(f.ID),
+          numero: texto(f.ID_NDV),
+          formulario: texto(f.Formulario),
+          estado: texto(f.FORM_STATUS) || texto(f.STATUS),
+          estadoCot: texto(f.ESTADO_COT),
+          cuenta: texto(f.CRM_ACCOUNT_NAME),
+          rut: texto(f.RUT_Cliente),
+          idSo: texto(f.ID_SO),
+          creado: texto(f.Added_Time),
+          usuario: texto(f.Added_User),
+          total: texto(f.TOTAL_SERVICIOS_MENSUALES),
+        })),
+      });
+    }
+    return sendJson(res, 200, { ok: false, buscar: q, intentos, error: "sin coincidencias" });
+  }
+
   // ── Bloques Formulario_de_Equipos de una NDV ─────────────────────────────
   // Para comparar fila a fila las grillas que llena la interfaz contra las que
   // inserta el puente por API. El criterio va acá y no en la URL porque el
