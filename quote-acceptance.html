@@ -1875,6 +1875,122 @@
         }
       }
 
+      // ── UN SALTO AL PAGO (Rodrigo 17-ago, punto 3 del rediseño) ─────────
+      // Tras aceptar, el método de pago aparece EN ESTA MISMA página (hoja
+      // inferior): tarjeta → Mercado Pago directo; transferencia → datos +
+      // comprobante por WhatsApp. pago.html NO muere: sigue siendo el destino
+      // de las back_urls de MP, de links viejos y el FALLBACK ante cualquier
+      // error de esta función — nadie puede quedar sin camino de pago.
+      // Devuelve true si la hoja quedó en pantalla; false → el caller usa el
+      // redirect clásico a pago.html.
+      async function mostrarPagoInline(paymentUrl) {
+        try {
+          const pu = String(paymentUrl || "");
+          if (!/pago\.html/.test(pu)) return false;
+          const pToken = (pu.split("token=")[1] || "").split("&")[0];
+          if (!pToken) return false;
+          const res = await fetch("/api/payments/status?token=" + encodeURIComponent(pToken));
+          const st = await res.json().catch(() => null);
+          if (!res.ok || !st || !st.success) return false;
+          const a = st.amounts || {};
+          const oneShot = Number(a.oneShotClp || 0);
+          if (!(oneShot > 0)) return false; // sin cobro online → flujo clásico
+          const paisPg = String(st.pais || "cl").toLowerCase();
+          const fmt = (v) => {
+            try {
+              const locale = paisPg === "co" ? "es-CO" : paisPg === "pe" ? "es-PE" : "es-CL";
+              const curr = String(st.currencyId || "CLP");
+              return new Intl.NumberFormat(locale, { style: "currency", currency: curr, maximumFractionDigits: curr === "PEN" ? 2 : 0 }).format(v);
+            } catch (e) { return "$" + Math.round(v).toLocaleString("es-CL"); }
+          };
+          // Regla del recargo: MISMA fuente única del servidor (status.recargo,
+          // lo que cobra create-preference). Solo CL (CO/PE sin transferencia).
+          const rc = st.recargo || {};
+          const umbral = Number.isFinite(rc.umbralClp) ? rc.umbralClp : 200000;
+          const pct = Number.isFinite(rc.pct) ? rc.pct : 3;
+          const conRecargo = paisPg !== "co" && paisPg !== "pe" && pct > 0 && oneShot > umbral;
+          const recargoClp = conRecargo ? Math.round((oneShot * pct) / 100) : 0;
+          const totalTarjeta = oneShot + recargoClp;
+          const soloTarjeta = paisPg === "co" || paisPg === "pe";
+          const t = st.transfer || {};
+          const cotRef = String(t.quoteNumber || (st.quote && st.quote.name) || "").trim();
+          const waPhone = String(t.whatsappPhone || "").replace(/[^\d]/g, "");
+          const waLink = waPhone
+            ? "https://wa.me/" + waPhone + "?text=" + encodeURIComponent(
+                "Hola Vicky! Acepté mi cotización" + (cotRef ? " " + cotRef : "") +
+                " y voy a pagar por transferencia. Les envío el comprobante para procesar mi pedido.")
+            : "";
+          hideRedirectOverlay();
+          const btnCss = "display:block;width:100%;border:0;border-radius:10px;padding:14px 16px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center";
+          const ov = document.createElement("div");
+          ov.id = "pagoInlineOverlay";
+          ov.style.cssText = "position:fixed;inset:0;background:rgba(15,43,71,.5);display:flex;align-items:flex-end;justify-content:center;z-index:99999";
+          const metodosHtml =
+            '<h3 style="margin:0 0 4px;font-size:17px;color:#0f2b47">Cotización aceptada 🎉</h3>' +
+            '<p style="margin:0 0 12px;font-size:13.5px;color:#6b7280">Elige cómo pagar tu pago inicial de <b style="color:#0f2b47">' + fmt(oneShot) + '</b> y activamos tu servicio.</p>' +
+            '<button id="piCard" style="' + btnCss + ';background:#1a73e8;color:#fff">Pagar con tarjeta ' + fmt(totalTarjeta) +
+            (conRecargo ? '<small style="display:block;font-size:11px;font-weight:400;opacity:.85">incluye ' + pct + '% de recargo por este medio de pago</small>' : "") +
+            "</button>" +
+            (soloTarjeta ? "" :
+              '<button id="piTransfer" style="' + btnCss + ';background:#fff;color:#1a73e8;border:1px solid #1a73e8;margin-top:10px">Pagar por transferencia' + (conRecargo ? " " + fmt(oneShot) : "") + "</button>") +
+            '<p style="margin:12px 0 0;font-size:12px;color:#9ca3af;text-align:center">Pago procesado por Mercado Pago. <a id="piClasico" href="' + pu.replace(/"/g, "&quot;") + '" style="color:#1a73e8">Ver página de pago completa</a></p>';
+          const transferHtml =
+            '<h3 style="margin:0 0 8px;font-size:16px;color:#0f2b47">Datos para transferencia</h3>' +
+            '<ul style="list-style:none;margin:0 0 10px;padding:0;font-size:13.5px">' +
+            '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Titular</span><strong>Victoria S.A</strong></li>' +
+            '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">RUT</span><strong>76.188.587-1</strong></li>' +
+            '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Banco</span><strong>Banco de Chile</strong></li>' +
+            '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Cuenta corriente</span><strong>8001204108</strong></li>' +
+            '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Email</span><strong>vicky@geovictoria.com</strong></li>' +
+            (cotRef ? '<li style="display:flex;justify-content:space-between;padding:6px 0"><span style="color:#6b7280">Referencia</span><strong>' + cotRef.replace(/</g, "&lt;") + "</strong></li>" : "") +
+            "</ul>" +
+            '<p style="margin:0 0 10px;font-size:12.5px;color:#6b7280">Transfiere el monto de <b>' + fmt(oneShot) + "</b>" + (cotRef ? " indicando la referencia <b>" + cotRef.replace(/</g, "&lt;") + "</b>" : "") + " y envíale el comprobante a Vicky por WhatsApp para procesar tu pedido.</p>" +
+            (waLink ? '<a id="piWa" href="' + waLink + '" target="_blank" rel="noopener noreferrer" style="' + btnCss + ';background:#15803d;color:#fff;text-decoration:none">Enviar comprobante por WhatsApp</a>' : "") +
+            '<button id="piVolver" style="' + btnCss + ';background:none;color:#6b7280;margin-top:6px;font-weight:600">← Volver a opciones de pago</button>';
+          const sheet = document.createElement("div");
+          sheet.style.cssText = "background:#fff;border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:86%;overflow-y:auto;padding:18px 18px 24px;box-shadow:0 -12px 40px rgba(15,23,42,.18)";
+          sheet.innerHTML = metodosHtml;
+          ov.appendChild(sheet);
+          document.body.appendChild(ov);
+          pfPing("pago_abierto");
+          const irClasico = () => { window.location.href = pu; };
+          const bindMetodos = () => {
+            const bCard = sheet.querySelector("#piCard");
+            if (bCard) bCard.addEventListener("click", async () => {
+              pfPing("metodo_tarjeta");
+              bCard.disabled = true;
+              bCard.textContent = "Conectando con Mercado Pago...";
+              try {
+                const r = await fetch("/api/payments/create-preference", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ token: pToken }),
+                });
+                const d = await r.json().catch(() => null);
+                if (!r.ok || !d || !d.success || !d.initPoint) throw new Error((d && d.error) || "sin initPoint");
+                pfPing("salida_mp");
+                window.location.href = d.initPoint;
+              } catch (e) {
+                irClasico(); // fallback: la página clásica resuelve
+              }
+            });
+            const bTr = sheet.querySelector("#piTransfer");
+            if (bTr) bTr.addEventListener("click", () => {
+              pfPing("metodo_transferencia");
+              sheet.innerHTML = transferHtml;
+              const wa = sheet.querySelector("#piWa");
+              if (wa) wa.addEventListener("click", () => pfPing("transfer_wsp_click"));
+              const volver = sheet.querySelector("#piVolver");
+              if (volver) volver.addEventListener("click", () => { sheet.innerHTML = metodosHtml; bindMetodos(); });
+            });
+          };
+          bindMetodos();
+          return true;
+        } catch (e) {
+          return false; // cualquier tropiezo → redirect clásico a pago.html
+        }
+      }
+
       function startOnboardingRedirect(urlValue, options) {
         const url = String(urlValue || "").trim();
         if (!url) return false;
@@ -3361,11 +3477,15 @@
               // El guardado es best-effort: el pago no se frena por esto.
             }
             if (btnPagar) btnPagar.disabled = false;
-            startOnboardingRedirect(urlPago, {
-              title: "Te llevamos a tu pago inicial",
-              detail: "Estamos preparando tu pago seguro para activar tu servicio.",
-              delayMs: 1500,
-            });
+            // Un salto (punto 3): método de pago inline; pago.html de fallback.
+            const inlineOk = await mostrarPagoInline(urlPago);
+            if (!inlineOk) {
+              startOnboardingRedirect(urlPago, {
+                title: "Te llevamos a tu pago inicial",
+                detail: "Estamos preparando tu pago seguro para activar tu servicio.",
+                delayMs: 1500,
+              });
+            }
           } else {
             setMessage(
               "Esta cotización ya fue aceptada, pero aún no tenemos tu enlace de onboarding. Contacta a tu ejecutivo comercial.",
@@ -3435,13 +3555,17 @@
 
           if (data.requiresPayment && data.paymentUrl) {
             flowState.acceptedAt = data.acceptedAt || flowState.acceptedAt;
-            setMessage("Cotización aceptada. Te llevamos a la pasarela de pago...", "ok");
-            startOnboardingRedirect(data.paymentUrl, {
-              title: "Estamos preparando tu pago",
-              detail:
-                "Tu cotización fue aceptada. Ahora te llevamos a Mercado Pago para completar el pago inicial.",
-              delayMs: 1500,
-            });
+            setMessage("Cotización aceptada. Elige cómo pagar.", "ok");
+            // Un salto (punto 3): método de pago inline; pago.html de fallback.
+            const inlineOk = await mostrarPagoInline(data.paymentUrl);
+            if (!inlineOk) {
+              startOnboardingRedirect(data.paymentUrl, {
+                title: "Estamos preparando tu pago",
+                detail:
+                  "Tu cotización fue aceptada. Ahora te llevamos a Mercado Pago para completar el pago inicial.",
+                delayMs: 1500,
+              });
+            }
             return;
           }
 
