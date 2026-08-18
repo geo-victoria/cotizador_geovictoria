@@ -369,6 +369,42 @@ async function recoverConvertedIds(leadId) {
  * archivos, distinto del de la API normal) con el mismo access token.
  * Best-effort: si falla, el correo sale sin adjunto — jamás sin correo.
  */
+// Token EXCLUSIVO para Zoho Files (18-ago): el token productivo no tiene el
+// scope ZohoFiles y regenerarlo es un riesgo que Lalo no quiere correr. En
+// cambio, un SEGUNDO grant del MISMO client (scope ZohoFiles.files.ALL, env
+// ZOHO_FILES_REFRESH_TOKEN) convive sin tocar nada: este helper lo acuña y
+// cachea; sin el env, se cae al token compartido (que funcionará el día que
+// el scope se agregue por el otro camino).
+let _filesTokenCache = { token: "", exp: 0 };
+async function accessTokenArchivos() {
+  const rt = String(process.env.ZOHO_FILES_REFRESH_TOKEN || "").trim();
+  if (!rt) return "";
+  if (_filesTokenCache.token && _filesTokenCache.exp - Date.now() > 2 * 60 * 1000) return _filesTokenCache.token;
+  try {
+    const domain = String(process.env.ZOHO_ACCOUNTS_DOMAIN || "https://accounts.zoho.com").trim().replace(/\/+$/, "");
+    const res = await fetch(`${domain}/oauth/v2/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        refresh_token: rt,
+        client_id: String(process.env.ZOHO_CLIENT_ID || "").trim(),
+        client_secret: String(process.env.ZOHO_CLIENT_SECRET || "").trim(),
+        grant_type: "refresh_token",
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!j?.access_token) {
+      console.warn(`[send_mail] token de archivos no se pudo acuñar: ${JSON.stringify(j).slice(0, 150)}`);
+      return "";
+    }
+    _filesTokenCache = { token: String(j.access_token), exp: Date.now() + 55 * 60 * 1000 };
+    return _filesTokenCache.token;
+  } catch (e) {
+    console.warn(`[send_mail] token de archivos lanzó: ${e.message}`);
+    return "";
+  }
+}
+
 async function subirArchivoZohoParaAdjunto(buffer, filename) {
   try {
     // OJO: el endpoint de archivos vive en el MISMO api domain que el resto
@@ -376,13 +412,24 @@ async function subirArchivoZohoParaAdjunto(buffer, filename) {
     // content.zohoapis.com y devolvió 404 (17-ago, prueba de Rodrigo) — ese
     // dominio es de otra API. zohoApiFetch pone el token y no fuerza
     // Content-Type, así que el FormData define su propio boundary.
-    const { zohoApiFetch } = require("../_shared/zoho-auth");
     const form = new FormData();
     form.append("file", new Blob([buffer], { type: "application/pdf" }), filename);
-    const r = await zohoApiFetch("/crm/v3/files", {
-      method: "POST",
-      body: form,
-    });
+    const tokenArchivos = await accessTokenArchivos();
+    let r;
+    if (tokenArchivos) {
+      const api = String(process.env.ZOHO_API_DOMAIN || "https://www.zohoapis.com").trim().replace(/\/+$/, "");
+      r = await fetch(`${api}/crm/v3/files`, {
+        method: "POST",
+        headers: { Authorization: `Zoho-oauthtoken ${tokenArchivos}` },
+        body: form,
+      });
+    } else {
+      const { zohoApiFetch } = require("../_shared/zoho-auth");
+      r = await zohoApiFetch("/crm/v3/files", {
+        method: "POST",
+        body: form,
+      });
+    }
     const j = await r.json().catch(() => ({}));
     const id = j?.data?.[0]?.details?.id || j?.data?.[0]?.id || "";
     if (!r.ok || !id) {
@@ -484,7 +531,7 @@ function buildDocFila(href, label, nota) {
 // PDF de la cotización (desde ahí se llega a la aceptación online); los
 // documentos van como botones de descarga a archivos hosteados. La ficha del
 // reloj solo se incluye si la cotización tiene hardware.
-function buildEmailHtml({ contacto, empresa, pdfUrl, acceptanceUrl, tieneReloj, ejecutivo }) {
+function buildEmailHtml({ contacto, empresa, pdfUrl, acceptanceUrl, tieneReloj, ejecutivo, pdfAdjunto }) {
   // El bloque "Te presento a tu ejecutivo" usa al DUEÑO REAL sorteado por la
   // tómbola (caso Grey, 31-jul: el correo decía Eddyluz fija mientras el deal
   // era de Grey). Sin dato, cae al ejecutivo por defecto de siempre.
@@ -526,17 +573,17 @@ function buildEmailHtml({ contacto, empresa, pdfUrl, acceptanceUrl, tieneReloj, 
     <tr><td style="padding:36px 32px 8px 32px;">
       <p style="margin:0 0 6px 0;font-size:14px;color:#1a73e8;font-weight:600;">${saludo}</p>
       <h1 style="margin:0 0 12px 0;font-size:24px;line-height:1.3;color:#1a202c;">Tu cotización para <span style="color:#0d47a1;">${empresa}</span> está lista</h1>
-      <p style="margin:0;font-size:15px;line-height:1.6;color:#4a5568;">Preparé tu propuesta de Control de Asistencia. Revísala y acéptala en línea con el botón — el PDF de respaldo va adjunto.</p>
+      <p style="margin:0;font-size:15px;line-height:1.6;color:#4a5568;">Preparé tu propuesta de Control de Asistencia. Revísala, acéptala y págala en línea con el botón${pdfAdjunto ? " — el PDF de respaldo va adjunto" : ""}.</p>
     </td></tr>
     <tr><td align="center" style="padding:28px 32px 8px 32px;">
-      <a href="${acceptanceUrl || pdfUrl}" style="display:inline-block;background:#1a73e8;color:#ffffff;padding:14px 30px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;">📄 Ver tu cotización (PDF)</a>
-      <p style="margin:12px 0 0 0;font-size:12px;color:#a0aec0;">El PDF de respaldo va adjunto en este correo.</p>
+      <a href="${acceptanceUrl || pdfUrl}" style="display:inline-block;background:#1a73e8;color:#ffffff;padding:14px 30px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;">✅ Acepta y paga aquí</a>
+      <p style="margin:12px 0 0 0;font-size:12px;color:#a0aec0;">${pdfAdjunto ? "El PDF de respaldo va adjunto en este correo." : `<a href="${pdfUrl}" style="color:#1a73e8;text-decoration:none;">📄 Descargar el PDF de respaldo</a>`}</p>
     </td></tr>
     <tr><td style="padding:28px 32px 0 32px;">
       <h3 style="margin:0 0 14px 0;font-size:15px;color:#1a202c;">Cómo seguimos 🚀</h3>
       <table role="presentation" width="100%">
-        <tr><td width="32" valign="top" style="font-size:15px;font-weight:700;color:#1a73e8;">1.</td><td style="font-size:14px;color:#4a5568;line-height:1.55;padding-bottom:10px;">Abres el PDF y revisas tu cotización.</td></tr>
-        <tr><td width="32" valign="top" style="font-size:15px;font-weight:700;color:#1a73e8;">2.</td><td style="font-size:14px;color:#4a5568;line-height:1.55;padding-bottom:10px;">Desde el mismo PDF la aceptas en línea y pagas el primer mes de forma segura.</td></tr>
+        <tr><td width="32" valign="top" style="font-size:15px;font-weight:700;color:#1a73e8;">1.</td><td style="font-size:14px;color:#4a5568;line-height:1.55;padding-bottom:10px;">Revisas tu cotización con el botón de arriba.</td></tr>
+        <tr><td width="32" valign="top" style="font-size:15px;font-weight:700;color:#1a73e8;">2.</td><td style="font-size:14px;color:#4a5568;line-height:1.55;padding-bottom:10px;">La aceptas en línea y pagas el primer mes de forma segura.</td></tr>
         <tr><td width="32" valign="top" style="font-size:15px;font-weight:700;color:#1a73e8;">3.</td><td style="font-size:14px;color:#4a5568;line-height:1.55;">Coordinamos la instalación e iniciamos tu onboarding en 24 horas hábiles.</td></tr>
       </table>
     </td></tr>
@@ -2019,6 +2066,10 @@ module.exports = async function handler(req, res) {
             tieneReloj,
             // El dueño sorteado por la tómbola es quien se presenta (Grey 31-jul).
             ejecutivo: { nombre: quoteOwnerNombre, email: quoteOwnerEmail, telefono: quoteOwnerTelefono },
+            // El correo solo promete el adjunto cuando la subida REALMENTE
+            // funcionó (18-ago: con el scope de Files pendiente decía "va
+            // adjunto" y no iba nada — el respaldo queda como link al PDF).
+            pdfAdjunto: Boolean(adjuntoId),
           }),
         });
 
