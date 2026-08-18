@@ -480,6 +480,10 @@
           var cotRef = String(
             (state.transfer && state.transfer.quoteNumber) || (state.quote && state.quote.name) || ""
           ).trim();
+          // Fila Email SOLO si el servidor la define (env TRANSFER_CONTACT_EMAIL
+          // = buzón de los ejecutivos). Sin env, sin fila: el comprobante va
+          // por WhatsApp y un correo de más solo confunde (caso SURCONTROL).
+          var mailEjec = String((state.transfer && state.transfer.transferEmail) || "").trim();
           var waLink = transferWhatsappLink(state);
           var waBtn = waLink
             ? '<a class="btn" id="transferWaBtn" href="' + waLink +
@@ -495,6 +499,7 @@
             "<li><span>Giro</span><strong>Empresa de Servicios Integrales de Informatica</strong></li>" +
             "<li><span>Banco</span><strong>Banco de Chile</strong></li>" +
             "<li><span>Cuenta corriente</span><strong>8001204108</strong></li>" +
+            (mailEjec ? "<li><span>Email</span><strong>" + mailEjec + "</strong></li>" : "") +
             (cotRef
               ? "<li><span>Referencia</span><strong>" + cotRef + "</strong></li>"
               : "") +

@@ -25,10 +25,17 @@ function normalizeWhatsappPhone(value) {
 // pero el usuario "Vicky GeoVictoria" no tiene teléfono, así que el botón de
 // WhatsApp jamás aparecía y el cliente quedaba con un texto vago.
 const VICKY_WHATSAPP_PHONE = toText(process.env.VICKY_WHATSAPP_PHONE || "56967308227");
+// Correo de la fila "Email" en los datos de transferencia (Lalo 18-ago):
+// vicky@ confundía (el cliente creía que el comprobante iba por correo, y el
+// caso SURCONTROL llegó SOLO por el aviso del banco a esa casilla). Ahora es
+// el buzón que VIGILAN LOS EJECUTIVOS, configurable sin deploy; vacío = la
+// fila no se muestra. El comprobante sigue siendo por WhatsApp.
+const TRANSFER_CONTACT_EMAIL = toText(process.env.TRANSFER_CONTACT_EMAIL || "");
 async function buildTransferInfo(quote) {
   return {
     executiveName: "Vicky",
     whatsappPhone: normalizeWhatsappPhone(VICKY_WHATSAPP_PHONE),
+    transferEmail: TRANSFER_CONTACT_EMAIL,
     quoteNumber: toText(quote?.Numero_Cotizacion),
   };
 }
