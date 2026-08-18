@@ -246,16 +246,43 @@ async function sendInternalMail({ quoteModule, quoteId, subject, htmlBody, recip
     return { ok: response.ok, status: response.status, text };
   };
   let r = await enviar(dataPayload);
-  // Un destinatario BLOQUEADO por Zoho no puede matar el aviso al resto
-  // (caso pdíaz@ con tilde en la lista de rebotes, 31-jul): se reintenta sin
-  // CC — al menos el destinatario principal recibe la notificación.
+  // Un destinatario BLOQUEADO por Zoho no puede matar el aviso al resto.
+  // La v1 (31-jul, caso pdíaz@ en la lista de rebotes) reintentaba SIN
+  // NINGUNA copia — y con la lista de equipo del 18-ago eso dejó el correo
+  // de COT524 solo en Eduardo. Ahora: (1) se quitan SOLO las direcciones que
+  // el error nombra; (2) si Zoho no las nombra o sigue fallando, envíos
+  // INDIVIDUALES best-effort — cada bloqueada cae sola, el resto recibe.
   if (!r.ok && dataPayload.cc && /NOT_ALLOWED|blocked email|UTF-8 addresses/i.test(r.text)) {
-    console.error(
-      `[quote-notify] CC bloqueado por Zoho (${r.text.slice(0, 160)}). Reintentando SIN copias.`,
-    );
-    const sinCc = { ...dataPayload };
-    delete sinCc.cc;
-    r = await enviar(sinCc);
+    const textoError = String(r.text || "").toLowerCase();
+    const ccVivas = dataPayload.cc.filter((c) => !textoError.includes(String(c.email).toLowerCase()));
+    if (ccVivas.length < dataPayload.cc.length) {
+      console.error(
+        `[quote-notify] CC bloqueado por Zoho (${r.text.slice(0, 160)}). Reintentando sin las direcciones nombradas (${dataPayload.cc.length - ccVivas.length}).`,
+      );
+      const filtrado = { ...dataPayload };
+      if (ccVivas.length) filtrado.cc = ccVivas;
+      else delete filtrado.cc;
+      r = await enviar(filtrado);
+    }
+    if (!r.ok) {
+      console.error(
+        `[quote-notify] envío con copias sigue fallando (${r.text.slice(0, 120)}). Pasando a envíos individuales.`,
+      );
+      let algunoOk = false;
+      for (const dest of [first, ...rest]) {
+        const individual = {
+          from: { email: NOTIFY_FROM },
+          to: [{ email: dest }],
+          subject,
+          content: htmlBody,
+          mail_format: "html",
+        };
+        const ri = await enviar(individual);
+        if (ri.ok) algunoOk = true;
+        else console.error(`[quote-notify] destinatario ${dest} falló: ${ri.text.slice(0, 120)}`);
+      }
+      if (algunoOk) return;
+    }
   }
   if (!r.ok) {
     throw new Error(`send_mail ${r.status}: ${r.text.slice(0, 200)}`);

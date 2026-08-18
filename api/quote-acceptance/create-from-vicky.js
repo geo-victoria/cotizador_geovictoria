@@ -577,7 +577,9 @@ function buildEmailHtml({ contacto, empresa, pdfUrl, acceptanceUrl, tieneReloj, 
     </td></tr>
     <tr><td align="center" style="padding:28px 32px 8px 32px;">
       <a href="${acceptanceUrl || pdfUrl}" style="display:inline-block;background:#1a73e8;color:#ffffff;padding:14px 30px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;">✅ Acepta y paga aquí</a>
-      <p style="margin:12px 0 0 0;font-size:12px;color:#a0aec0;">${pdfAdjunto ? "El PDF de respaldo va adjunto en este correo." : `<a href="${pdfUrl}" style="color:#1a73e8;text-decoration:none;">📄 Descargar el PDF de respaldo</a>`}</p>
+      <br>
+      <a href="${pdfUrl}" style="display:inline-block;margin-top:12px;background:#ffffff;color:#1a73e8;border:2px solid #1a73e8;padding:10px 24px;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;">📄 Descargar PDF</a>
+      ${pdfAdjunto ? '<p style="margin:12px 0 0 0;font-size:12px;color:#a0aec0;">El PDF también va adjunto en este correo.</p>' : ""}
     </td></tr>
     <tr><td style="padding:28px 32px 0 32px;">
       <h3 style="margin:0 0 14px 0;font-size:15px;color:#1a202c;">Cómo seguimos 🚀</h3>
