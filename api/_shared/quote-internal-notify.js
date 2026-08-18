@@ -32,21 +32,6 @@ const NOTIFY_RECIPIENTS = (
   .map((s) => s.trim())
   .filter(Boolean);
 
-// PAGOS A TODO EL EQUIPO CL (Lalo 18-ago, hilo "Nueva Vicky Chile 2.0" — caso
-// Paola: dos pagos con deals HOY suyos y cero correo). El "propietario
-// copiado" del 31-jul no alcanza en venta autónoma: la cotización PAGA con
-// dueño Vicky (la asignación real corre DESPUÉS del pago), el filtro bota al
-// robot y el correo queda solo en la base. El evento PAGADA en CHILE va ahora
-// al roster comercial completo; ACEPTADA conserva la lista corta para no
-// inundar. Override por env sin deploy.
-const NOTIFY_PAGADA_EXTRA_CL = (
-  process.env.QUOTE_NOTIFY_PAGADA_EXTRA_CL ||
-  "emujica@geovictoria.com,alopez@geovictoria.com,gmelendez@geovictoria.com,pdiaz@geovictoria.com,dgalvez@geovictoria.com,tmartinezq@geovictoria.com,adiazg@geovictoria.com,asepulveda@geovictoria.com,aaraque@geovictoria.com"
-)
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-
 const NOTIFY_RECIPIENTS_CO = (
   process.env.QUOTE_NOTIFY_RECIPIENTS_CO ||
   "egomez@geovictoria.com,agordillo@geovictoria.com,rlewit@geovictoria.com"
@@ -392,11 +377,7 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
       const dealOwner = await getRecordWithFields("Deals", dealId, ["Owner"]).catch(() => null);
       ownerEmail = toText(dealOwner?.Owner?.email);
     }
-    let base = esCO ? NOTIFY_RECIPIENTS_CO : esMX ? NOTIFY_RECIPIENTS_MX : esPE ? NOTIFY_RECIPIENTS_PE : NOTIFY_RECIPIENTS;
-    // PAGADA en Chile → equipo completo (ver NOTIFY_PAGADA_EXTRA_CL arriba).
-    if (evento === "pagada" && !esCO && !esMX && !esPE) {
-      base = [...base, ...NOTIFY_PAGADA_EXTRA_CL];
-    }
+    const base = esCO ? NOTIFY_RECIPIENTS_CO : esMX ? NOTIFY_RECIPIENTS_MX : esPE ? NOTIFY_RECIPIENTS_PE : NOTIFY_RECIPIENTS;
     const vistos = new Set();
     const recipients = [...base, ownerEmail].filter((e) => {
       const low = String(e || "").trim().toLowerCase();
