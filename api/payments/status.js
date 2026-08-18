@@ -1,4 +1,4 @@
-const { toText } = require("../_shared/zoho-crm");
+const { toText, getRecordWithFields } = require("../_shared/zoho-crm");
 const { resolvePaymentSession } = require("../_shared/payment-session");
 const {
   searchPaymentsByExternalReference,
@@ -25,17 +25,38 @@ function normalizeWhatsappPhone(value) {
 // pero el usuario "Vicky GeoVictoria" no tiene teléfono, así que el botón de
 // WhatsApp jamás aparecía y el cliente quedaba con un texto vago.
 const VICKY_WHATSAPP_PHONE = toText(process.env.VICKY_WHATSAPP_PHONE || "56967308227");
-// Correo de la fila "Email" en los datos de transferencia (Lalo 18-ago):
-// vicky@ confundía (el cliente creía que el comprobante iba por correo, y el
-// caso SURCONTROL llegó SOLO por el aviso del banco a esa casilla). Ahora es
-// el buzón que VIGILAN LOS EJECUTIVOS, configurable sin deploy; vacío = la
-// fila no se muestra. El comprobante sigue siendo por WhatsApp.
+// Correo de la fila "Email" en los datos de transferencia (Lalo 18-ago, dos
+// vueltas): vicky@ confundía (el cliente creía que el comprobante iba por
+// correo, y el caso SURCONTROL llegó SOLO por el aviso del banco a esa
+// casilla). La fila ahora muestra al PROPIETARIO del deal/cotización en Zoho
+// — el aviso automático del banco le llega directo a quien gestiona la venta.
+// Vicky robot no cuenta (interina): se cae al Owner del DEAL y, sin humano,
+// al env TRANSFER_CONTACT_EMAIL (vacío = la fila no sale). El canal del
+// COMPROBANTE sigue siendo el botón de WhatsApp.
 const TRANSFER_CONTACT_EMAIL = toText(process.env.TRANSFER_CONTACT_EMAIL || "");
+const ROBOT_EMAIL = "vicky@geovictoria.com";
+// pago.html hace poll de /status cada pocos segundos: el Owner del deal se
+// cachea por cotización para no pegarle a Zoho en cada tick.
+const _ownerMailCache = new Map();
+async function emailPropietario(quote) {
+  let mail = toText(quote?.Owner?.email).toLowerCase();
+  if (mail && mail !== ROBOT_EMAIL) return mail;
+  const dealId = toText(quote?.Deal_Asociado?.id || quote?.Deal_Asociado);
+  if (!dealId) return "";
+  const hit = _ownerMailCache.get(dealId);
+  if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.mail;
+  const deal = await getRecordWithFields("Deals", dealId, ["Owner"]).catch(() => null);
+  const dm = toText(deal?.Owner?.email).toLowerCase();
+  const resuelto = dm && dm !== ROBOT_EMAIL ? dm : "";
+  _ownerMailCache.set(dealId, { mail: resuelto, at: Date.now() });
+  return resuelto;
+}
 async function buildTransferInfo(quote) {
+  const mailDueno = await emailPropietario(quote).catch(() => "");
   return {
     executiveName: "Vicky",
     whatsappPhone: normalizeWhatsappPhone(VICKY_WHATSAPP_PHONE),
-    transferEmail: TRANSFER_CONTACT_EMAIL,
+    transferEmail: mailDueno || TRANSFER_CONTACT_EMAIL,
     quoteNumber: toText(quote?.Numero_Cotizacion),
   };
 }
