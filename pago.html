@@ -484,6 +484,10 @@
           // = buzón de los ejecutivos). Sin env, sin fila: el comprobante va
           // por WhatsApp y un correo de más solo confunde (caso SURCONTROL).
           var mailEjec = String((state.transfer && state.transfer.transferEmail) || "").trim();
+          // Nombre de quien recibe el comprobante (Lalo 19-ago): el ejecutivo
+          // propietario de la cotización; el servidor cae a "Vicky" cuando el
+          // dueño es el robot o su ficha no tiene teléfono.
+          var nombreEjec = String((state.transfer && state.transfer.executiveName) || "Vicky").trim() || "Vicky";
           var waLink = transferWhatsappLink(state);
           var waBtn = waLink
             ? '<a class="btn" id="transferWaBtn" href="' + waLink +
@@ -506,10 +510,10 @@
             "</ul>" +
             '<p class="transfer-help">Transfiere el pago inicial de tu cotización' +
             (cotRef ? " indicando la referencia <b>" + cotRef + "</b> en el comentario de la transferencia" : " e indica el número de cotización") +
-            ". Luego envíale el comprobante a Vicky por WhatsApp" +
+            ". Luego envíale el comprobante a " + nombreEjec + " por WhatsApp" +
             (cotRef ? " mencionando esa misma referencia" : "") +
             " para procesar tu pedido. " +
-            "La verificación de la transferencia toma máximo 24 horas hábiles; confirmado el pago, Vicky te " +
+            "La verificación de la transferencia toma máximo 24 horas hábiles; confirmado el pago, " + nombreEjec + " te " +
             "escribe por WhatsApp para comenzar la configuración de tu cuenta.</p>" +
             waBtn +
             '<button class="btn secondary" id="transferBackBtn">Volver a opciones de pago</button>' +

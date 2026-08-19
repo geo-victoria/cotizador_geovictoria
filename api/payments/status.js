@@ -35,28 +35,71 @@ const VICKY_WHATSAPP_PHONE = toText(process.env.VICKY_WHATSAPP_PHONE || "5696730
 // COMPROBANTE sigue siendo el botón de WhatsApp.
 const TRANSFER_CONTACT_EMAIL = toText(process.env.TRANSFER_CONTACT_EMAIL || "");
 const ROBOT_EMAIL = "vicky@geovictoria.com";
-// pago.html hace poll de /status cada pocos segundos: el Owner del deal se
-// cachea por cotización para no pegarle a Zoho en cada tick.
+// pago.html hace poll de /status cada pocos segundos: el Owner del deal y su
+// ficha de usuario se cachean para no pegarle a Zoho en cada tick.
 const _ownerMailCache = new Map();
-async function emailPropietario(quote) {
-  let mail = toText(quote?.Owner?.email).toLowerCase();
-  if (mail && mail !== ROBOT_EMAIL) return mail;
+async function propietarioHumano(quote) {
+  const propio = quote?.Owner || null;
+  let mail = toText(propio?.email).toLowerCase();
+  if (mail && mail !== ROBOT_EMAIL) {
+    return { id: toText(propio?.id), email: mail, name: toText(propio?.name) };
+  }
   const dealId = toText(quote?.Deal_Asociado?.id || quote?.Deal_Asociado);
-  if (!dealId) return "";
+  if (!dealId) return null;
   const hit = _ownerMailCache.get(dealId);
-  if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.mail;
+  if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.dueno;
   const deal = await getRecordWithFields("Deals", dealId, ["Owner"]).catch(() => null);
   const dm = toText(deal?.Owner?.email).toLowerCase();
-  const resuelto = dm && dm !== ROBOT_EMAIL ? dm : "";
-  _ownerMailCache.set(dealId, { mail: resuelto, at: Date.now() });
-  return resuelto;
+  const dueno =
+    dm && dm !== ROBOT_EMAIL
+      ? { id: toText(deal?.Owner?.id), email: dm, name: toText(deal?.Owner?.name) }
+      : null;
+  _ownerMailCache.set(dealId, { dueno, at: Date.now() });
+  return dueno;
+}
+// Teléfono del ejecutivo desde su ficha de usuario en Zoho (phone → mobile).
+const _userPhoneCache = new Map();
+async function telefonoUsuario(userId) {
+  if (!userId) return "";
+  const hit = _userPhoneCache.get(userId);
+  if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.fono;
+  let fono = "";
+  try {
+    const { zohoApiFetch } = require("../_shared/zoho-auth");
+    const r = await zohoApiFetch(`/crm/v3/users/${encodeURIComponent(userId)}`, { method: "GET" });
+    if (r && r.ok) {
+      const data = await r.json().catch(() => ({}));
+      const u = Array.isArray(data?.users) ? data.users[0] : null;
+      fono = toText(u?.phone) || toText(u?.mobile);
+    }
+  } catch (_e) {
+    fono = "";
+  }
+  _userPhoneCache.set(userId, { fono, at: Date.now() });
+  return fono;
 }
 async function buildTransferInfo(quote) {
-  const mailDueno = await emailPropietario(quote).catch(() => "");
+  const dueno = await propietarioHumano(quote).catch(() => null);
+  // WHATSAPP DEL COMPROBANTE (Lalo 19-ago, caso MATER): el del EJECUTIVO
+  // propietario de la cotización, con su nombre — el cliente del canal
+  // ejecutivo le habla a SU vendedor, no a Vicky. Fallbacks: dueño humano
+  // sin teléfono en su ficha de Zoho, o cotización de Vicky (dueño robot)
+  // → Vicky como siempre (el botón JAMÁS puede desaparecer — bug 25-jul).
+  // Ojo operativo: cuando el comprobante va al ejecutivo, el registro del
+  // pago y el onboarding dejan de ser automáticos — los procesa él.
+  let executiveName = "Vicky";
+  let whatsappPhone = normalizeWhatsappPhone(VICKY_WHATSAPP_PHONE);
+  if (dueno && dueno.id) {
+    const fono = normalizeWhatsappPhone(await telefonoUsuario(dueno.id).catch(() => ""));
+    if (fono) {
+      executiveName = toText(dueno.name).split(" ")[0] || "tu ejecutivo";
+      whatsappPhone = fono;
+    }
+  }
   return {
-    executiveName: "Vicky",
-    whatsappPhone: normalizeWhatsappPhone(VICKY_WHATSAPP_PHONE),
-    transferEmail: mailDueno || TRANSFER_CONTACT_EMAIL,
+    executiveName,
+    whatsappPhone,
+    transferEmail: (dueno && dueno.email) || TRANSFER_CONTACT_EMAIL,
     quoteNumber: toText(quote?.Numero_Cotizacion),
   };
 }
