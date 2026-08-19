@@ -1872,6 +1872,12 @@ module.exports = async function handler(req, res) {
         ...(contactId ? { [config.quoteContactLookupField]: { id: contactId } } : {}),
         ...(accountId ? { Cuenta_Asociada: { id: accountId } } : {}),
         CRM_Incompleto: crmIncompleto,
+        // CANAL DE ORIGEN (Lalo 19-ago): quién inició la venta. Discriminador
+        // determinista: TODA emisión del canal ejecutivo (editor, Cotizadora
+        // de Ejecutivos, calculadora) pasa sinCorreoCliente desde el 11-ago;
+        // las de Vicky con clientes jamás lo pasan. Los correos internos de
+        // ACEPTADA/PAGADA leen este campo para el asunto y el cuerpo.
+        Intervenci_n_Humana: sinCorreoCliente ? "Con intervención humana" : "100% Vicky",
         [config.quoteDateField]: new Date().toISOString().slice(0, 10),
         [config.quoteStatusField]: "Borrador",
         [config.contactEmailField]: cliente.contactoEmail,

@@ -166,18 +166,34 @@ async function detallePagosMP(quoteId) {
   }
 }
 
-function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp }) {
+function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal }) {
   const titulo = evento === "pagada" ? "💰 Cotización PAGADA" : "✅ Cotización ACEPTADA";
   const dealLink = dealId
     ? `<a href="${DEAL_URL_BASE}${encodeURIComponent(dealId)}">Ver el Deal en Zoho</a>`
     : "";
   const filaMonto = montoClp ? `<tr><td><b>Monto</b></td><td>${montoClp}</td></tr>` : "";
+  // CANAL DE ORIGEN (Lalo 19-ago, "actualmente solo confunden"): el correo
+  // dice de frente si la venta la inició VICKY (WhatsApp) o un EJECUTIVO con
+  // la cotizadora. Fuente: Intervenci_n_Humana, estampado en la emisión.
+  const intro =
+    canal === "ejecutivo"
+      ? `Una cotización emitida por un <b>EJECUTIVO con la cotizadora</b> acaba de ${evento === "pagada" ? "pagarse" : "aceptarse"}.`
+      : canal === "vicky"
+        ? `Una venta iniciada por <b>VICKY (WhatsApp)</b> acaba de ${evento === "pagada" ? "pagarse" : "aceptarse"}.`
+        : `Una cotización acaba de ${evento === "pagada" ? "pagarse" : "aceptarse"}.`;
+  const filaCanal =
+    canal === "ejecutivo"
+      ? `<tr><td><b>Canal</b></td><td>👤 Ejecutivo (cotizadora)</td></tr>`
+      : canal === "vicky"
+        ? `<tr><td><b>Canal</b></td><td>🤖 Vicky (WhatsApp)</td></tr>`
+        : "";
   return `<!DOCTYPE html><html lang="es"><body style="font-family:Segoe UI,Arial,sans-serif;color:#2d3748;">
 <h2 style="color:#0d47a1;margin:0 0 8px;">${titulo}</h2>
-<p style="margin:0 0 12px;color:#4a5568;">Una cotización de Vicky acaba de ${evento === "pagada" ? "pagarse" : "aceptarse"}.</p>
+<p style="margin:0 0 12px;color:#4a5568;">${intro}</p>
 <table cellpadding="6" style="border-collapse:collapse;font-size:14px;">
   <tr><td><b>Empresa</b></td><td>${empresa || "—"}</td></tr>
   <tr><td><b>Cotización</b></td><td>${numero || "—"}</td></tr>
+  ${filaCanal}
   <tr><td><b>Contacto</b></td><td>${clientEmail || "—"}</td></tr>
   <tr><td><b>RUT</b></td><td>${rut || "—"}</td></tr>
   ${filaMonto}
@@ -359,10 +375,27 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
     // Comprobante MP: solo en el evento de pago (best-effort, nunca bloquea).
     const pagosMp = evento === "pagada" ? await detallePagosMP(quoteId) : [];
 
+    // CANAL DE ORIGEN (Lalo 19-ago): Intervenci_n_Humana se estampa en la
+    // emisión ("100% Vicky" / "Con intervención humana" = cotizadora del
+    // ejecutivo). Cotizaciones anteriores al 19-ago no lo traen → sin sufijo.
+    let canal = "";
+    try {
+      const marca = toText(
+        quote?.Intervenci_n_Humana ||
+          (await getRecordWithFields(config.quoteModule, quoteId, ["Intervenci_n_Humana"]).then(
+            (r) => r?.Intervenci_n_Humana,
+          )),
+      );
+      canal = /100%\s*Vicky/i.test(marca) ? "vicky" : /intervenci/i.test(marca) ? "ejecutivo" : "";
+    } catch (_e) {
+      canal = "";
+    }
+    const sufijoCanal =
+      canal === "ejecutivo" ? " · Canal: EJECUTIVO (cotizadora)" : canal === "vicky" ? " · Canal: VICKY" : "";
     const subject = `[GeoVictoria] Cotización ${numero || quoteId} ${
       evento === "pagada" ? "PAGADA" : "ACEPTADA"
-    } — ${empresa || "cliente"}`;
-    const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp });
+    } — ${empresa || "cliente"}${sufijoCanal}`;
+    const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal });
     // Multi-país: en cotizaciones CO la ejecutiva es Laura (no Anderson);
     // en cotizaciones MX es Yahel Segura. CL sigue con los destinatarios de
     // siempre.

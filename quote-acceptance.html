@@ -1942,9 +1942,14 @@
           const t = st.transfer || {};
           const cotRef = String(t.quoteNumber || (st.quote && st.quote.name) || "").trim();
           const waPhone = String(t.whatsappPhone || "").replace(/[^\d]/g, "");
+          // Quién recibe el comprobante (Lalo 19-ago): el EJECUTIVO dueño de la
+          // cotización — nombre y teléfono vienen del servidor (status.transfer),
+          // que cae a Vicky cuando el dueño es el robot o su ficha no tiene fono.
+          const nombreEjecPg = String(t.executiveName || "Vicky").trim() || "Vicky";
+          const mailEjecPg = String(t.transferEmail || "").trim();
           const waLink = waPhone
             ? "https://wa.me/" + waPhone + "?text=" + encodeURIComponent(
-                "Hola Vicky! Acepté mi cotización" + (cotRef ? " " + cotRef : "") +
+                "Hola " + nombreEjecPg + "! Acepté mi cotización" + (cotRef ? " " + cotRef : "") +
                 " y voy a pagar por transferencia. Les envío el comprobante para procesar mi pedido.")
             : "";
           hideRedirectOverlay();
@@ -1972,10 +1977,10 @@
             '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">RUT</span><strong>76.188.587-1</strong></li>' +
             '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Banco</span><strong>Banco de Chile</strong></li>' +
             '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Cuenta corriente</span><strong>8001204108</strong></li>' +
-            '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Email</span><strong>vicky@geovictoria.com</strong></li>' +
+            (mailEjecPg ? '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Email</span><strong>' + mailEjecPg.replace(/</g, "&lt;") + "</strong></li>" : "") +
             (cotRef ? '<li style="display:flex;justify-content:space-between;padding:6px 0"><span style="color:#6b7280">Referencia</span><strong>' + cotRef.replace(/</g, "&lt;") + "</strong></li>" : "") +
             "</ul>" +
-            '<p style="margin:0 0 10px;font-size:12.5px;color:#6b7280">Transfiere el monto de <b>' + fmt(oneShot) + "</b>" + (cotRef ? " indicando la referencia <b>" + cotRef.replace(/</g, "&lt;") + "</b>" : "") + " y envíale el comprobante a Vicky por WhatsApp para procesar tu pedido.</p>" +
+            '<p style="margin:0 0 10px;font-size:12.5px;color:#6b7280">Transfiere el monto de <b>' + fmt(oneShot) + "</b>" + (cotRef ? " indicando la referencia <b>" + cotRef.replace(/</g, "&lt;") + "</b>" : "") + " y envíale el comprobante a " + nombreEjecPg + " por WhatsApp para procesar tu pedido.</p>" +
             (waLink ? '<a id="piWa" href="' + waLink + '" target="_blank" rel="noopener noreferrer" style="' + btnCss + ';background:#15803d;color:#fff;text-decoration:none">Enviar comprobante por WhatsApp</a>' : "") +
             '<button id="piVolver" style="' + btnCss + ';background:none;color:#6b7280;margin-top:6px;font-weight:600">← Volver a opciones de pago</button>';
           const sheet = document.createElement("div");
