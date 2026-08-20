@@ -406,6 +406,12 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
     // el Owner de la cotización; si no viene, el Owner del deal. Dedup contra
     // la base y jamás el robot Vicky.
     let ownerEmail = toText(quote?.Owner?.email);
+    // DUEÑO ROBOT ≠ EJECUTIVO (bug cazado 20-ago, caso SYM/COT510): desde el
+    // 04-ago las cotizaciones de Vicky NACEN con el robot como Owner y el
+    // humano vive en el DEAL (traspaso). El robot tiene correo
+    // (vicky@geovictoria.com), así que este fallback nunca corría y el
+    // ejecutivo del deal quedaba fuera del correo ACEPTADA/PAGADA.
+    if (/^vicky@geovictoria\.com$/i.test(ownerEmail)) ownerEmail = "";
     if (!ownerEmail && dealId) {
       const dealOwner = await getRecordWithFields("Deals", dealId, ["Owner"]).catch(() => null);
       ownerEmail = toText(dealOwner?.Owner?.email);
