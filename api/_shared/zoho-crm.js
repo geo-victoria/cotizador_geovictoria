@@ -184,7 +184,14 @@ async function createRecord(moduleApiName, fieldsMap, triggerWorkflows) {
       toText(result?.code) ||
       toText(result?.raw) ||
       `HTTP ${response.status}`;
-    throw new Error(`Zoho createRecord failed: ${msg}`);
+    // El "invalid data" pelado de Zoho es indiagnosticable (caso Anderson
+    // 24-ago: 14 reintentos ciegos) — los details traen api_name/index del
+    // campo culpable y van al mensaje. Y el payload queda en el log.
+    const detalles = row?.details ? ` details=${JSON.stringify(row.details).slice(0, 300)}` : "";
+    console.error(
+      `[zoho-crm] createRecord ${moduleApiName} falló: ${msg}${detalles} payload=${JSON.stringify(payload).slice(0, 1800)}`,
+    );
+    throw new Error(`Zoho createRecord failed: ${msg}${detalles}`);
   }
 
   return {
