@@ -364,6 +364,35 @@ async function recoverConvertedIds(leadId) {
   }
 }
 
+// ── GUARDA DE RUT DEL DEAL (Lalo 24-ago, caso Javiera: Bersa + Vista ──
+// Kennedy en la misma conversación). Un deal solo tiene UNA cuenta: si la
+// emisión trae un RUT DISTINTO al del deal que se iba a reusar, son empresas
+// distintas y corresponde un SEGUNDO deal (con su cuenta), no compartir.
+// Devuelve además el Owner del deal hermano para que el nuevo NAZCA con el
+// mismo vendedor (misma conversación, mismo dueño — sin re-sorteo). Solo
+// aplica a reusos DERIVADOS del teléfono (candado kv, lead-first,
+// recuperación); un dealId explícito del editor (ancla manual) se respeta.
+// null = sin conflicto (mismo RUT, alguno vacío, o no se pudo leer).
+async function guardaRutDeal(dealId, rutCliente) {
+  const compact = (v) => String(v || "").replace(/[^0-9kK]/g, "").toUpperCase();
+  const rutNuevo = compact(rutCliente);
+  if (!dealId || !rutNuevo) return null;
+  try {
+    const deal = await getRecord("Deals", dealId);
+    const rutDeal = compact(deal?.Rut_ID_Account);
+    if (!rutDeal || rutDeal === rutNuevo) return null;
+    const ownerId = toText(deal?.Owner?.id);
+    const ownerEsHumano = Boolean(ownerId) && !OWNERS_BOT_LEADS.has(ownerId);
+    console.warn(
+      `[create-from-vicky] GUARDA RUT DEAL: deal ${dealId} es de RUT ${rutDeal} y la emisión trae ${rutNuevo} — ` +
+        `empresas distintas, nace un deal propio${ownerEsHumano ? ` (hereda dueño ${ownerId})` : ""}.`,
+    );
+    return { ownerHeredadoId: ownerEsHumano ? ownerId : "" };
+  } catch {
+    return null;
+  }
+}
+
 // ── Helper: enviar email via Zoho CRM send_mail ──
 /**
  * Sube un archivo a Zoho Files y devuelve su id encriptado, que es lo único
@@ -1182,6 +1211,16 @@ module.exports = async function handler(req, res) {
         );
       }
     } catch { /* best-effort */ }
+    // Dueño a heredar cuando la guarda de RUT divide la conversación en dos
+    // deals (el hermano tenía vendedor humano → el nuevo nace con él).
+    let ownerHeredadoRutSplit = "";
+    if (dealCruzado) {
+      const g = await guardaRutDeal(dealCruzado.dealId, cliente.rutEmpresa);
+      if (g) {
+        ownerHeredadoRutSplit = g.ownerHeredadoId || ownerHeredadoRutSplit;
+        dealCruzado = null; // empresas distintas: este deal no se reusa
+      }
+    }
 
     // Adopción del lead vivo: el agente normalmente NO pasa leadId (solo en
     // outbound con formulario), pero casi siempre existe un lead de la
@@ -1231,7 +1270,9 @@ module.exports = async function handler(req, res) {
           Lead_Source: VICKY_LEAD_SOURCE,
           // El deal nace en Vicky y la tómbola de abajo lo sortea al tiro
           // (Lalo 04-ago). Si el sorteo falla, "dueño=Vicky" es la señal.
-          Owner: VICKY_BOT_OWNER,
+          // División por RUT: el deal hermano tenía vendedor humano → este
+          // nace con ÉL (misma conversación, mismo dueño, sin re-sorteo).
+          Owner: ownerHeredadoRutSplit ? { id: ownerHeredadoRutSplit } : VICKY_BOT_OWNER,
         };
         // Con deal cruzado el lead se convierte IGUAL (regla marketing: todo
         // deal nace de lead convertido — acá el deal existente ya nació así)
@@ -1269,7 +1310,7 @@ module.exports = async function handler(req, res) {
         stage = "update_deal_after_convert";
         if (!reuse.dealReused) {
           await updateRecord("Deals", dealId, {
-            Owner: VICKY_BOT_OWNER,
+            Owner: ownerHeredadoRutSplit ? { id: ownerHeredadoRutSplit } : VICKY_BOT_OWNER,
             // GARANTÍA DE CADENA (casos MACROSS/CGO/Ciberlabs/Bien Limpio,
             // 21→23-ago): cuando el convert se reintenta fusionando contra
             // una CUENTA PREEXISTENTE (DUPLICATE_DATA → Accounts:{id}), Zoho
@@ -1311,6 +1352,13 @@ module.exports = async function handler(req, res) {
         try {
           const recovered = await recoverConvertedIds(existing.leadId);
           if (recovered.dealId) {
+            const g = await guardaRutDeal(recovered.dealId, cliente.rutEmpresa);
+            if (g) {
+              ownerHeredadoRutSplit = g.ownerHeredadoId || ownerHeredadoRutSplit;
+              recovered.dealId = ""; // otra empresa: el Camino B crea el deal propio
+            }
+          }
+          if (recovered.dealId) {
             // Misma convención que el lead-first: los ids van a existing.*
             // para que el Camino B los REUSE y actualice (no los cree).
             if (recovered.accountId && !existing.accountId) existing.accountId = recovered.accountId;
@@ -1345,6 +1393,13 @@ module.exports = async function handler(req, res) {
         const convertidos = await findConvertedIdsByPhone(cliente.contactoTelefono);
         if (convertidos.accountId && !existing.accountId) existing.accountId = convertidos.accountId;
         if (convertidos.contactId && !existing.contactId) existing.contactId = convertidos.contactId;
+        if (convertidos.dealId) {
+          const g = await guardaRutDeal(convertidos.dealId, cliente.rutEmpresa);
+          if (g) {
+            ownerHeredadoRutSplit = g.ownerHeredadoId || ownerHeredadoRutSplit;
+            convertidos.dealId = ""; // otra empresa: deal propio más abajo
+          }
+        }
         if (convertidos.dealId) {
           dealId = convertidos.dealId;
           // Deal preexistente: conserva su dueño (no se re-sortea).
@@ -1610,7 +1665,7 @@ module.exports = async function handler(req, res) {
           N_Empleados_que_marcan: cliente.userCount,
           Tipo_de_Cobro: (Number(cliente.userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
           Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
-          Owner: VICKY_BOT_OWNER,
+          Owner: ownerHeredadoRutSplit ? { id: ownerHeredadoRutSplit } : VICKY_BOT_OWNER,
         }, true);
         dealId = toText(dealResult?.id);
         if (!dealId) throw new Error("No se obtuvo dealId");
