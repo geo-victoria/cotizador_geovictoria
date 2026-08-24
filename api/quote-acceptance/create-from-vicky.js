@@ -1264,6 +1264,14 @@ module.exports = async function handler(req, res) {
         if (!reuse.dealReused) {
           await updateRecord("Deals", dealId, {
             Owner: VICKY_BOT_OWNER,
+            // GARANTÍA DE CADENA (casos MACROSS/CGO/Ciberlabs/Bien Limpio,
+            // 21→23-ago): cuando el convert se reintenta fusionando contra
+            // una CUENTA PREEXISTENTE (DUPLICATE_DATA → Accounts:{id}), Zoho
+            // crea el deal pero NO le asocia esa cuenta — llegaba a los
+            // ejecutivos sin "Nombre de Cuenta". La asociación se estampa
+            // SIEMPRE acá, venga de donde venga el convert.
+            Account_Name: { id: accountId },
+            Contact_Name: { id: contactId },
             Territorio: VICKY_TERRITORIO,
             Tombola: VICKY_TOMBOLA,
             Monda_del_trato: VICKY_MONEDA,
