@@ -12,6 +12,7 @@
  */
 
 const { getRecord, toText, updateRecordBestEffort } = require("./zoho-crm");
+const { zohoApiFetch } = require("./zoho-auth");
 const { runOnboardingHandoff } = require("./onboarding-handoff");
 const {
   runNdvHandoff,
@@ -35,6 +36,39 @@ const {
   buildExternalReference,
   hasApprovedPayment,
 } = require("./mercadopago-client");
+
+/**
+ * ESTADO "Pagada" AL TIRO (Lalo 24-ago, caso Vista Kennedy): el pago MP dejaba
+ * la cotización en "Aceptada"+link y el estado real lo escribía un
+ * reconciliador horas después — filtros del CRM y quien mirara Zoho veían
+ * "Aceptada" con la plata ya adentro. Este helper la marca "Pagada" y lo
+ * llaman SOLO los caminos con pago VERIFICADO en Mercado Pago (guarda Aitas
+ * COT215: un flujo sin cobro online jamás debe declararse pagado solo).
+ * trigger ["blueprint"] y sin workflows (regla 21-ago: listar triggers apaga
+ * lo no listado, y el blueprint es la única herramienta del ejecutivo).
+ * Best-effort: jamás bloquea el onboarding ni el poll de estado.
+ */
+async function marcarEstadoPagada(config, quote, quoteId) {
+  try {
+    const estadoActual = toText(quote?.[config.quoteStatusField]);
+    if (/pagad/i.test(estadoActual)) return;
+    const rp = await zohoApiFetch(
+      `/crm/v3/${encodeURIComponent(config.quoteModule)}/${encodeURIComponent(quoteId)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: [{ id: quoteId, [config.quoteStatusField]: "Pagada" }],
+          trigger: ["blueprint"],
+          skip_feature_execution: [{ name: "assignment_rules" }],
+        }),
+      }
+    );
+    console.log(`[finalize] ${config.quoteStatusField} → Pagada (${rp.status}) quote=${quoteId}`);
+  } catch (estadoError) {
+    console.warn(`[finalize] Estado→Pagada falló (no bloquea): ${toText(estadoError?.message || estadoError)}`);
+  }
+}
 
 function buildAcceptanceDataFromQuote(config, quote) {
   return {
@@ -83,6 +117,7 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
   if (!onboardingUrl) {
     throw new Error("No se obtuvo onboardingUrl al finalizar el pago.");
   }
+
 
   // Notificación interna "pagada" ANTES del trabajo lento de NDV (subforms):
   // si la función muere por timeout después de crear el onboarding, el
@@ -281,6 +316,13 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
   let onboardingUrl = toText(quote?.[acceptanceConfig.quoteOnboardingUrlField]);
   let finalized = false;
 
+  // Pago real verificado en MP → el estado en Zoho dice "Pagada" al tiro,
+  // haya o no onboarding pendiente (el finalize de más abajo es idempotente
+  // pero el estado no puede esperar al reconciliador).
+  if (paymentsComplete) {
+    await marcarEstadoPagada(acceptanceConfig, quote, quoteId);
+  }
+
   if (paymentsComplete && !onboardingUrl) {
     // El finalize downstream (onboarding + NDV) corre IGUAL que Chile también
     // para CO (decisión paso 4 COLOMBIA.md); si algo resulta Chile-específico
@@ -303,5 +345,6 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
 module.exports = {
   finalizeAfterPayment,
   maybeFinalizeQuote,
+  marcarEstadoPagada,
   buildAcceptanceDataFromQuote,
 };

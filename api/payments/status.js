@@ -5,7 +5,7 @@ const {
   buildExternalReference,
   hasApprovedPayment,
 } = require("../_shared/mercadopago-client");
-const { finalizeAfterPayment } = require("../_shared/post-payment-finalize");
+const { finalizeAfterPayment, marcarEstadoPagada } = require("../_shared/post-payment-finalize");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -171,6 +171,13 @@ export default async function handler(req, res) {
 
     let onboardingUrl = toText(quote?.[acceptanceConfig.quoteOnboardingUrlField]);
     let finalizeError = "";
+
+    // Pago real verificado en MP → "Pagada" al tiro (Lalo 24-ago). Solo con
+    // cobro online efectivo: el camino sin cobro (transferencia) se declara
+    // pagado por comprobante/conciliación, jamás solo (guarda Aitas).
+    if (hasOneShot && oneShotApproved) {
+      await marcarEstadoPagada(acceptanceConfig, quote, quoteId);
+    }
 
     if (paymentsComplete && !onboardingUrl) {
       try {
