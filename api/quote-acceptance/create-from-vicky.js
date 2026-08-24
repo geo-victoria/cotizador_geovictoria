@@ -987,6 +987,12 @@ function buildSubformItems(items, ufActual, config) {
       Categoria_Item: mapCategoriaToZoho(item),
       Unidad: mapUnidadToZoho(modalidadZoho, tipo),
     };
+    // Bonificación por línea (envío arriendo 0,5 UF → $0, Lalo 24-ago): se
+    // persiste para que el PDF tache el precio de lista y las regeneraciones
+    // (regenerate-pdf/descuentos) conserven la línea en $0.
+    if (Number(item.descuentoPct) > 0) {
+      row.Descuento_Pct = Math.min(100, Number(item.descuentoPct));
+    }
     if (zonaTarifa && config?.quoteItemZonaTarifaField) {
       row[config.quoteItemZonaTarifaField] = zonaTarifa;
     }
