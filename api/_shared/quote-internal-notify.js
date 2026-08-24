@@ -32,6 +32,39 @@ const NOTIFY_RECIPIENTS = (
   .map((s) => s.trim())
   .filter(Boolean);
 
+// COPIA FIJA del correo de PAGO en CL (Lalo 24-ago): la dueña del
+// acompañamiento de ventas autónomas siempre se entera del pago.
+const NOTIFY_CC_PAGADA_CL = (process.env.QUOTE_NOTIFY_CC_PAGADA || "aaraque@geovictoria.com")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+// Usuarios "robot" cuyas notas no cuentan como gestión del ejecutivo (el
+// usuario Vicky y el token de integración). Las notas del ESPEJO las crea el
+// robot pero SÍ cuentan — son el chat real del vendedor (título "(espejo").
+const USUARIOS_ROBOT_NOTAS = new Set(["3525045000484500876", "3525045000000200013"]);
+
+/** ¿El ejecutivo HIZO algo en el deal? (Lalo 24-ago) — alguna nota humana o
+ * la nota-espejo de su WhatsApp. MISMO criterio que usa el agente para
+ * decidir si el deal vuelve al dueño de ventas autónomas en el post-pago. */
+async function hayGestionEjecutivoEnDeal(dealId) {
+  try {
+    if (!dealId) return false;
+    const r = await zohoApiFetch(
+      `/crm/v3/Deals/${encodeURIComponent(dealId)}/Notes?fields=Note_Title,Created_By&per_page=100`,
+    );
+    if (!r.ok || r.status === 204) return false;
+    const notas = ((await r.json().catch(() => ({})))?.data) || [];
+    return notas.some((n) => {
+      if (/\(espejo/i.test(toText(n?.Note_Title))) return true;
+      const autor = toText(n?.Created_By?.id);
+      return Boolean(autor) && !USUARIOS_ROBOT_NOTAS.has(autor);
+    });
+  } catch (_e) {
+    return false;
+  }
+}
+
 const NOTIFY_RECIPIENTS_CO = (
   process.env.QUOTE_NOTIFY_RECIPIENTS_CO ||
   "egomez@geovictoria.com,agordillo@geovictoria.com,rlewit@geovictoria.com"
@@ -166,7 +199,7 @@ async function detallePagosMP(quoteId) {
   }
 }
 
-function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal }) {
+function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta }) {
   const titulo = evento === "pagada" ? "💰 Cotización PAGADA" : "✅ Cotización ACEPTADA";
   const dealLink = dealId
     ? `<a href="${DEAL_URL_BASE}${encodeURIComponent(dealId)}">Ver el Deal en Zoho</a>`
@@ -181,6 +214,13 @@ function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId
       : canal === "vicky"
         ? `Una venta iniciada por <b>VICKY (WhatsApp)</b> acaba de ${evento === "pagada" ? "pagarse" : "aceptarse"}.`
         : `Una cotización acaba de ${evento === "pagada" ? "pagarse" : "aceptarse"}.`;
+  // AUTÓNOMA vs ASISTIDA (Lalo 24-ago): solo en el pago de ventas de Vicky.
+  const filaVenta =
+    venta === "autonoma"
+      ? `<tr><td><b>Venta</b></td><td>🤖 <b>100% AUTÓNOMA</b> — sin gestión del ejecutivo registrada en el deal; el acompañamiento post-venta pasa al dueño de ventas autónomas</td></tr>`
+      : venta === "asistida"
+        ? `<tr><td><b>Venta</b></td><td>🤝 <b>ASISTIDA</b> — el ejecutivo registró gestión en el deal (nota o WhatsApp espejado)</td></tr>`
+        : "";
   const filaCanal =
     canal === "ejecutivo"
       ? `<tr><td><b>Canal</b></td><td>👤 Ejecutivo (cotizadora)</td></tr>`
@@ -194,6 +234,7 @@ function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId
   <tr><td><b>Empresa</b></td><td>${empresa || "—"}</td></tr>
   <tr><td><b>Cotización</b></td><td>${numero || "—"}</td></tr>
   ${filaCanal}
+  ${filaVenta}
   <tr><td><b>Contacto</b></td><td>${clientEmail || "—"}</td></tr>
   <tr><td><b>RUT</b></td><td>${rut || "—"}</td></tr>
   ${filaMonto}
@@ -390,12 +431,21 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
     } catch (_e) {
       canal = "";
     }
+    // VENTA AUTÓNOMA vs ASISTIDA (Lalo 24-ago): en el PAGO de una venta de
+    // Vicky, el correo dice si el ejecutivo registró gestión en el deal
+    // (nota humana o nota-espejo). Sin gestión, el agente además devuelve el
+    // deal al dueño de ventas autónomas — este correo es el aviso.
+    let venta = "";
+    if (evento === "pagada" && canal === "vicky") {
+      venta = (await hayGestionEjecutivoEnDeal(dealId)) ? "asistida" : "autonoma";
+    }
     const sufijoCanal =
-      canal === "ejecutivo" ? " · Canal: EJECUTIVO (cotizadora)" : canal === "vicky" ? " · Canal: VICKY" : "";
+      (canal === "ejecutivo" ? " · Canal: EJECUTIVO (cotizadora)" : canal === "vicky" ? " · Canal: VICKY" : "") +
+      (venta === "autonoma" ? " · VENTA AUTÓNOMA" : venta === "asistida" ? " · VENTA ASISTIDA" : "");
     const subject = `[GeoVictoria] Cotización ${numero || quoteId} ${
       evento === "pagada" ? "PAGADA" : "ACEPTADA"
     } — ${empresa || "cliente"}${sufijoCanal}`;
-    const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal });
+    const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta });
     // Multi-país: en cotizaciones CO la ejecutiva es Laura (no Anderson);
     // en cotizaciones MX es Yahel Segura. CL sigue con los destinatarios de
     // siempre.
@@ -417,8 +467,12 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
       ownerEmail = toText(dealOwner?.Owner?.email);
     }
     const base = esCO ? NOTIFY_RECIPIENTS_CO : esMX ? NOTIFY_RECIPIENTS_MX : esPE ? NOTIFY_RECIPIENTS_PE : NOTIFY_RECIPIENTS;
+    // Copia a la dueña del acompañamiento autónomo en TODO pago CL (Lalo
+    // 24-ago) — se entera tanto de las autónomas (suyas) como de las
+    // asistidas (contexto).
+    const ccPagada = evento === "pagada" && !esCO && !esMX && !esPE ? NOTIFY_CC_PAGADA_CL : [];
     const vistos = new Set();
-    const recipients = [...base, ownerEmail].filter((e) => {
+    const recipients = [...base, ownerEmail, ...ccPagada].filter((e) => {
       const low = String(e || "").trim().toLowerCase();
       if (!low || low === "vicky@geovictoria.com" || vistos.has(low)) return false;
       vistos.add(low);
