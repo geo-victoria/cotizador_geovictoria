@@ -120,12 +120,32 @@ module.exports = async function handler(req, res) {
     }
 
     const atascadas = await buscarAtascadas(acceptanceConfig, mpConfig.statusPaymentPending);
+    // BARRIDO PAREJO (24-ago): en orden fijo (Created_Time desc) + timeout,
+    // cada corrida moría procesando SIEMPRE las mismas primeras candidatas y
+    // las viejas jamás se alcanzaban. Mezclar reparte la cobertura entre las
+    // 144 corridas diarias.
+    for (let i = atascadas.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [atascadas[i], atascadas[j]] = [atascadas[j], atascadas[i]];
+    }
 
     const resultados = [];
     let reconciliadas = 0;
     let revisadas = 0;
+    // PRESUPUESTO DE TIEMPO (24-ago, cazado con los 504 del viernes): cada
+    // candidata cuesta varios segundos (Zoho + búsqueda MP + Creator) y con
+    // la cola crecida el cron moría SIEMPRE en el maxDuration de 60s — 72
+    // timeouts el 21-ago, la red de seguridad de pagos estuvo muerta días.
+    // Se corta limpio antes del verdugo y lo pendiente queda para el
+    // próximo tick (cada 10 min).
+    const inicioMs = Date.now();
+    const PRESUPUESTO_MS = 45_000;
     for (const row of atascadas) {
       if (revisadas >= MAX_CANDIDATAS || reconciliadas >= MAX_FINALIZE) break;
+      if (Date.now() - inicioMs > PRESUPUESTO_MS) {
+        console.warn(`[reconcile-pending] presupuesto de tiempo agotado tras ${revisadas} candidatas — el resto queda para el próximo tick.`);
+        break;
+      }
       const quoteId = toText(row.id);
       if (!quoteId) continue;
       revisadas++;
@@ -136,6 +156,10 @@ module.exports = async function handler(req, res) {
         // normalmente confirma— nunca llega a correr, y la nota se quedaría en
         // PENDIENTE para siempre. Confirmar exige PDF, así que si Creator aún
         // no lo generó, `confirmarNota` se niega y la próxima pasada reintenta.
+        // SOLO con pago confirmado (24-ago): antes corría para TODAS las
+        // candidatas — dos viajes a Zoho/Creator por cotización sin pagar,
+        // el grueso del costo que mataba el cron.
+        if (out.finalized || out.paymentsComplete) {
         try {
           const { confirmarNota } = require("../_shared/ndv-conversion");
           // La referencia a Creator se relee del registro: `maybeFinalizeQuote`
@@ -145,6 +169,7 @@ module.exports = async function handler(req, res) {
           if (ndvCreatorId) await confirmarNota(ndvCreatorId);
         } catch (errNota) {
           console.warn(`[reconcile] confirmación de nota falló: ${toText(errNota?.message || errNota)}`);
+        }
         }
         if (out.finalized) {
           reconciliadas++;
