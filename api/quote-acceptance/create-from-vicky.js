@@ -1648,9 +1648,24 @@ module.exports = async function handler(req, res) {
       // de Bélgica): el hito convierte el lead ANTES de que el cliente dé su
       // RUT, así que Rut/ID Account queda vacío aunque la cuenta sí lo tenga.
       // La emisión formal SIEMPRE trae RUT → se rellena si falta.
-      if (dealId && (cliente.empresa || cliente.rutEmpresa)) {
+      if (dealId) {
         const dl = await getRecord("Deals", dealId).catch(() => null);
         const patchDeal = {};
+        // GARANTÍA DE CADENA TRANSVERSAL (caso Vista Kennedy 24-ago): el
+        // convert de Zoho puede parir el deal SIN cuenta (lead sin Company
+        // utilizable → $converted_detail account=-); el caller lo trata como
+        // fallo, la recuperación reusa el deal y la cuenta nace después en el
+        // Camino B — sin que nadie la asocie. El estampado del convert (fix
+        // ef742bb) no corre en ese camino. Acá se cose SIEMPRE, venga de
+        // donde venga el deal: solo se RELLENA lo vacío, una asociación
+        // existente jamás se pisa (dos empresas del mismo fono comparten
+        // deal por el candado — la primera cuenta asociada manda).
+        if (dl && accountId && !toText(dl.Account_Name?.id)) {
+          patchDeal.Account_Name = { id: accountId };
+        }
+        if (dl && contactId && !toText(dl.Contact_Name?.id)) {
+          patchDeal.Contact_Name = { id: contactId };
+        }
         if (
           dl &&
           cliente.empresa &&
