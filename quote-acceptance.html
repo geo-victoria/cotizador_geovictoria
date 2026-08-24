@@ -2748,6 +2748,16 @@
         // teléfono ya NO frenan el pago — el SII los prellena y Vicky los
         // confirma post-pago antes de emitir la factura. Empresa y natural
         // exigen lo mismo: correos + RUT.
+        // Caso Trailercar (24-ago): contactEmail es readonly — si la
+        // cotización nació sin él, el usuario JAMÁS puede llenarlo. Con un
+        // correo de facturación válido tipeado en el modal, se espeja ahí
+        // (el OTP y el confirm usan ese mismo correo por debajo).
+        if (
+          !String(fields.contactEmail.value || "").trim() &&
+          emailLooksValid(fields.billingEmail.value)
+        ) {
+          fields.contactEmail.value = String(fields.billingEmail.value).trim();
+        }
         const requiredTextFields = esFlujoNatural()
           ? ["contactEmail", "billingEmail", "companyRut"]
           : ["contactEmail", "billingEmail", "companyRut"];
@@ -2886,7 +2896,11 @@
           }
           fields.billingEmail.value = q.billingEmail || q.contactEmail || "";
           fields.billingPhone.value = q.billingPhone || q.contactPhone || "";
-          fields.contactEmail.value = q.contactEmail || "";
+          // Espejo billing→contact (caso Trailercar 24-ago): las emisiones del
+          // canal ejecutivo pueden venir SIN correo de contacto; como el campo
+          // es readonly (y oculto en el modal), quedaba vacío y validateRequired
+          // bloqueaba el pago sin salida posible para el cliente.
+          fields.contactEmail.value = q.contactEmail || q.billingEmail || "";
           fields.companyRut.value = q.companyRut || "";
           fields.companyGiro.value = q.companyGiro || "";
           fields.companyComuna.value = q.companyComuna || "";
