@@ -8,6 +8,7 @@
  */
 
 const { toText } = require("../_shared/zoho-crm");
+const { secretoValido } = require("../_shared/secreto-vicky");
 const { getMercadoPagoConfig } = require("../_shared/mercadopago-config");
 const {
   searchPaymentsByExternalReference,
@@ -21,9 +22,13 @@ function sendJson(res, status, payload) {
 }
 
 module.exports = async function handler(req, res) {
+  // Auth: la clave dedicada ADMIN_LOOKUP_KEY o el secreto interno estándar
+  // (x-vicky-secret, 25-ago) — así el proxy admin del agente puede consultar
+  // números de operación de MP sin repartir otra llave.
   const expected = toText(process.env.ADMIN_LOOKUP_KEY);
   const provided = toText(req?.query?.key || req?.headers?.["x-lookup-key"]);
-  if (!expected || provided !== expected) {
+  const porLookupKey = Boolean(expected) && provided === expected;
+  if (!porLookupKey && !secretoValido(req)) {
     return sendJson(res, 401, { ok: false, error: "unauthorized" });
   }
   const quoteId = toText(req?.query?.quoteId);
