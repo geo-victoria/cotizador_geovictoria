@@ -238,6 +238,11 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     const isExpired = toText(error?.code) === "TOKEN_EXPIRED";
+    // El 500 salía MUDO en los runtime logs (caso Patiño 25-ago: 4×500 justo
+    // post-pago y cero rastro del porqué) — el detalle queda registrado.
+    if (!isExpired) {
+      console.error(`[status] 500: ${toText(error?.message || error)}`, error?.stack ? String(error.stack).slice(0, 400) : "");
+    }
     sendJson(res, isExpired ? 410 : 500, {
       success: false,
       error: isExpired
