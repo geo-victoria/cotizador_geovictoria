@@ -107,11 +107,62 @@ async function getDealPorFono(fono) {
     const valor = filas && filas[0] && filas[0].value;
     if (!valor) return null;
     const parsed = JSON.parse(valor);
-    if (!parsed || !parsed.dealId || !parsed.at) return null;
+    if (!parsed || !parsed.at) return null;
     if (Date.now() - new Date(parsed.at).getTime() > DEAL_FONO_TTL_MS) return null;
+    // Marca "creando" (candado anti-carrera 25-ago, gemelos Quilodrán): la
+    // otra puerta está pariendo el deal AHORA — esperar su id real un rato.
+    if (!parsed.dealId && parsed.creando) {
+      if (Date.now() - new Date(parsed.at).getTime() > 120000) return null; // reserva vencida
+      for (let i = 0; i < 3; i++) {
+        await new Promise((res) => setTimeout(res, 5000));
+        const r2 = await fetch(
+          `${env.url}/rest/v1/vic_kv?key=eq.${encodeURIComponent(clave)}&select=value&limit=1`,
+          { headers: { apikey: env.key, Authorization: `Bearer ${env.key}` }, cache: "no-store" },
+        ).catch(() => null);
+        const f2 = r2 && r2.ok ? await r2.json().catch(() => []) : [];
+        const v2 = f2 && f2[0] && f2[0].value ? JSON.parse(f2[0].value) : null;
+        if (v2 && v2.dealId) return { dealId: String(v2.dealId), origen: String(v2.origen || "") };
+      }
+      return null;
+    }
+    if (!parsed.dealId) return null;
     return { dealId: String(parsed.dealId), origen: String(parsed.origen || "") };
   } catch {
     return null;
+  }
+}
+
+/** Reserva la creación del deal del fono (marca "creando") ANTES de crear.
+ * Devuelve {ok:true} si la reserva es nuestra; {ok:false} si otra puerta ya
+ * tiene deal o reserva vigente (el caller debe re-consultar y REUSAR). */
+async function reservarDealPorFono(fono, origen) {
+  const env = supaEnv();
+  const clave = claveDealFono(fono);
+  if (!env || clave === "deal_fono_") return { ok: true };
+  try {
+    const r = await fetch(
+      `${env.url}/rest/v1/vic_kv?key=eq.${encodeURIComponent(clave)}&select=value&limit=1`,
+      { headers: { apikey: env.key, Authorization: `Bearer ${env.key}` }, cache: "no-store" },
+    );
+    const filas = r.ok ? await r.json().catch(() => []) : [];
+    const valor = filas && filas[0] && filas[0].value ? JSON.parse(filas[0].value) : null;
+    if (valor && valor.at && Date.now() - new Date(valor.at).getTime() < DEAL_FONO_TTL_MS) {
+      if (valor.dealId) return { ok: false, dealId: String(valor.dealId), origen: String(valor.origen || "") };
+      if (valor.creando && Date.now() - new Date(valor.at).getTime() < 120000) return { ok: false };
+    }
+    await fetch(`${env.url}/rest/v1/vic_kv?on_conflict=key`, {
+      method: "POST",
+      headers: {
+        apikey: env.key,
+        Authorization: `Bearer ${env.key}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify({ key: clave, value: JSON.stringify({ at: new Date().toISOString(), creando: true, origen }) }),
+    });
+    return { ok: true };
+  } catch {
+    return { ok: true };
   }
 }
 
@@ -184,4 +235,4 @@ async function getKvFlag(key) {
   }
 }
 
-module.exports = { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono, getKvFlag };
+module.exports = { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, reservarDealPorFono, getLeadCandadoPorFono, getKvFlag };

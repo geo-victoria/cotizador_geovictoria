@@ -4,7 +4,7 @@ const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { createRecord, updateRecord, getRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
-const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono } = require("../_shared/idempotencia");
+const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, reservarDealPorFono, getLeadCandadoPorFono } = require("../_shared/idempotencia");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
@@ -1220,6 +1220,27 @@ module.exports = async function handler(req, res) {
         ownerHeredadoRutSplit = g.ownerHeredadoId || ownerHeredadoRutSplit;
         dealCruzado = null; // empresas distintas: este deal no se reusa
       }
+    }
+
+    // CANDADO ANTI-CARRERA (25-ago, gemelos Quilodrán 18:11:18 vs 18:11:28):
+    // la consulta de arriba no cubre la ventana entre que AMBAS puertas
+    // consultan y la primera escribe. Se RESERVA la creación con marca
+    // "creando"; si otra puerta ya reservó, se espera su id real y se REUSA.
+    if (!dealCruzado && !existing.dealId) {
+      try {
+        const reserva = await reservarDealPorFono(cliente.contactoTelefono, "cotizacion");
+        if (!reserva.ok) {
+          const otra = reserva.dealId
+            ? { dealId: reserva.dealId, origen: reserva.origen || "" }
+            : await getDealPorFono(cliente.contactoTelefono);
+          if (otra) {
+            dealCruzado = otra;
+            console.warn(
+              `[create-from-vicky] candado anti-carrera: creación en curso por la otra puerta — se reusa deal ${otra.dealId}.`,
+            );
+          }
+        }
+      } catch { /* best-effort */ }
     }
 
     // Adopción del lead vivo: el agente normalmente NO pasa leadId (solo en
