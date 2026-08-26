@@ -232,13 +232,16 @@ module.exports = async function handler(req, res) {
   }
 
   // Seguro por defecto: no envía nada hasta activarlo explícitamente.
-  if (!FLAG_ENABLED) {
-    return sendJson(res, 200, { ok: true, skipped: "REACTIVATION_EMAIL_ENABLED != true" });
-  }
-
   try {
     const config = getAcceptanceConfig(req);
     const body = parseBody(req);
+    // `forzar: true` (campaña 10%, Lalo 26-ago: "ideal que le llegue correo a
+    // todos con su actualización en PDF"): el descuento aceptado dispara este
+    // correo aunque el flag global de reactivación esté apagado. Los filtros
+    // de seguridad (correo válido, internos/prueba) siguen intactos.
+    if (!FLAG_ENABLED && body.forzar !== true) {
+      return sendJson(res, 200, { ok: true, skipped: "REACTIVATION_EMAIL_ENABLED != true" });
+    }
     const quoteId = toText(body.quoteId);
     if (!quoteId) {
       return sendJson(res, 400, { ok: false, error: "Falta quoteId." });
