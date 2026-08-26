@@ -270,7 +270,9 @@ module.exports = async function handler(req, res) {
     // recién ahí entrega el PDF nuevo. Mismo criterio que `topeAlcanzado`.
     const commitIdx = Math.max(0, Number(quote?.[config.quoteEscalonField] || 0));
     const enMaximo = !hayEscalonDespues(quote, config, commitIdx - 1);
-    if (!enMaximo) {
+    // Con `forzar` (campaña 10%) el correo sale aunque quede escalera por
+    // ofrecer: el cliente YA aceptó su descuento y el PDF nuevo es la entrega.
+    if (!enMaximo && body.forzar !== true) {
       return sendJson(res, 200, {
         ok: true,
         skipped: "descuento no esta en el maximo: reenganche del precio via WhatsApp",
