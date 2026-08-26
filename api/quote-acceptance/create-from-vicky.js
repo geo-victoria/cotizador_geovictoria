@@ -1834,13 +1834,30 @@ module.exports = async function handler(req, res) {
           DUENOS_INTERINOS.delete(ownerManualId);
         }
         if (ownerManualId) {
-          await zohoApiFetch(`/crm/v3/Deals`, {
-            method: "PUT",
-            body: JSON.stringify({
-              data: [{ id: dealId, Owner: { id: ownerManualId } }],
-              skip_feature_execution: [{ name: "assignment_rules" }],
-            }),
-          });
+          // GUARDA (26-ago, caso Rovira: la tómbola sorteó a Tamara tras la
+          // conversión manual y la herencia del traspaso la PISÓ): si el deal
+          // ya tiene un dueño HUMANO distinto al heredado, no se toca — la
+          // cotización sigue al dueño real del deal (bloque de abajo). Nadie
+          // pisa a un dueño humano real (regla sellada 04-ago).
+          let ownerActualId = "";
+          try {
+            const rPre = await zohoApiFetch(`/crm/v3/Deals/${dealId}?fields=Owner`);
+            if (rPre.ok) ownerActualId = toText((((((await rPre.json())?.data) || [])[0] || {}).Owner || {}).id);
+          } catch (_e) { /* best-effort */ }
+          const actualEsHumano = Boolean(ownerActualId) && !DUENOS_INTERINOS.has(ownerActualId);
+          if (actualEsHumano && ownerActualId !== ownerManualId) {
+            console.warn(
+              `[create-from-vicky] deal ${dealId} ya tiene dueño humano ${ownerActualId} — la herencia del traspaso (${ownerManualId}) NO lo pisa.`,
+            );
+          } else {
+            await zohoApiFetch(`/crm/v3/Deals`, {
+              method: "PUT",
+              body: JSON.stringify({
+                data: [{ id: dealId, Owner: { id: ownerManualId } }],
+                skip_feature_execution: [{ name: "assignment_rules" }],
+              }),
+            });
+          }
         }
         const rOwner = await zohoApiFetch(`/crm/v3/Deals/${dealId}?fields=Owner`);
         if (rOwner.ok) {
