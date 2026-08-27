@@ -18,7 +18,7 @@
     },
     "api/quote-acceptance/create-from-vicky.js": {
       "memory": 1536,
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/quote-acceptance/create-from-vicky-co.js": {
       "memory": 1536,
