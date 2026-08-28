@@ -1989,7 +1989,8 @@ module.exports = async function handler(req, res) {
     if (!quoteId) {
       stage = "create_quote";
       const quoteFields = {
-        Name: `Cotización ${cliente.empresa} - ${new Date().toISOString().slice(0, 10)}`,
+        // Zoho capa Name a 120 chars (caso Anderson 28-ago: razón social EIRL de 137 chars → INVALID_DATA maximum_length): se recorta la empresa, la fecha siempre sobrevive.
+        Name: `Cotización ${String(cliente.empresa || "").trim()}`.slice(0, 107) + ` - ${new Date().toISOString().slice(0, 10)}`,
         // La cotización sigue al dueño del deal (tómbola de Zoho, Lalo 31-jul).
         Owner: quoteOwner,
         ...(dealId ? { [config.quoteDealLookupField]: { id: dealId } } : {}),

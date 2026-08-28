@@ -985,7 +985,8 @@ module.exports = async function handler(req, res) {
     stage = "create_quote";
     const subformItems = buildSubformItemsCO(items);
     const quoteResult = await createRecord(config.quoteModule, {
-      Name: `Cotización ${empresa} - ${new Date().toISOString().slice(0, 10)}`,
+      // Zoho capa Name a 120 chars (caso Anderson 28-ago: razón social EIRL de 137 chars → INVALID_DATA maximum_length): se recorta la empresa, la fecha siempre sobrevive.
+      Name: `Cotización ${String(empresa || "").trim()}`.slice(0, 107) + ` - ${new Date().toISOString().slice(0, 10)}`,
       Owner: OWNER_CO,
       ...(dealId ? { [config.quoteDealLookupField]: { id: dealId } } : {}),
       ...(contactId ? { [config.quoteContactLookupField]: { id: contactId } } : {}),
