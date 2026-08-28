@@ -3270,8 +3270,13 @@
                 '<div class="ch-item"><span>Plan mensual — a pagar ahora (incluye primer mes)</span><strong>' +
                 fmtCLP(totals.totalClp) + "/mes</strong></div>";
             } else {
+            // Sin NINGUNA línea recurrente (ej. anualidad pagada adelantada,
+            // 28-ago): no hay "1er mes" que incluir ni plan mensual que
+            // anunciar — es un pago total único.
             chHtml =
-              '<div class="ch-item"><span>Pago inicial — a pagar ahora (incluye 1er mes)</span><strong>' +
+              '<div class="ch-item"><span>' +
+              (recClp > 0 ? 'Pago inicial — a pagar ahora (incluye 1er mes)' : 'Pago total — a pagar ahora (sin mensualidad)') +
+              '</span><strong>' +
               fmtCLP(totals.totalClp) + "</strong></div>";
             if (recClp > 0) {
               chHtml +=
