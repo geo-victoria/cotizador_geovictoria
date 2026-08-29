@@ -290,7 +290,10 @@
         // Reintenta fetchStatus ante fallos transitorios (cold start/timeout/5xx)
         // con backoff, para que la pagina se recupere sola sin recargar a mano.
         async function fetchStatusWithRetry() {
-          var attempts = 4;
+          // 6 intentos (~40 s con backoff): un hiccup de Zoho al cargar la
+          // cotización duraba más que los 4 intentos viejos y el cliente veía
+          // el error justo tras pagar (caso Patiño 25-ago: 4×500 seguidos).
+          var attempts = 6;
           var delay = 1200;
           for (var i = 0; i < attempts; i++) {
             try {
@@ -332,6 +335,13 @@
             }
             if (data.initPoint) {
               pfPing("salida_mp");
+              // Marca de "fui a pagar" (caso Patiño 25-ago): si al volver el
+              // status falla, la pantalla NO debe alarmar a alguien que ya
+              // pagó — con esta marca el error se reemplaza por un mensaje
+              // tranquilizador y reintento automático.
+              try {
+                window.localStorage.setItem("gv_mp_salida", String(Date.now()));
+              } catch (e) {}
               window.location.href = data.initPoint;
               return;
             }
@@ -640,11 +650,29 @@
           } catch (err) {
             loadingEl.classList.add("hidden");
             contentEl.classList.remove("hidden");
-            contentEl.innerHTML =
-              '<div class="center"><h2>No pudimos cargar tu pago</h2>' +
-              '<p class="lead">' +
-              ((err && err.message) || "Intenta nuevamente o contacta a tu ejecutivo comercial.") +
-              "</p></div>";
+            // ¿VIENE DE PAGAR? (caso Patiño 25-ago): si salió a Mercado Pago
+            // hace menos de 2 h, un fallo del status NO significa que su pago
+            // falló — su plata ya está y el registro corre por webhook igual.
+            // Alarmarlo acá fue el daño real: mensaje tranquilizador, cero
+            // pedido de acción, y la página sigue reintentando sola.
+            var vieneDePagar = false;
+            try {
+              var salida = Number(window.localStorage.getItem("gv_mp_salida") || 0);
+              vieneDePagar = salida > 0 && Date.now() - salida < 2 * 60 * 60 * 1000;
+            } catch (e) {}
+            if (vieneDePagar) {
+              contentEl.innerHTML =
+                '<div class="center"><h2>Estamos confirmando tu pago</h2>' +
+                '<p class="lead">Si el cargo ya te apareció, está todo bien: la confirmación puede demorar un momento. ' +
+                "Seguimos verificando en esta misma pantalla y te avisamos por WhatsApp apenas quede lista tu cuenta.</p></div>";
+              setTimeout(render, 15000); // reintento silencioso, sin tocar nada
+            } else {
+              contentEl.innerHTML =
+                '<div class="center"><h2>No pudimos cargar tu pago</h2>' +
+                '<p class="lead">' +
+                ((err && err.message) || "Intenta nuevamente o contacta a tu ejecutivo comercial.") +
+                "</p></div>";
+            }
           }
         }
 
