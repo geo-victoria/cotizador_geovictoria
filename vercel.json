@@ -80,9 +80,17 @@
     "api/creator/ndv-diag.js": {
       "memory": 1024,
       "maxDuration": 300
+    },
+    "api/creator/confirmar-pendientes.js": {
+      "memory": 1024,
+      "maxDuration": 60
     }
   },
   "crons": [
+    {
+      "path": "/api/creator/confirmar-pendientes",
+      "schedule": "*/10 * * * *"
+    },
     {
       "path": "/api/quote-acceptance/backfill-pdf",
       "schedule": "*/10 * * * *"

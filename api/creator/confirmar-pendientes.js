@@ -26,7 +26,14 @@ function texto(v) {
 
 module.exports = async function handler(req, res) {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  if (!secretoValido(req)) {
+  // Cableado al cron de Vercel (29-ago, cierre P0): antes NADIE corría esta
+  // segunda pasada sola — las notas quedaban PENDIENTE hasta un disparo
+  // manual. El cron llega con `Authorization: Bearer ${CRON_SECRET}` (mismo
+  // patrón de reconcile-pending); el secreto interno sigue valiendo.
+  const bearer = String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "").trim();
+  const cronSecret = String(process.env.CRON_SECRET || "").trim();
+  const esCron = Boolean(cronSecret) && bearer === cronSecret;
+  if (!esCron && !secretoValido(req)) {
     res.statusCode = 401;
     return res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
   }
