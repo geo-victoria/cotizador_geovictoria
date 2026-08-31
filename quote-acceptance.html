@@ -4024,5 +4024,192 @@
       // la sesión es chilena (los catálogos de comunas/giros son de Chile).
       boot();
     </script>
+
+    <!-- ────────────────────────────────────────────────────────────────────
+         VICKY EN LA COTIZACIÓN (31-ago, pedido de Lalo).
+
+         El cliente abre su cotización, le queda una duda y no tiene a quién
+         preguntarle: cierra la página y la duda se vuelve silencio. Este
+         widget le pone a Vicky al lado, con el contexto real de su cotización
+         y de lo que conversaron por WhatsApp.
+
+         Deliberadamente DISCRETO al principio: el objetivo de la página es
+         que pague, no que converse. Parte como burbuja; recién tras un rato
+         leyendo —cuando la duda ya apareció— se abre sola una vez para
+         invitar. Si la cierra, no vuelve a insistir.
+
+         Bloque AISLADO: todo con prefijo gvvc-, sin tocar una línea de lo
+         existente. Si el endpoint no responde, el widget se esconde solo y la
+         página sigue funcionando igual.
+    ───────────────────────────────────────────────────────────────────── -->
+    <style>
+      .gvvc-burbuja{position:fixed;right:18px;bottom:18px;z-index:60;display:flex;align-items:center;gap:10px;
+        background:#ffffff;color:#1f2a37;border:1px solid #e2e8f0;border-radius:999px;padding:10px 16px 10px 12px;
+        box-shadow:0 6px 24px rgba(15,23,42,.16);cursor:pointer;font:600 14px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;
+        transition:transform .18s ease, box-shadow .18s ease}
+      .gvvc-burbuja:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(15,23,42,.2)}
+      .gvvc-avatar{width:30px;height:30px;border-radius:50%;background:#ffc107;color:#3b3000;display:flex;
+        align-items:center;justify-content:center;font-weight:700;flex:none}
+      .gvvc-invita{max-width:270px;font-weight:500;color:#475569;font-size:13px;line-height:1.35}
+      .gvvc-panel{position:fixed;right:18px;bottom:18px;z-index:61;width:min(370px,calc(100vw - 32px));
+        height:min(500px,calc(100vh - 40px));background:#fff;border:1px solid #e2e8f0;border-radius:16px;
+        box-shadow:0 18px 48px rgba(15,23,42,.24);display:none;flex-direction:column;overflow:hidden;
+        font:400 14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+      .gvvc-panel.abierto{display:flex}
+      .gvvc-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #eef2f7;background:#fafbfc}
+      .gvvc-head b{font-size:14px;color:#1f2a37}
+      .gvvc-head small{display:block;font-size:11.5px;color:#64748b;font-weight:400}
+      .gvvc-cerrar{margin-left:auto;border:0;background:transparent;font-size:20px;line-height:1;color:#94a3b8;cursor:pointer;padding:2px 4px}
+      .gvvc-cerrar:hover{color:#475569}
+      .gvvc-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:#fff}
+      .gvvc-msg{max-width:85%;padding:9px 12px;border-radius:14px;white-space:pre-wrap;word-wrap:break-word;font-size:13.5px}
+      .gvvc-msg.v{background:#f1f5f9;color:#1f2a37;border-bottom-left-radius:4px;align-self:flex-start}
+      .gvvc-msg.c{background:#ffc107;color:#3b3000;border-bottom-right-radius:4px;align-self:flex-end}
+      .gvvc-form{display:flex;gap:8px;padding:10px;border-top:1px solid #eef2f7;background:#fafbfc}
+      .gvvc-form input{flex:1;border:1px solid #d9e1ea;border-radius:10px;padding:9px 12px;font-size:13.5px;outline:none}
+      .gvvc-form input:focus{border-color:#ffc107;box-shadow:0 0 0 3px rgba(255,193,7,.18)}
+      .gvvc-form button{border:0;background:#1f2a37;color:#fff;border-radius:10px;padding:9px 14px;font-weight:600;
+        font-size:13.5px;cursor:pointer}
+      .gvvc-form button:disabled{opacity:.5;cursor:default}
+      @media (max-width:520px){.gvvc-invita{display:none}}
+      @media (prefers-reduced-motion:reduce){.gvvc-burbuja{transition:none}}
+    </style>
+
+    <div class="gvvc-burbuja" id="gvvcBurbuja" role="button" tabindex="0" aria-label="Conversar con Vicky" hidden>
+      <span class="gvvc-avatar">V</span>
+      <span id="gvvcTexto">¿Dudas? Habla con Vicky</span>
+    </div>
+
+    <div class="gvvc-panel" id="gvvcPanel" role="dialog" aria-label="Chat con Vicky">
+      <div class="gvvc-head">
+        <span class="gvvc-avatar">V</span>
+        <div><b>Vicky</b><small>Conoce tu cotización</small></div>
+        <button class="gvvc-cerrar" id="gvvcCerrar" aria-label="Cerrar">&times;</button>
+      </div>
+      <div class="gvvc-msgs" id="gvvcMsgs"></div>
+      <form class="gvvc-form" id="gvvcForm">
+        <input id="gvvcInput" type="text" placeholder="Escribe tu duda…" autocomplete="off" maxlength="600" />
+        <button type="submit" id="gvvcEnviar">Enviar</button>
+      </form>
+    </div>
+
+    <script>
+      (function () {
+        var AGENTE =
+          "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app/api/vic-cotizacion-chat";
+        var token = new URLSearchParams(window.location.search).get("token") || "";
+        if (!token) return;
+
+        var burbuja = document.getElementById("gvvcBurbuja");
+        var panel = document.getElementById("gvvcPanel");
+        var msgs = document.getElementById("gvvcMsgs");
+        var form = document.getElementById("gvvcForm");
+        var input = document.getElementById("gvvcInput");
+        var enviar = document.getElementById("gvvcEnviar");
+        var texto = document.getElementById("gvvcTexto");
+        var historial = [];
+        var invitado = false;
+        var abierto = false;
+
+        // Si el cliente ya cerró la invitación en esta visita, no se insiste.
+        function descartada() {
+          try { return sessionStorage.getItem("gvvc_off") === "1"; } catch (e) { return false; }
+        }
+        function descartar() {
+          try { sessionStorage.setItem("gvvc_off", "1"); } catch (e) {}
+        }
+
+        function pinta(rol, txt) {
+          var d = document.createElement("div");
+          d.className = "gvvc-msg " + (rol === "c" ? "c" : "v");
+          d.textContent = txt;
+          msgs.appendChild(d);
+          msgs.scrollTop = msgs.scrollHeight;
+        }
+
+        function abrir() {
+          abierto = true;
+          burbuja.hidden = true;
+          panel.classList.add("abierto");
+          if (!msgs.childElementCount) {
+            pinta("v", "Hola! Estoy acá para lo que necesites de tu cotización — dudas del detalle, formas de pago o lo que quieras ajustar 😊");
+          }
+          setTimeout(function () { input.focus(); }, 80);
+        }
+        function cerrar() {
+          abierto = false;
+          panel.classList.remove("abierto");
+          burbuja.hidden = false;
+          descartar();
+        }
+
+        burbuja.addEventListener("click", abrir);
+        burbuja.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrir(); }
+        });
+        document.getElementById("gvvcCerrar").addEventListener("click", cerrar);
+
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var t = (input.value || "").trim();
+          if (!t) return;
+          input.value = "";
+          pinta("c", t);
+          historial.push({ role: "user", content: t });
+          enviar.disabled = true;
+          var pensando = document.createElement("div");
+          pensando.className = "gvvc-msg v";
+          pensando.textContent = "…";
+          msgs.appendChild(pensando);
+          msgs.scrollTop = msgs.scrollHeight;
+
+          fetch(AGENTE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: token, mensaje: t, historial: historial.slice(-12) })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              pensando.remove();
+              var reply = (d && d.ok && d.reply)
+                ? d.reply
+                : "Disculpa, se me cayó la conexión. ¿Me lo escribes de nuevo?";
+              pinta("v", reply);
+              historial.push({ role: "assistant", content: reply });
+            })
+            .catch(function () {
+              pensando.remove();
+              pinta("v", "Disculpa, se me cayó la conexión. ¿Me lo escribes de nuevo?");
+            })
+            .finally(function () {
+              enviar.disabled = false;
+              input.focus();
+            });
+        });
+
+        // El widget solo aparece si el chat está realmente disponible: se
+        // pregunta primero y, si el agente no responde, la página queda tal
+        // como estaba. Nada de una burbuja que no lleva a ninguna parte.
+        fetch(AGENTE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: token, mensaje: "__ping__" })
+        })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) {
+            if (!d || !d.ok || descartada()) return;
+            burbuja.hidden = false;
+            // A los 40 segundos leyendo, la duda ya apareció: la burbuja
+            // invita una vez. Una sola, y solo si no está conversando.
+            setTimeout(function () {
+              if (invitado || abierto || descartada()) return;
+              invitado = true;
+              texto.textContent = "¿Te quedó alguna duda? Conversemos";
+              burbuja.style.borderColor = "#ffc107";
+            }, 40000);
+          })
+          .catch(function () { /* sin chat, la página sigue igual */ });
+      })();
+    </script>
   </body>
 </html>
