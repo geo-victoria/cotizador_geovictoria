@@ -5,6 +5,7 @@ const {
   updateRecordBestEffort,
   getUserById,
   searchRecords,
+  coqlQuery,
   getModuleFieldNames,
   toText,
 } = require("./zoho-crm");
@@ -395,20 +396,46 @@ function buildOnboardingDraft({
   };
 }
 
+/**
+ * Registros de onboarding ya existentes para una cotización, del más antiguo
+ * al más nuevo. Vía COQL (sin retraso de índice); si COQL falla, cae al
+ * search de siempre para no quedarse ciega.
+ */
+async function onboardingsDeCotizacion(config, quoteId) {
+  const campo = config.onboardingOriginAcceptanceIdField;
+  try {
+    const filas = await coqlQuery(
+      `select id, Created_Time from ${config.onboardingModule} ` +
+        `where ${campo} = '${toText(quoteId)}' order by Created_Time asc limit 5`
+    );
+    if (Array.isArray(filas)) return filas;
+  } catch (error) {
+    console.warn(`[onboarding-handoff] COQL de duplicados falló: ${toText(error?.message || error)}`);
+  }
+  const alt = await searchRecords(
+    config.onboardingModule,
+    `(${campo}:equals:${quoteId})`,
+    ["id", "Created_Time"]
+  ).catch(() => []);
+  return Array.isArray(alt) ? alt : [];
+}
+
 async function getOrCreateOnboardingRecord({ config, quoteId, dealId, quote, draft, lookupFields }) {
   const currentLookupId = toText(quote?.[config.quoteOnboardingLookupField]?.id);
   if (currentLookupId) {
     return { onboardingId: currentLookupId, created: false };
   }
 
-  const byOrigin = await searchRecords(
-    config.onboardingModule,
-    `(Origen_Aceptacion_Id:equals:${quoteId})`,
-    ["id"]
-  );
-  if (Array.isArray(byOrigin) && byOrigin.length > 0) {
-    const existingId = toText(byOrigin[0]?.id);
-    if (existingId) return { onboardingId: existingId, created: false };
+  // ¿YA HAY UNO PARA ESTA COTIZACIÓN? (31-ago, caso SEGURIDAD GSL / Hdpe
+  // Melipilla: dos registros de onboarding creados con 1-3 segundos de
+  // diferencia para el mismo pago). El webhook de Mercado Pago y el polling
+  // de la página de pago llaman los dos a la finalización, y esta guarda
+  // usaba `searchRecords`, que pasa por el ÍNDICE de búsqueda de Zoho — un
+  // registro de hace un segundo todavía no está indexado, así que la guarda
+  // no veía nada y ambos creaban. COQL lee la base directo y sí lo ve.
+  const previos = await onboardingsDeCotizacion(config, quoteId);
+  if (previos.length > 0) {
+    return { onboardingId: previos[0].id, created: false };
   }
 
   const createMap = {
@@ -442,6 +469,33 @@ async function getOrCreateOnboardingRecord({ config, quoteId, dealId, quote, dra
   }
 
   const createResult = await createRecord(config.onboardingModule, createMap, true);
+  // SEGUNDA VUELTA (la ventana de sub-segundo que ninguna consulta previa
+  // puede cerrar): si mientras creábamos apareció otro registro para la misma
+  // cotización, gana el MÁS ANTIGUO y el nuestro se neutraliza — token
+  // inactivo y estado de handoff `duplicado`, para que nadie lo entregue ni
+  // el vigía lo procese. Best-effort: ante cualquier error seguimos con el
+  // nuestro (el peor caso es el de hoy, no uno nuevo).
+  if (createResult?.id) {
+    try {
+      const tras = await onboardingsDeCotizacion(config, quoteId);
+      const masAntiguo = tras.find((r) => toText(r.id) && toText(r.id) !== toText(createResult.id));
+      const nuestro = tras.find((r) => toText(r.id) === toText(createResult.id));
+      if (masAntiguo && nuestro && String(masAntiguo.Created_Time) <= String(nuestro.Created_Time)) {
+        await updateRecordBestEffort(
+          config.onboardingModule,
+          createResult.id,
+          { Token_Activo: false, [config.onboardingHandoffStatusField]: "duplicado" },
+          false,
+        );
+        console.warn(
+          `[onboarding-handoff] carrera resuelta en cotizacion ${quoteId}: gana ${masAntiguo.id}, se neutraliza ${createResult.id}`
+        );
+        return { onboardingId: toText(masAntiguo.id), created: false };
+      }
+    } catch (error) {
+      console.warn(`[onboarding-handoff] chequeo de carrera falló: ${toText(error?.message || error)}`);
+    }
+  }
   // RE-AFIRMAR el dueño después de crear (reporte de Grey, 03-ago): aunque el
   // create manda Owner = dueño del deal, un workflow del módulo en Zoho (era
   // pre-relevo) reasigna el registro a Anderson al nacer. Los workflows de

@@ -160,6 +160,32 @@ async function searchRecords(moduleApiName, criteria, fields) {
   return rows;
 }
 
+/**
+ * Consulta COQL (POST /crm/v3/coql). A diferencia de `searchRecords`, NO pasa
+ * por el índice de búsqueda de Zoho: lee la base directo, así que ve un
+ * registro creado hace un segundo. Esa diferencia es la que importa cuando dos
+ * caminos concurrentes preguntan "¿ya existe?" antes de crear.
+ * Devuelve [] con 204 (sin filas) y ante error de consulta.
+ */
+async function coqlQuery(selectQuery) {
+  const query = toText(selectQuery);
+  if (!query) throw new Error("select_query requerido para coqlQuery.");
+  const response = await zohoApiFetch("/crm/v3/coql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ select_query: query }),
+  });
+  if (response.status === 204) return [];
+  const payload = await readJsonSafe(response);
+  if (!response.ok) {
+    const code = toText(payload?.code);
+    if (code === "INVALID_QUERY" || code === "INVALID_DATA") return [];
+    const msg = toText(payload?.message) || code || `HTTP ${response.status}`;
+    throw new Error(`Zoho coqlQuery failed: ${msg}`);
+  }
+  return Array.isArray(payload?.data) ? payload.data : [];
+}
+
 async function createRecord(moduleApiName, fieldsMap, triggerWorkflows) {
   getZohoConfig();
   const payload = {
@@ -292,6 +318,7 @@ module.exports = {
   getRecordWithFields,
   listRecords,
   searchRecords,
+  coqlQuery,
   createRecord,
   updateRecord,
   updateRecordBestEffort,
