@@ -125,7 +125,15 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
   // Lotus Pet el 31-jul: pago OK, onboarding OK, cero correo PAGADA). Solo en
   // la PRIMERA finalización (onboarding nuevo) para no duplicar entre el
   // webhook y el polling de status; best-effort: jamás bloquea el onboarding.
-  if (handoffResult?.reused !== true) {
+  // UN PAGO, UN CORREO (31-ago, caso COT1014: salieron DOS avisos de
+  // 'Cotización PAGADA' del mismo pago). El webhook de Mercado Pago y el
+  // polling de la página finalizan los dos; desde el fix de los onboardings
+  // duplicados el segundo ya no crea un registro nuevo —ADOPTA el que
+  // existe—, pero seguía pasando esta guarda porque `reused` solo es true
+  // en el atajo de arriba. La señal correcta de 'esta es la PRIMERA
+  // finalización' es haber creado el registro: quien lo adopta no notifica.
+  // `undefined` (caminos viejos) sigue notificando, para no perder avisos.
+  if (handoffResult?.reused !== true && handoffResult?.onboardingCreated !== false) {
     try {
       await notifyQuoteEvent({ config, quote, quoteId, evento: "pagada" });
     } catch (notifyError) {
