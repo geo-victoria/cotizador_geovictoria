@@ -65,6 +65,19 @@ async function hayGestionEjecutivoEnDeal(dealId) {
   }
 }
 
+// Direcciones que NO quieren los avisos del canal ejecutivo (Lalo 31-ago):
+// miden la venta de Vicky y estos correos les ensucian la lectura. Editable
+// por env (coma-separado); vacío = nadie se excluye.
+const SOLO_VENTAS_VICKY = new Set(
+  (process.env.QUOTE_NOTIFY_SOLO_VICKY === undefined
+    ? "rlewit@geovictoria.com"
+    : process.env.QUOTE_NOTIFY_SOLO_VICKY
+  )
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+);
+
 const NOTIFY_RECIPIENTS_CO = (
   process.env.QUOTE_NOTIFY_RECIPIENTS_CO ||
   "egomez@geovictoria.com,agordillo@geovictoria.com,rlewit@geovictoria.com"
@@ -466,7 +479,15 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
       const dealOwner = await getRecordWithFields("Deals", dealId, ["Owner"]).catch(() => null);
       ownerEmail = toText(dealOwner?.Owner?.email);
     }
-    const base = esCO ? NOTIFY_RECIPIENTS_CO : esMX ? NOTIFY_RECIPIENTS_MX : esPE ? NOTIFY_RECIPIENTS_PE : NOTIFY_RECIPIENTS;
+    let base = esCO ? NOTIFY_RECIPIENTS_CO : esMX ? NOTIFY_RECIPIENTS_MX : esPE ? NOTIFY_RECIPIENTS_PE : NOTIFY_RECIPIENTS;
+    // SOLO LAS VENTAS DE VICKY (Lalo 31-ago): los avisos del canal EJECUTIVO
+    // confunden a quien mide cuánto vende Vicky —parecen ventas suyas y no lo
+    // son—, así que esas direcciones quedan fuera cuando la cotización viene
+    // de la cotizadora. Las de Vicky y las anteriores al 19-ago (sin marca de
+    // canal) les siguen llegando enteras.
+    if (canal === "ejecutivo" && SOLO_VENTAS_VICKY.size) {
+      base = base.filter((e) => !SOLO_VENTAS_VICKY.has(String(e || "").trim().toLowerCase()));
+    }
     // Copia a la dueña del acompañamiento autónomo en TODO pago CL (Lalo
     // 24-ago) — se entera tanto de las autónomas (suyas) como de las
     // asistidas (contexto).
