@@ -6,6 +6,7 @@ const {
   hasApprovedPayment,
 } = require("../_shared/mercadopago-client");
 const { finalizeAfterPayment, marcarEstadoPagada } = require("../_shared/post-payment-finalize");
+const { notifyQuoteEvent } = require("../_shared/quote-internal-notify");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -176,7 +177,18 @@ export default async function handler(req, res) {
     // cobro online efectivo: el camino sin cobro (transferencia) se declara
     // pagado por comprobante/conciliación, jamás solo (guarda Aitas).
     if (hasOneShot && oneShotApproved) {
-      await marcarEstadoPagada(acceptanceConfig, quote, quoteId);
+      const estadoVolteado = await marcarEstadoPagada(acceptanceConfig, quote, quoteId);
+      // UN PAGO, UN CORREO (31-ago, COT1042): el aviso interno PAGADA lo manda
+      // SOLO quien hizo la transición real a Pagada — este polling incluido,
+      // porque el webhook de MP puede no llegar (a Daniela la pilló el polling
+      // 34 min después y nadie notificó).
+      if (estadoVolteado) {
+        try {
+          await notifyQuoteEvent({ config: acceptanceConfig, quote, quoteId, evento: "pagada" });
+        } catch (notifyError) {
+          console.warn(`[status] notificación PAGADA falló: ${toText(notifyError?.message || notifyError)}`);
+        }
+      }
     }
 
     if (paymentsComplete && !onboardingUrl) {

@@ -48,10 +48,22 @@ const {
  * lo no listado, y el blueprint es la única herramienta del ejecutivo).
  * Best-effort: jamás bloquea el onboarding ni el poll de estado.
  */
+/**
+ * Devuelve true SOLO si esta llamada volteó el estado a "Pagada" (transición
+ * real Aceptada→Pagada). Esa señal es la llave del correo interno PAGADA:
+ * "un pago, un correo" (31-ago, caso COT1042/Daniela — con el onboarding
+ * naciendo en la ACEPTACIÓN, `reused`/`!onboardingUrl` dejaron de distinguir
+ * la primera finalización y el correo no salía nunca). Se relee el registro
+ * fresco porque el `quote` del caller puede venir de minutos atrás.
+ */
 async function marcarEstadoPagada(config, quote, quoteId) {
   try {
-    const estadoActual = toText(quote?.[config.quoteStatusField]);
-    if (/pagad/i.test(estadoActual)) return;
+    let estadoActual = toText(quote?.[config.quoteStatusField]);
+    try {
+      const fresco = await getRecord(config.quoteModule, quoteId);
+      if (fresco) estadoActual = toText(fresco?.[config.quoteStatusField]);
+    } catch {}
+    if (/pagad/i.test(estadoActual)) return false;
     const rp = await zohoApiFetch(
       `/crm/v3/${encodeURIComponent(config.quoteModule)}/${encodeURIComponent(quoteId)}`,
       {
@@ -65,8 +77,10 @@ async function marcarEstadoPagada(config, quote, quoteId) {
       }
     );
     console.log(`[finalize] ${config.quoteStatusField} → Pagada (${rp.status}) quote=${quoteId}`);
+    return rp.ok !== false;
   } catch (estadoError) {
     console.warn(`[finalize] Estado→Pagada falló (no bloquea): ${toText(estadoError?.message || estadoError)}`);
+    return false;
   }
 }
 
@@ -119,27 +133,10 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
   }
 
 
-  // Notificación interna "pagada" ANTES del trabajo lento de NDV (subforms):
-  // si la función muere por timeout después de crear el onboarding, el
-  // reintento entra por reused=true y ya nadie notifica (le pasó a COT315
-  // Lotus Pet el 31-jul: pago OK, onboarding OK, cero correo PAGADA). Solo en
-  // la PRIMERA finalización (onboarding nuevo) para no duplicar entre el
-  // webhook y el polling de status; best-effort: jamás bloquea el onboarding.
-  // UN PAGO, UN CORREO (31-ago, caso COT1014: salieron DOS avisos de
-  // 'Cotización PAGADA' del mismo pago). El webhook de Mercado Pago y el
-  // polling de la página finalizan los dos; desde el fix de los onboardings
-  // duplicados el segundo ya no crea un registro nuevo —ADOPTA el que
-  // existe—, pero seguía pasando esta guarda porque `reused` solo es true
-  // en el atajo de arriba. La señal correcta de 'esta es la PRIMERA
-  // finalización' es haber creado el registro: quien lo adopta no notifica.
-  // `undefined` (caminos viejos) sigue notificando, para no perder avisos.
-  if (handoffResult?.reused !== true && handoffResult?.onboardingCreated !== false) {
-    try {
-      await notifyQuoteEvent({ config, quote, quoteId, evento: "pagada" });
-    } catch (notifyError) {
-      console.warn(`[finalize] notificación PAGADA falló: ${toText(notifyError?.message || notifyError)}`);
-    }
-  }
+  // La notificación interna PAGADA ya NO vive acá (31-ago, COT1042): con el
+  // onboarding naciendo en la ACEPTACIÓN, `reused` era true en todo pago y el
+  // correo no salía nunca. Ahora la manda quien VOLTEA el estado a Pagada
+  // (marcarEstadoPagada === true en maybeFinalizeQuote / status.js).
 
   // NDV best-effort: no debe bloquear la entrega del onboarding tras un pago OK.
   let ndv = { status: "skipped", reason: ndvYaExiste ? "already_linked" : "disabled" };
@@ -327,8 +324,19 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
   // Pago real verificado en MP → el estado en Zoho dice "Pagada" al tiro,
   // haya o no onboarding pendiente (el finalize de más abajo es idempotente
   // pero el estado no puede esperar al reconciliador).
+  let estadoVolteado = false;
   if (paymentsComplete) {
-    await marcarEstadoPagada(acceptanceConfig, quote, quoteId);
+    estadoVolteado = await marcarEstadoPagada(acceptanceConfig, quote, quoteId);
+  }
+
+  // UN PAGO, UN CORREO: notifica SOLO quien hizo la transición real a Pagada.
+  // Va ANTES del finalize (lento) para que un timeout no se coma el aviso.
+  if (estadoVolteado) {
+    try {
+      await notifyQuoteEvent({ config: acceptanceConfig, quote, quoteId, evento: "pagada" });
+    } catch (notifyError) {
+      console.warn(`[finalize] notificación PAGADA falló: ${toText(notifyError?.message || notifyError)}`);
+    }
   }
 
   if (paymentsComplete && !onboardingUrl) {
