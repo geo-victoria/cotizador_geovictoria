@@ -4111,6 +4111,26 @@
         var invitado = false;
         var abierto = false;
 
+        // El chat sobrevive a la recarga de la página (necesario porque al
+        // aplicarse un descuento recargamos para mostrar el precio nuevo).
+        var CLAVE = "gvvc_h_" + token.slice(0, 12);
+        function guarda() {
+          try {
+            sessionStorage.setItem(CLAVE, JSON.stringify({ h: historial.slice(-12), a: abierto ? 1 : 0 }));
+          } catch (e) {}
+        }
+        function restaura() {
+          try {
+            var d = JSON.parse(sessionStorage.getItem(CLAVE) || "null");
+            if (d && d.h && d.h.length) {
+              historial = d.h;
+              historial.forEach(function (m) { pinta(m.role === "user" ? "c" : "v", m.content); });
+              return d.a === 1;
+            }
+          } catch (e) {}
+          return false;
+        }
+
         // Si el cliente ya cerró la invitación en esta visita, no se insiste.
         function descartada() {
           try { return sessionStorage.getItem("gvvc_off") === "1"; } catch (e) { return false; }
@@ -4134,6 +4154,7 @@
           if (!msgs.childElementCount) {
             pinta("v", "Hola! Estoy acá para lo que necesites de tu cotización — dudas del detalle, formas de pago o lo que quieras ajustar 😊");
           }
+          guarda();
           setTimeout(function () { input.focus(); }, 80);
         }
         function cerrar() {
@@ -4141,6 +4162,7 @@
           panel.classList.remove("abierto");
           burbuja.hidden = false;
           descartar();
+          guarda();
         }
 
         burbuja.addEventListener("click", abrir);
@@ -4156,6 +4178,7 @@
           input.value = "";
           pinta("c", t);
           historial.push({ role: "user", content: t });
+          guarda();
           enviar.disabled = true;
           var pensando = document.createElement("div");
           pensando.className = "gvvc-msg v";
@@ -4176,6 +4199,15 @@
                 : "Disculpa, se me cayó la conexión. ¿Me lo escribes de nuevo?";
               pinta("v", reply);
               historial.push({ role: "assistant", content: reply });
+              guarda();
+              // Descuento aplicado desde el chat: los totales de la página
+              // quedaron viejos — se recarga para mostrar el precio nuevo
+              // (el chat se restaura solo desde sessionStorage).
+              if (d && d.ok && d.descuentoAplicado) {
+                pinta("v", "Voy a recargar la página en unos segundos para que veas el precio actualizado ✨");
+                guarda();
+                setTimeout(function () { window.location.reload(); }, 6000);
+              }
             })
             .catch(function () {
               pensando.remove();
@@ -4197,7 +4229,11 @@
         })
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (d) {
-            if (!d || !d.ok || descartada()) return;
+            if (!d || !d.ok) return;
+            // Si venía conversando antes de una recarga, se restaura el chat
+            // (abierto incluso si había descartado la burbuja: estaba en uso).
+            if (restaura()) { abrir(); return; }
+            if (descartada()) return;
             burbuja.hidden = false;
             // A los 40 segundos leyendo, la duda ya apareció: la burbuja
             // invita una vez. Una sola, y solo si no está conversando.
