@@ -104,6 +104,24 @@ module.exports = async function handler(req, res) {
     return j?.data || {};
   };
 
+  // ── Link de UI a un registro (Lalo 01-sep): arma las variantes de URL del
+  // registro en la interfaz de Creator para verificar cuál abre en este
+  // tenant (el patrón exacto varía; el que funcione va al env
+  // CREATOR_RECORD_URL que consume el correo de PAGADA).
+  if (String(req.query?.link || "").trim()) {
+    const id = String(req.query.link).trim();
+    const reportes = ["Cotizaciones", "ALL_DATA", "Notas_de_Venta"];
+    const variantes = {};
+    for (const rep of reportes) {
+      variantes[rep] = [
+        `https://creator.zoho.com/${owner}/${app}/#Report:${rep}?ID=${id}`,
+        `https://app.zohocreator.com/${owner}/${app}/#Report:${rep}/${id}`,
+        `https://creatorapp.zoho.com/${owner}/${app}/#Report:${rep}?ID=${id}`,
+      ];
+    }
+    return sendJson(res, 200, { ok: true, owner: config.ownerName, app: config.appLinkName, id, variantes });
+  }
+
   // ── Reportes de la app ───────────────────────────────────────────────────
   if (String(req.query?.reportes || "") === "1") {
     const r = await creatorApiFetch(`/creator/v2.1/meta/${owner}/${app}/reports`, { method: "GET" });
