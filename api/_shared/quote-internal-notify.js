@@ -212,7 +212,7 @@ async function detallePagosMP(quoteId) {
   }
 }
 
-function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta }) {
+function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId }) {
   const titulo = evento === "pagada" ? "💰 Cotización PAGADA" : "✅ Cotización ACEPTADA";
   const dealLink = dealId
     ? `<a href="${DEAL_URL_BASE}${encodeURIComponent(dealId)}">Ver el Deal en Zoho</a>`
@@ -241,11 +241,36 @@ function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId
         ? `<tr><td><b>Canal</b></td><td>🤖 Vicky (WhatsApp)</td></tr>`
         : "";
   // NDV MANUAL (Lalo 01-sep, dolor Victoria Luna): con la conversión
-  // automática apagada, el correo del pago recuerda el paso humano.
-  const filaNdv =
-    evento === "pagada" && String(process.env.NDV_CONVERTIR_POST_PAGO || "0") !== "1"
-      ? `<tr><td><b>Nota de Venta</b></td><td>📝 <b>PENDIENTE DE CONVERSIÓN MANUAL</b> — revisar/completar la Cotización en Creator y convertirla a NDV cuando esté correcta</td></tr>`
-      : "";
+  // automática apagada, el correo del pago recuerda el paso humano — y lleva
+  // el ID/link del registro en Creator para llegar en un clic (Lalo 01-sep).
+  let filaNdv = "";
+  if (evento === "pagada" && String(process.env.NDV_CONVERTIR_POST_PAGO || "0") !== "1") {
+    // (creatorId llega resuelto desde notifyQuoteEvent — releído fresco del CRM)
+    let linkCreator = "";
+    if (creatorId) {
+      try {
+        const { getCreatorConfig } = require("./zoho-creator-auth");
+        const cc = getCreatorConfig();
+        // Patrón de deep-link de Creator; ajustable sin deploy si el tenant
+        // usa otro formato (env CREATOR_RECORD_URL con {owner}/{app}/{report}/{id}).
+        const tmpl = toText(process.env.CREATOR_RECORD_URL)
+          || "https://creator.zoho.com/{owner}/{app}/#Report:{report}?ID={id}";
+        if (cc.ownerName && cc.appLinkName) {
+          linkCreator = tmpl
+            .replace("{owner}", encodeURIComponent(cc.ownerName))
+            .replace("{app}", encodeURIComponent(cc.appLinkName))
+            .replace("{report}", encodeURIComponent(cc.reportLinkName || "ALL_DATA"))
+            .replace("{id}", encodeURIComponent(creatorId));
+        }
+      } catch (_e) { /* sin config, va solo el ID */ }
+    }
+    const refCreator = creatorId
+      ? linkCreator
+        ? ` — Cotización en Creator: <a href="${linkCreator}">${creatorId}</a>`
+        : ` — Cotización en Creator: ID ${creatorId}`
+      : " — (sin registro en Creator: crearlo a mano o vía crear-ndv-desde-cot)";
+    filaNdv = `<tr><td><b>Nota de Venta</b></td><td>📝 <b>PENDIENTE DE CONVERSIÓN MANUAL</b> — revisar/completar la Cotización en Creator y convertirla a NDV cuando esté correcta${refCreator}</td></tr>`;
+  }
   return `<!DOCTYPE html><html lang="es"><body style="font-family:Segoe UI,Arial,sans-serif;color:#2d3748;">
 <h2 style="color:#0d47a1;margin:0 0 8px;">${titulo}</h2>
 <p style="margin:0 0 12px;color:#4a5568;">${intro}</p>
@@ -465,7 +490,19 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
     const subject = `[GeoVictoria] Cotización ${numero || quoteId} ${
       evento === "pagada" ? "PAGADA" : "ACEPTADA"
     } — ${empresa || "cliente"}${sufijoCanal}`;
-    const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta });
+    // ID del registro Creator para el correo (Lalo 01-sep): se relee FRESCO
+    // porque el finalize puede haberlo creado segundos antes (red de
+    // seguridad) y el quote en memoria venir de antes. Fallback ID_SO.
+    let creatorId = "";
+    try {
+      const campoNdv = toText(config.quoteNvdIdTextField) || "ID_SO";
+      creatorId = toText(quote?.[campoNdv]);
+      if (!creatorId && evento === "pagada") {
+        const fresco = await getRecordWithFields(config.quoteModule, quoteId, [campoNdv]).catch(() => null);
+        creatorId = toText(fresco?.[campoNdv]);
+      }
+    } catch (_e) { /* fila sin id */ }
+    const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId });
     // Multi-país: en cotizaciones CO la ejecutiva es Laura (no Anderson);
     // en cotizaciones MX es Yahel Segura. CL sigue con los destinatarios de
     // siempre.
