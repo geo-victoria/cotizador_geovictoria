@@ -122,10 +122,16 @@ function subformACotizacionItems(quote, config) {
     const modalidadZoho = String(row?.Modalidad || "");
     const codigo = String(row?.Codigo_Item || "").toLowerCase();
     let tipo = "modulo";
-    if (codigo === "instalacion_reloj") tipo = "servicio";
+    if (codigo === "instalacion_reloj" || codigo === "plan_anual") tipo = "servicio";
     else if (modalidadZoho === "Arriendo" || modalidadZoho === "Venta") tipo = "hardware";
+    // Marca OCULTO del subform (anualidad 01-sep): el PDF no pinta la fila.
+    let oculto = false;
+    try {
+      oculto = JSON.parse(String(row?.Metadata_Item_JSON || "null"))?.oculto === true;
+    } catch { /* sin metadata */ }
     return {
       tipo,
+      oculto,
       id: codigo,
       nombre: String(row?.Nombre_Item || ""),
       descripcion: String(row?.Descripcion_Item || ""),

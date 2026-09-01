@@ -47,6 +47,15 @@ function sendJson(res, status, payload) {
 function sanitizeItems(items, fieldMap) {
   if (!Array.isArray(items)) return [];
   return items.map((row) => ({
+    // Fila OCULTA (anualidad 01-sep): la página no la pinta, pero sigue
+    // sumando en computeTotals (viene en $0 — los totales no cambian).
+    oculto: (() => {
+      try {
+        return JSON.parse(String(row?.Metadata_Item_JSON || "null"))?.oculto === true;
+      } catch {
+        return false;
+      }
+    })(),
     nombre: toText(row?.[fieldMap.itemName]),
     cantidad: Number(row?.[fieldMap.qty] || 0),
     precioUnitarioUf: Number(row?.[fieldMap.unitUF] || 0),

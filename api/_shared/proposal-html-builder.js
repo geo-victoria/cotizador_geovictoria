@@ -102,6 +102,10 @@ function adaptarItemsVicky(items) {
   const serviciosAsoc = [];
 
   for (const it of items || []) {
+    // Ítems OCULTOS (anualidad 01-sep): siguen en el subform y en los totales
+    // del checkout, pero no se pintan (recurrentes en $0 tras anualizar —
+    // regla Lalo: "solo debe verse anualidad, en la primera fila").
+    if (it && it.oculto === true) continue;
     if (it.tipo === "modulo") {
       servicios.push({
         nombre: String(it.nombre || ""),
@@ -150,6 +154,10 @@ function adaptarItemsVicky(items) {
         cantidad: Number(it.cantidad || 1),
         zona,
         zonaTarifa,
+        // Descripción manual (si viene, GANA sobre la fija por código — el
+        // "Plan anual" de Quilacanta salió con la descripción de instalación
+        // por no respetarla acá).
+        descripcion: String(it.descripcion || "").trim(),
         codigo: String(it.id || it.codigo || "").toLowerCase(),
         precioUnit: Number(it.precioUnit || it.precioUnitarioUF || 0),
         subtotalUF: Number(it.subtotalUF || 0),
@@ -408,6 +416,22 @@ function buildProposalHtml({
   // otros equipos/accesorios en arriendo), aunque sean recurrentes. Regla
   // comercial. El desglose es la única fuente del descuento.
   const optRec = descRecPct > 0 ? { factorLinea: factorRec, descLineaPct: descRecPct } : {};
+  // PLAN ANUAL SIEMPRE PRIMERO (Lalo 01-sep): cuando la cotización está
+  // anualizada, la fila del pago anual encabeza la tabla (los recurrentes
+  // vienen ocultos, así que esta ES la fila principal).
+  serviciosAsoc
+    .filter((s) => s.codigo === "plan_anual")
+    .forEach((s) =>
+      pushFila(
+        s.nombre,
+        "Pago único",
+        descManualValida(s.descripcion) || "Los 12 meses del servicio pagados por adelantado. Sin mensualidades durante la vigencia anual.",
+        s.precioUnit,
+        s.cantidad,
+        s.subtotalUF,
+        false,
+      ),
+    );
   servicios.forEach((s) =>
     pushFila(nombreConTramo(s), "Pago mensual", descServicio(s), s.precioUnit, s.cantidad, s.subtotalUF, true, optRec),
   );
@@ -434,13 +458,17 @@ function buildProposalHtml({
     pushFila(a.nombre, rec ? "Pago mensual" : "Pago único", descManualValida(a.descripcion) || descEquipo(a), a.precioUnit, a.cantidad, bruto, rec, opts);
   });
   serviciosAsoc.forEach((s) => {
+    if (s.codigo === "plan_anual") return; // ya se pintó primero
     const nombre = s.zona ? `${s.nombre} (${s.zona})` : s.nombre;
     // El envío puede venir como "servicio" en la emisión (caso Supermercado
     // Belén/COT385 06-ago): con la descripción fija de instalación el PDF
-    // decía "Instalación en terreno..." en la línea del despacho.
-    const descServicioAsoc = /env[ií]o|despacho/i.test(`${s.codigo || ""} ${s.nombre || ""}`)
-      ? DESC_ENVIO_RELOJ
-      : DESC_SERVICIO_ASOC;
+    // decía "Instalación en terreno..." en la línea del despacho. La
+    // descripción MANUAL del ítem (si viene) gana sobre ambas fijas.
+    const descServicioAsoc =
+      descManualValida(s.descripcion) ||
+      (/env[ií]o|despacho/i.test(`${s.codigo || ""} ${s.nombre || ""}`)
+        ? DESC_ENVIO_RELOJ
+        : DESC_SERVICIO_ASOC);
     // Descuento de instalación aplica solo a items reconocidos como instalación
     // y según la zona tarifa (RM vs regiones).
     const esInstalacion = CODIGOS_INSTALACION_PDF.has(String(s.codigo || ""));

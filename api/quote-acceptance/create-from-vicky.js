@@ -937,6 +937,10 @@ const HARDWARE_ID_TO_DESCRIPCION = {
 // - hardware: modelo real desde el diccionario (vacío si no está mapeado).
 // - módulo:   vacío (el PDF ya muestra Nombre_Item).
 function resolveDescripcionItem(item) {
+  // Descripción MANUAL del ítem (plan anual, líneas del editor): si viene,
+  // gana — se persiste en Descripcion_Item y el PDF la respeta (01-sep).
+  const manual = String(item.descripcion || "").trim();
+  if (manual) return manual;
   const tipo = String(item.tipo || "").toLowerCase();
   if (tipo !== "hardware") return "";
   const id = String(item.id || "").toLowerCase();
@@ -1024,6 +1028,11 @@ function buildSubformItems(items, ufActual, config) {
     }
     if (zonaTarifa && config?.quoteItemZonaTarifaField) {
       row[config.quoteItemZonaTarifaField] = zonaTarifa;
+    }
+    // Ítem OCULTO (anualidad 01-sep): sigue en el subform y suma a los
+    // totales (viene en $0), pero PDF y aceptación no lo pintan.
+    if (item.oculto === true) {
+      row.Metadata_Item_JSON = JSON.stringify({ oculto: true });
     }
     return row;
   });

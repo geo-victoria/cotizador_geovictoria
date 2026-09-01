@@ -3048,8 +3048,11 @@
             );
           }
 
-          const itemRowsHtml = rows.length
-            ? rows.map(itemRowHtml).join("")
+          // Filas OCULTAS (anualidad 01-sep): siguen en los totales (vienen
+          // en $0) pero no se pintan — regla "solo se ve la fila anual".
+          const rowsVisibles = rows.filter(function (r) { return !(r && r.oculto === true); });
+          const itemRowsHtml = rowsVisibles.length
+            ? rowsVisibles.map(itemRowHtml).join("")
             : '<tr><td colspan="' + (esCO || esMX || esPE ? 6 : 8) + '">Sin datos.</td></tr>';
 
           // Valor mensual: el servidor ya entrega el recurrente NETO (con el
