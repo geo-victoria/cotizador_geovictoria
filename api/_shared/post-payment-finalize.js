@@ -179,8 +179,14 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
   // Va al final y siempre en best-effort: el onboarding y la notificación ya
   // salieron, y si Creator falla la nota se puede convertir después sin que el
   // cliente note nada.
+  // APAGADO POR DEFECTO (Lalo 01-sep, dolor Victoria Luna): la conversión
+  // automática producía Notas de Venta nacidas de cotizaciones cojas (líneas
+  // de envío/hardware fuera de la tabla de cobro) y la NDV no se puede editar
+  // — había que anular y crear de cero. Mientras la data no sea confiable, el
+  // EQUIPO edita la Cotización en Creator y la convierte a mano cuando está
+  // buena. Reencender sin deploy: env NDV_CONVERTIR_POST_PAGO=1.
   let notaDeVenta = { status: "skipped" };
-  if (config.ndvHandoffEnabled && String(process.env.NDV_CONVERTIR_POST_PAGO || "1") === "1") {
+  if (config.ndvHandoffEnabled && String(process.env.NDV_CONVERTIR_POST_PAGO || "0") === "1") {
     const cotCreatorId = toText(ndv?.ndvId) || toText(quote?.[config.quoteNvdIdTextField]);
     if (!cotCreatorId) {
       notaDeVenta = { status: "skipped", reason: "sin cotización en Creator" };

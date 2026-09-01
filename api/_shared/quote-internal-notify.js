@@ -240,6 +240,12 @@ function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId
       : canal === "vicky"
         ? `<tr><td><b>Canal</b></td><td>🤖 Vicky (WhatsApp)</td></tr>`
         : "";
+  // NDV MANUAL (Lalo 01-sep, dolor Victoria Luna): con la conversión
+  // automática apagada, el correo del pago recuerda el paso humano.
+  const filaNdv =
+    evento === "pagada" && String(process.env.NDV_CONVERTIR_POST_PAGO || "0") !== "1"
+      ? `<tr><td><b>Nota de Venta</b></td><td>📝 <b>PENDIENTE DE CONVERSIÓN MANUAL</b> — revisar/completar la Cotización en Creator y convertirla a NDV cuando esté correcta</td></tr>`
+      : "";
   return `<!DOCTYPE html><html lang="es"><body style="font-family:Segoe UI,Arial,sans-serif;color:#2d3748;">
 <h2 style="color:#0d47a1;margin:0 0 8px;">${titulo}</h2>
 <p style="margin:0 0 12px;color:#4a5568;">${intro}</p>
@@ -248,6 +254,7 @@ function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId
   <tr><td><b>Cotización</b></td><td>${numero || "—"}</td></tr>
   ${filaCanal}
   ${filaVenta}
+  ${filaNdv}
   <tr><td><b>Contacto</b></td><td>${clientEmail || "—"}</td></tr>
   <tr><td><b>RUT</b></td><td>${rut || "—"}</td></tr>
   ${filaMonto}
