@@ -80,10 +80,11 @@ module.exports = async function handler(req, res) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        // COQL exige paréntesis explícitos con más de 2 condiciones.
         select_query:
           `select id, Numero_Cotizacion, ${config.contactEmailField} from ${config.quoteModule} ` +
-          `where Created_Time > '${desdeIso}' and Intervenci_n_Humana = '100% Vicky' ` +
-          `and ${config.quoteStatusField} = 'Enviada' and ${config.contactEmailField} is not null ` +
+          `where ((Created_Time > '${desdeIso}' and Intervenci_n_Humana = '100% Vicky') ` +
+          `and (${config.quoteStatusField} = 'Enviada' and ${config.contactEmailField} is not null)) ` +
           `order by Created_Time desc limit 50`,
       }),
     });
