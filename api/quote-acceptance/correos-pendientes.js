@@ -75,7 +75,7 @@ module.exports = async function handler(req, res) {
     const desde = new Date(Date.now() - horas * 3600 * 1000);
     // Offset fijo -04:00: COQL exige datetime con zona; una hora de holgura
     // por el cambio de hora chileno no afecta (la ventana es amplia).
-    const desdeIso = desde.toISOString().replace(/\.\d{3}Z$/, "-00:00");
+    const desdeIso = desde.toISOString().replace(/\.\d{3}Z$/, "+00:00");
     const coql = await zohoApiFetch(`/crm/v3/coql`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
