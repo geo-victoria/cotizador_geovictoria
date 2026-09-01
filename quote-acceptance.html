@@ -2328,11 +2328,11 @@
       }
 
       function setWhatsappVisibility() {
-        if (!supportState.whatsappLink) {
-          waPanel.classList.add("hidden");
-          return;
-        }
-        waPanel.classList.remove("hidden");
+        // FAB de WhatsApp RETIRADO (Lalo 01-sep): con el widget de Vicky en la
+        // página, dos burbujas se peleaban la esquina. El link de WhatsApp del
+        // ejecutivo SIGUE vivo donde importa (overlay de transferencia para el
+        // comprobante) — esto solo entierra el flotante.
+        waPanel.classList.add("hidden");
       }
 
       function getCodeRemainingSeconds() {
