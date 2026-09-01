@@ -16,6 +16,10 @@
       "memory": 1024,
       "maxDuration": 60
     },
+    "api/quote-acceptance/correos-pendientes.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
     "api/quote-acceptance/create-from-vicky.js": {
       "memory": 1536,
       "maxDuration": 300
@@ -105,6 +109,10 @@
     },
     {
       "path": "/api/quote-acceptance/reconcile-crm",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/quote-acceptance/correos-pendientes",
       "schedule": "*/15 * * * *"
     }
   ],
