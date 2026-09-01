@@ -254,7 +254,7 @@ function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId
         // Patrón de deep-link de Creator; ajustable sin deploy si el tenant
         // usa otro formato (env CREATOR_RECORD_URL con {owner}/{app}/{report}/{id}).
         const tmpl = toText(process.env.CREATOR_RECORD_URL)
-          || "https://creator.zoho.com/{owner}/{app}/#Report:{report}?ID={id}";
+          || "https://creatorapp.zoho.com/{owner}/{app}/#Report:{report}?ID={id}"; // patrón VERIFICADO por Lalo 01-sep (ALL_DATA filtra al registro; el reporte Cotizaciones ignora ?ID)
         if (cc.ownerName && cc.appLinkName) {
           linkCreator = tmpl
             .replace("{owner}", encodeURIComponent(cc.ownerName))
