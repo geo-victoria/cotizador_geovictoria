@@ -91,6 +91,41 @@ async function emitirCotizacionEnCreator({
     });
 
     console.log(`[ndv-emitir:${motivo}] cotización en Creator id=${ndvId} (${Date.now() - inicio}ms)`);
+
+    // GUARDRAIL DE COMPLETITUD (Lalo 01-sep, dolor Victoria Luna): si alguna
+    // línea quedó FUERA del registro de Creator (sin artículo de Books, sin
+    // precio utilizable, o la tabla cayó al fallback Valor=1), se deja NOTA
+    // visible en la cotización de Zoho para que el equipo sepa exactamente
+    // QUÉ completar antes de convertirla a Nota de Venta (la conversión
+    // automática quedó apagada ese mismo día). Best-effort.
+    try {
+      const diag = resultado?.chargeTables?.diagnostico || {};
+      const fuera = [
+        ...(diag.lineasSinArticulo || []).map((n) => `${n} (sin artículo en el catálogo de Creator)`),
+        ...(diag.lineasSinPrecio || []).map((n) => `${n} (sin precio utilizable — p. ej. fila en $0/oculta)`),
+      ];
+      if (diag.fallback || fuera.length > 0) {
+        const { createRecord } = require("./zoho-crm");
+        await createRecord("Notes", {
+          Note_Title: "⚠️ Cotización en Creator INCOMPLETA — completar antes de convertir a NDV",
+          Note_Content:
+            `El registro de esta cotización en Creator (id ${ndvId}) quedó incompleto:\n` +
+            (diag.fallback
+              ? `· La tabla de cobro cayó al FALLBACK (Valor=1) — NINGUNA línea con precio utilizable llegó a Creator. NO convertir sin corregirla.\n`
+              : "") +
+            (fuera.length ? fuera.map((f) => `· Fuera del registro: ${f}`).join("\n") + "\n" : "") +
+            `Antes de convertir a Nota de Venta, editar la Cotización en Creator y completar estas líneas a mano. ` +
+            `(Guardrail automático 01-sep — la conversión automática está apagada justamente por esto.)`,
+          Parent_Id: quoteId,
+          $se_module: config.quoteModule,
+        }).catch(() => {});
+        console.warn(
+          `[ndv-emitir:${motivo}] Creator INCOMPLETO quote=${quoteId}: fallback=${Boolean(diag.fallback)} fuera=${fuera.length}`,
+        );
+      }
+    } catch {
+      /* best-effort */
+    }
     return { status: "ok", ndvId, error: "" };
   } catch (error) {
     const detalle = toText(error?.message || error).slice(0, 300);
