@@ -4,6 +4,8 @@ const {
   mesesDescuentoNormalizados,
   textoVigenciaDescuento,
   textoVigenciaCorto,
+  textoVigenciaDescuentoAnual,
+  textoVigenciaCortoAnual,
 } = require("../_shared/proposal-constants");
 const { getRecord, getRecordWithFields, getUserById, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
@@ -475,12 +477,18 @@ export default async function handler(req, res) {
       // solo en las líneas de hardware) con buckets pago inicial /
       // mensualidad (el front CO usa solo `co`). México: bloque `mx` (MXN,
       // IVA 16% por línea afecta, buckets pago inicial / mensualidad).
-      descuento: {
-        meses: mesesDescuento,
-        indefinido: mesesDescuento === 0,
-        texto: textoVigenciaDescuento(mesesDescuento),
-        textoCorto: textoVigenciaCorto(mesesDescuento),
-      },
+      // Cotización ANUALIZADA (fila plan_anual; Lalo 02-sep): el descuento
+      // cubre los 12 meses anticipados — jamás "plan mensual sin vencimiento".
+      descuento: (() => {
+        const esAnual = items.some((i) => String(i?.codigo || "").toLowerCase() === "plan_anual");
+        return {
+          meses: mesesDescuento,
+          indefinido: mesesDescuento === 0,
+          anual: esAnual,
+          texto: esAnual ? textoVigenciaDescuentoAnual() : textoVigenciaDescuento(mesesDescuento),
+          textoCorto: esAnual ? textoVigenciaCortoAnual() : textoVigenciaCorto(mesesDescuento),
+        };
+      })(),
       totals: {
         ...computeTotals(items, descuentos),
         ...(pais === "co" ? { co: computeTotalsCO(items) } : {}),

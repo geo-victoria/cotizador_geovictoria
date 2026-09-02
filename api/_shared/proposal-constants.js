@@ -165,6 +165,17 @@ function textoVigenciaDescuento(meses) {
   return `El descuento sobre el plan mensual aplica durante los primeros ${n} meses; desde el mes ${n + 1} el plan vuelve a su tarifa normal. El descuento de instalación, por ser cobro único, no tiene esta limitación.`;
 }
 
+/** Cotización ANUALIZADA (Lalo 02-sep, caso Patricio/COT1116): el descuento
+ * no es "sobre el plan mensual" ni "sin vencimiento" — está incluido en el
+ * pago anual y cubre exactamente los 12 meses pagados por adelantado. */
+function textoVigenciaDescuentoAnual() {
+  return "El descuento está incluido en el pago anual y cubre los 12 meses pagados por adelantado. El descuento de instalación, por ser cobro único, tampoco tiene limitación.";
+}
+
+function textoVigenciaCortoAnual() {
+  return "aplicado a los 12 meses de la anualidad";
+}
+
 /** Versión corta para mensajes de chat/WhatsApp. */
 function textoVigenciaCorto(meses) {
   const n = mesesDescuentoNormalizados(meses);
@@ -188,4 +199,6 @@ module.exports = {
   mesesDescuentoNormalizados,
   textoVigenciaDescuento,
   textoVigenciaCorto,
+  textoVigenciaDescuentoAnual,
+  textoVigenciaCortoAnual,
 };

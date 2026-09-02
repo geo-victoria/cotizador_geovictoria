@@ -2687,7 +2687,16 @@
         ).join("");
       }
 
+      // Cotización ANUALIZADA (fila plan_anual; Lalo 02-sep): la fila del pago
+      // anual no es un "Equipo en Venta", los rótulos de pago no dicen "1er
+      // mes" y el descuento cubre los 12 meses. Se fija al pintar los ítems.
+      var ES_ANUAL = false;
+      function esFilaPlanAnual(row) {
+        return String((row && row.codigo) || "").toLowerCase() === "plan_anual";
+      }
+
       function inferItemType(row) {
+        if (esFilaPlanAnual(row)) return "Plan";
         const modalidad = String(row?.modalidad || "").toLowerCase();
         if (modalidad === "fijo" || modalidad === "por usuario") return "Servicio";
         if (modalidad === "venta" || modalidad === "arriendo") return "Equipo";
@@ -2695,6 +2704,7 @@
       }
 
       function normalizeModalidadLabel(row) {
+        if (esFilaPlanAnual(row)) return "Anual";
         const modalidad = String(row?.modalidad || "");
         if (modalidad === "fijo" || modalidad === "Fijo") return "Mensual";
         if (modalidad === "por usuario" || modalidad === "Por usuario") return "Mensual";
@@ -3051,6 +3061,7 @@
           // Filas OCULTAS (anualidad 01-sep): siguen en los totales (vienen
           // en $0) pero no se pintan — regla "solo se ve la fila anual".
           const rowsVisibles = rows.filter(function (r) { return !(r && r.oculto === true); });
+          ES_ANUAL = rows.some(esFilaPlanAnual);
           const itemRowsHtml = rowsVisibles.length
             ? rowsVisibles.map(itemRowHtml).join("")
             : '<tr><td colspan="' + (esCO || esMX || esPE ? 6 : 8) + '">Sin datos.</td></tr>';
@@ -3178,7 +3189,9 @@
             fmtUF(totals.subtotalUf) + "</td><td>" + fmtCLP(totals.subtotalClp) + "</td></tr>" +
             '<tr class="cost-row-sub"><td colspan="6">IVA (19%)</td><td>' +
             fmtUF(totals.ivaUf) + "</td><td>" + fmtCLP(totals.ivaClp) + "</td></tr>" +
-            '<tr class="cost-row-total"><td colspan="6">Pago inicial — a pagar ahora (incluye 1er mes)</td><td>' +
+            '<tr class="cost-row-total"><td colspan="6">' +
+            (ES_ANUAL ? "Pago anual — a pagar ahora (12 meses anticipados)" : "Pago inicial — a pagar ahora (incluye 1er mes)") +
+            "</td><td>" +
             fmtUF(totals.totalUf) + "</td><td>" + fmtCLP(totals.totalClp) + "</td></tr>";
           if (recClp > 0) {
             const mensualUfCell =
@@ -3205,7 +3218,7 @@
           const descAplicados = [];
           if (descInstRMPct > 0) descAplicados.push(descInstRMPct + "% en instalaci&oacute;n (Regi&oacute;n Metropolitana)");
           if (descInstRegionPct > 0) descAplicados.push(descInstRegionPct + "% en instalaci&oacute;n (regiones)");
-          if (descRecPct > 0) descAplicados.push(descRecPct + "% en el plan mensual (" + vigenciaDescuentoCorto() + ")");
+          if (descRecPct > 0) descAplicados.push(descRecPct + (ES_ANUAL ? "% en la anualidad (" : "% en el plan mensual (") + vigenciaDescuentoCorto() + ")");
           if (descAplicados.length) {
             totalsRowsHtml +=
               '<tr><td colspan="8" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
@@ -3278,7 +3291,7 @@
             // anunciar — es un pago total único.
             chHtml =
               '<div class="ch-item"><span>' +
-              (recClp > 0 ? 'Pago inicial — a pagar ahora (incluye 1er mes)' : 'Pago total — a pagar ahora (sin mensualidad)') +
+              (recClp > 0 ? 'Pago inicial — a pagar ahora (incluye 1er mes)' : (ES_ANUAL ? 'Pago anual — a pagar ahora (12 meses anticipados)' : 'Pago total — a pagar ahora (sin mensualidad)')) +
               '</span><strong>' +
               fmtCLP(totals.totalClp) + "</strong></div>";
             if (recClp > 0) {

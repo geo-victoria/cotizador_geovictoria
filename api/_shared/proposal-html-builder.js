@@ -33,6 +33,7 @@ const {
   LOGO_ORIGINAL_SVG,
   PROPOSAL_TYC_ARRIENDO,
   textoVigenciaDescuento,
+  textoVigenciaDescuentoAnual,
 } = require("./proposal-constants");
 
 // Ventana de validez de la cotización (días).
@@ -343,6 +344,11 @@ function buildProposalHtml({
   const descRecPct = clampPctLocal(descuentos?.recurrentePct, 40);
   const descInstRMPct = clampPctLocal(descuentos?.instalacionRMPct, 50);
   const descInstRegionPct = clampPctLocal(descuentos?.instalacionRegionPct, 50);
+  // Cotización ANUALIZADA (fila plan_anual; Lalo 02-sep, caso Patricio): los
+  // rótulos de pago no hablan de "1er mes" y el descuento cubre los 12 meses.
+  const esAnual = (cotizacion.items || []).some(
+    (i) => String((i && (i.codigo || i.id)) || "").toLowerCase() === "plan_anual",
+  );
   const factorRec = 1 - descRecPct / 100;
   const factorInstRM = 1 - descInstRMPct / 100;
   const factorInstRegion = 1 - descInstRegionPct / 100;
@@ -593,9 +599,11 @@ function buildProposalHtml({
   }
   const ORDEN_CONCEPTOS = ["equipos", "instalación", "envío", "servicios"];
   const conceptosUnico = ORDEN_CONCEPTOS.filter((c) => conceptosSet.has(c));
-  const etiquetaUnico = conceptosUnico.length
-    ? `Pago único (${conceptosUnico.join(", ")})`
-    : "Pago único";
+  const etiquetaUnico = esAnual
+    ? "Plan anual (12 meses anticipados)"
+    : conceptosUnico.length
+      ? `Pago único (${conceptosUnico.join(", ")})`
+      : "Pago único";
 
   // Etiqueta dinámica del cobro mensual (recurrente): lista SOLO lo que el cliente
   // paga mes a mes — el software (suscripción de los módulos) y el arriendo del
@@ -617,7 +625,7 @@ function buildProposalHtml({
 
   let totHtml = "";
   if (grpUni || grpRec) {
-    totHtml += `<div class="tot-h">Pago inicial — al aceptar</div>`;
+    totHtml += `<div class="tot-h">${esAnual ? "Pago anual — al aceptar" : "Pago inicial — al aceptar"}</div>`;
     if (grpUni) {
       totHtml += `<div class="tr"><span>${etiquetaUnico}</span><span>${formatCLP(uniNetoCLP)}<span class="uf-ref">${formatUF(uniUF)} UF</span></span></div>`;
     }
@@ -645,7 +653,7 @@ function buildProposalHtml({
   // items (arriba). En los totales no se repiten: solo el precio final. Se mantiene
   // la condición temporal del descuento del plan como disclosure (sin repetir %).
   if (descRecPct > 0) {
-    totHtml += `<div style="margin-top:6px;font-size:8px;line-height:1.4;color:#646464">${escapeHtml(textoVigenciaDescuento(descuentos?.mesesPlan))}</div>`;
+    totHtml += `<div style="margin-top:6px;font-size:8px;line-height:1.4;color:#646464">${escapeHtml(esAnual ? textoVigenciaDescuentoAnual() : textoVigenciaDescuento(descuentos?.mesesPlan))}</div>`;
   }
   // Condición discursiva (ej. "paga en 24h"). No tiene enforcement técnico.
   if (condicionDiscursiva) {
