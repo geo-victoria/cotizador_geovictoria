@@ -20,8 +20,36 @@
  * caminos MP no pasan por acá, así que no hay doble correo.
  */
 const { getRecord, toText } = require("../_shared/zoho-crm");
+const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { notifyQuoteEvent } = require("../_shared/quote-internal-notify");
+
+/**
+ * ¿Ya salió el correo de PAGADA de esta cotización? (02-sep, incidente en
+ * vivo: COT1142 mandó SIETE avisos idénticos en 11 minutos.) El agente deja
+ * una marca `notify_pagada_pend_<quoteId>` cuando no logra confirmar la
+ * entrega y un cron la reintenta cada ~2 min; si la llamada manda el correo
+ * pero la respuesta no vuelve a tiempo, la marca nunca se borra y el aviso se
+ * repite para siempre. Este endpoint tiene que ser IDEMPOTENTE por sí mismo:
+ * la related list Emails de la cotización es el candado, igual que en el
+ * barrido de correos-pendientes. Ante un fallo de lectura NO se bloquea el
+ * envío (mejor un duplicado que perder el aviso de una venta).
+ */
+async function yaSalioCorreoPagada(quoteModule, quoteId) {
+  try {
+    const r = await zohoApiFetch(
+      `/crm/v3/${encodeURIComponent(quoteModule)}/${encodeURIComponent(quoteId)}/Emails`,
+      { method: "GET" },
+    );
+    if (r.status === 204) return false;
+    if (!r.ok) return false;
+    const data = await r.json().catch(() => ({}));
+    const emails = Array.isArray(data?.Emails) ? data.Emails : [];
+    return emails.some((e) => /\bPAGADA\b/i.test(String(e?.subject || "")));
+  } catch {
+    return false;
+  }
+}
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -46,6 +74,16 @@ module.exports = async function handler(req, res) {
     const config = getAcceptanceConfig(req);
     const quote = await getRecord(config.quoteModule, quoteId);
     if (!quote) return sendJson(res, 404, { ok: false, error: `cotización ${quoteId} no encontrada` });
+    // El aviso de PAGADA sale UNA vez por cotización: si ya está en la related
+    // list, se responde ok (para que el reintento del agente borre su marca)
+    // sin volver a mandarlo.
+    if (!/^1|true$/i.test(toText(req?.query?.forzar))) {
+      const yaSalio = await yaSalioCorreoPagada(config.quoteModule, quoteId);
+      if (yaSalio) {
+        console.log(`[notify-paid] correo PAGADA ya enviado antes, se omite quote=${quoteId}`);
+        return sendJson(res, 200, { ok: true, quoteId, omitido: "ya_enviado", numero: toText(quote?.Numero_Cotizacion) });
+      }
+    }
     // notifyQuoteEvent es best-effort por diseño (nunca lanza): el resultado
     // real queda en los logs [quote-notify]. Acá solo confirmamos el disparo.
     await notifyQuoteEvent({ config, quote, quoteId, evento: "pagada" });
