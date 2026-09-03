@@ -243,7 +243,9 @@ async function convertLead(leadId, dealData, existingIds = {}) {
 // marketing) y la emisión sigue con el camino de siempre para él.
 const OWNERS_BOT_LEADS = new Set([
   "3525045000484500876", // usuario Vicky
-  "3525045000000211283", // Eddyluz (interina CL)
+  // Eddyluz (3525045000000211283) SALIÓ el 03-sep por orden de Lalo: "ella no
+  // es interina, ni Anderson". Un lead suyo es gestión humana y no se adopta,
+  // igual que el de cualquier otra ejecutiva.
   "3525045000203758005", // Gordillo (interino CO)
   "3525045000308323003", // Yahel (interina MX)
 ]);
@@ -1823,8 +1825,12 @@ module.exports = async function handler(req, res) {
         // queda ESPERANDO en Vicky (el cron de traspaso lo sorteará con los
         // relojes); un dueño humano REAL (herencia, ptv, sorteo previo) se
         // respeta y el correo/PDF lo presentan a él.
+        // EJEC_OWNER_ID (Eddyluz) SALIÓ de esta lista el 03-sep por orden de
+        // Lalo: "ella no es interina, ni Anderson". Venía del relevo del
+        // 27-jul, cuando todo lo nuevo nacía a su nombre; hace rato dejó de
+        // ser cierto. Con ella acá, un deal suyo quedaba "esperando en Vicky"
+        // y el reloj de traspaso podía sorteárselo a otro.
         const DUENOS_INTERINOS = new Set([
-          EJEC_OWNER_ID,
           "3525045000484500876", // Vicky
           "3525045000000200013", // GeoVictoria Admin (info@) — dueño fantasma
           // de leads del formulario; no es gestión humana (Lalo 07-ago).
@@ -1902,11 +1908,10 @@ module.exports = async function handler(req, res) {
       // regla no la disparan). Best-effort.
       // (Eddyluz cuenta como dueña real solo si el canal admin la ancló —
       // misma excepción del bloque de arriba.)
-      if (
-        toText(quoteOwner.id) &&
-        quoteOwner.id !== VICKY_BOT_OWNER.id &&
-        (quoteOwner.id !== EJEC_OWNER_ID || ownerManualId === EJEC_OWNER_ID)
-      ) {
+      // La excepción de Eddyluz murió el 03-sep (orden de Lalo): su cartera
+      // se hereda como la de cualquier ejecutiva, venga del canal que venga.
+      // Solo el usuario BOT sigue sin heredar.
+      if (toText(quoteOwner.id) && quoteOwner.id !== VICKY_BOT_OWNER.id) {
         const seguirDueno = async (mod, id) => {
           try {
             await zohoApiFetch(`/crm/v3/${mod}`, {
