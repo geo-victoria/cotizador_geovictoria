@@ -8,6 +8,7 @@ const {
   textoVigenciaCortoAnual,
 } = require("../_shared/proposal-constants");
 const { getRecord, getRecordWithFields, getUserById, toText } = require("../_shared/zoho-crm");
+const { getQuoteConRespaldo } = require("../_shared/respaldo-cotizacion");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { getMercadoPagoConfig } = require("../_shared/mercadopago-config");
 const { signVerificationPayload } = require("../_shared/verification-token");
@@ -310,7 +311,10 @@ export default async function handler(req, res) {
 
     const config = getAcceptanceConfig(req);
     const payload = verifyAcceptanceToken(token);
-    const quote = await getRecord(config.quoteModule, payload.quoteId);
+    // Con Zoho caído se sirve la copia guardada en vez de dejar al cliente con
+    // "No se pudo cargar la cotización" (pasó 6 veces entre el 31-ago y el
+    // 3-sep). Ver api/_shared/respaldo-cotizacion.js.
+    const { quote, degradado } = await getQuoteConRespaldo(config.quoteModule, payload.quoteId);
     const status = toText(quote?.[config.quoteStatusField]);
     const isAcceptedLocked = /Aceptada/i.test(status);
     const acceptedAt = toText(quote?.[config.quoteAcceptanceAtField]);
@@ -410,6 +414,10 @@ export default async function handler(req, res) {
 
     sendJson(res, 200, {
       success: true,
+      // true = Zoho no respondió y la cotización viene del respaldo. El
+      // cliente ve su cotización igual; queda expuesto para poder medir cuánto
+      // pasa sin tener que leer los registros.
+      degradado,
       // "co" = Colombia (montos COP finales, sin IVA); "mx" = México (MXN,
       // IVA 16%); "cl" = Chile (sin cambios).
       pais,

@@ -12,6 +12,7 @@
  */
 
 const { getRecord, getRecordWithFields, toText } = require("./zoho-crm");
+const { getQuoteConRespaldo } = require("./respaldo-cotizacion");
 const { getAcceptanceConfig } = require("./quote-acceptance-config");
 const { getMercadoPagoConfig, getMercadoPagoConfigForQuoteCO, getMercadoPagoConfigForQuotePE } = require("./mercadopago-config");
 const { verifyVerificationToken, normalizeEmail } = require("./verification-token");
@@ -64,7 +65,10 @@ async function resolvePaymentSession(req, token) {
     throw new Error("Token de pago sin cotizacion.");
   }
 
-  const quote = await getRecord(acceptanceConfig.quoteModule, quoteId);
+  // Con Zoho caído se sirve la copia guardada en vez de tumbar el estado de
+  // pago (21 fallos entre el 27-ago y el 2-sep dejaron a clientes sin poder
+  // pagar). Ver api/_shared/respaldo-cotizacion.js.
+  const { quote, degradado } = await getQuoteConRespaldo(acceptanceConfig.quoteModule, quoteId);
   if (!quote) {
     throw new Error("No se encontro la cotizacion.");
   }
@@ -133,6 +137,8 @@ async function resolvePaymentSession(req, token) {
     quoteName: toText(quote?.Name),
     amounts,
     token,
+    // true = el dato viene del respaldo porque Zoho no respondió.
+    degradado,
   };
 }
 
