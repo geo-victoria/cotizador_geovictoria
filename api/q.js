@@ -163,8 +163,20 @@ module.exports = async function handler(req, res) {
     const quote = Array.isArray(payload?.data) ? payload.data[0] : null;
     const url = toText(quote && quote.URL_Aceptacion_Web);
     if (!url) {
-      // La cotización existe pero no tiene link de aceptación: es un problema
-      // de datos nuestro, no una caída. No hay a dónde mandar al cliente.
+      // La cotización existe pero todavía no tiene link de aceptación. Ese
+      // campo NO se escribe al crear la cotización: va en una actualización
+      // posterior, así que hay una ventana en que existe sin destino. Si la
+      // cotización es RECIÉN nacida, esto es una carrera y se resuelve sola en
+      // segundos — tratarla como "no existe" sería mentirle al cliente. Si ya
+      // es vieja, es un problema de datos de verdad y ahí sí 404.
+      const nacida = Date.parse(toText(quote && quote.Created_Time));
+      const recien = Number.isFinite(nacida) && Date.now() - nacida < 30 * 60 * 1000;
+      if (recien) {
+        console.warn(`[q] ${quoteId} sin URL de aceptación todavía (emitida hace poco) — se pide reintentar`);
+        paginaCaida(res);
+        return;
+      }
+      console.error(`[q] ${quoteId} existe pero no tiene URL de aceptación`);
       res.statusCode = 404;
       res.end("Not found");
       return;
