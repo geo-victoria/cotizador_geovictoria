@@ -2819,9 +2819,21 @@
       }
 
       function aplicarVigenciaDescuento(info) {
+        var nodos = document.querySelectorAll("[data-vigencia-descuento]");
+        // SIN DESCUENTO NO HAY CLÁUSULA DE VIGENCIA (04-sep). Estas dos
+        // cláusulas están escritas en el HTML y solo se REEMPLAZABAN cuando el
+        // backend mandaba una vigencia distinta — nunca se ocultaban. Efecto:
+        // una cotización a precio de lista igual le prometía al cliente "el
+        // descuento aplica los primeros 6 meses", hablando de un descuento que
+        // nadie le dio. El backend ahora dice si hay descuento del plan; si no
+        // lo hay, la cláusula desaparece. Backend viejo (sin `aplica`) → se
+        // comporta como antes.
+        if (info && info.aplica === false) {
+          for (var j = 0; j < nodos.length; j++) nodos[j].style.display = "none";
+          return;
+        }
         VIGENCIA_DESCUENTO = info && info.texto ? info : null;
         if (!VIGENCIA_DESCUENTO) return;
-        var nodos = document.querySelectorAll("[data-vigencia-descuento]");
         for (var i = 0; i < nodos.length; i++) {
           var extra = nodos[i].getAttribute("data-vigencia-descuento") === "con-recalculo" ? RECALCULO_USUARIOS : "";
           nodos[i].textContent = VIGENCIA_DESCUENTO.texto + extra;

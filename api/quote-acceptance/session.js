@@ -485,6 +485,11 @@ export default async function handler(req, res) {
           meses: mesesDescuento,
           indefinido: mesesDescuento === 0,
           anual: esAnual,
+          // ¿Hay descuento del plan que vencer? (04-sep) Sin él, la cláusula
+          // de vigencia no tiene objeto: la página mostraba "el descuento
+          // aplica los primeros 6 meses" en cotizaciones a precio de lista,
+          // que confunde y hace pensar en un descuento que nadie dio.
+          aplica: Number(descuentos.recurrentePct || 0) > 0,
           texto: esAnual ? textoVigenciaDescuentoAnual() : textoVigenciaDescuento(mesesDescuento),
           textoCorto: esAnual ? textoVigenciaCortoAnual() : textoVigenciaCorto(mesesDescuento),
         };
