@@ -16,10 +16,14 @@ const crypto = require("crypto");
 
 const VENTANA_MS = 30 * 60 * 1000;
 
+// OJO: vic_kv NO vive en el Supabase de los PDF — ver api/_shared/kv-supabase.js.
+// Estos candados son CRUZADOS con el agente (él escribe la reserva del deal,
+// nosotros la leemos antes de crear): tienen que mirar SU base, no la nuestra.
+const { kvSupabase } = require("./kv-supabase");
+
 function supaEnv() {
-  const url = String(process.env.SUPABASE_URL || "").trim();
-  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-  return url && key ? { url, key } : null;
+  const c = kvSupabase();
+  return c ? { url: c.url, key: c.key } : null;
 }
 
 function claveIdempotencia(body) {

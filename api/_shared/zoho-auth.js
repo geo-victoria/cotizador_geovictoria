@@ -75,10 +75,11 @@ function canReuseToken() {
 const KV_TOKEN = "zoho_access_token_cotizador";
 const KV_LOCK = "zoho_token_lock_cotizador";
 
+// OJO: vic_kv NO vive en el Supabase de los PDF — ver api/_shared/kv-supabase.js.
+const { kvSupabase } = require("./kv-supabase");
+
 function supaConfig() {
-  const url = toNonEmptyString(process.env.SUPABASE_URL).replace(/\/$/, "");
-  const key = toNonEmptyString(process.env.SUPABASE_SERVICE_ROLE_KEY);
-  return url && key ? { url, key, headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" } } : null;
+  return kvSupabase();
 }
 
 /** Credencial compartida vigente, o null. */
