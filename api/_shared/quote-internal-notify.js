@@ -419,10 +419,47 @@ async function notifyWhatsApp({ evento, empresa, numero, montoClp, quoteId }) {
  *
  * @param {"aceptada"|"pagada"} evento
  */
+/**
+ * ¿Ya salió este mismo aviso (ACEPTADA / PAGADA) para esta cotización en las
+ * últimas 24 h? Candado ÚNICO para todos los caminos que notifican (poll de
+ * pago.html, webhook de MP, reconciliador, comprobante por WhatsApp, barrido
+ * de respaldo, re-aceptación desde el link). Auditoría 05-sep del buzón de
+ * Lalo: COT1142 ×7 PAGADA (reintentos), COT1245 ×2+×2 (recibo de MP +
+ * re-aceptación), COT1070 y COT1014 ×2 PAGADA, COT983 ×2 ACEPTADA. La fuente
+ * de verdad es la related list Emails de la cotización (lo que Zoho de verdad
+ * mandó), igual que en notify-paid y correos-pendientes. Ante un fallo de
+ * lectura NO se bloquea el envío: mejor un duplicado que perder el aviso.
+ */
+async function yaSalioAvisoEvento(quoteModule, quoteId, evento, ventanaMs = 24 * 60 * 60 * 1000) {
+  try {
+    const r = await zohoApiFetch(
+      `/crm/v3/${encodeURIComponent(quoteModule)}/${encodeURIComponent(quoteId)}/Emails`,
+      { method: "GET" },
+    );
+    if (r.status === 204 || !r.ok) return false;
+    const data = await r.json().catch(() => ({}));
+    const emails = Array.isArray(data?.Emails) ? data.Emails : [];
+    const palabra = evento === "pagada" ? /\bPAGADA\b/i : /\bACEPTADA\b/i;
+    const ahora = Date.now();
+    return emails.some((e) => {
+      if (!palabra.test(String(e?.subject || ""))) return false;
+      const t = Date.parse(String(e?.sent_time || e?.time || e?.created_time || ""));
+      // Sin fecha legible: cuenta como enviado (conservador contra duplicados).
+      return !Number.isFinite(t) || ahora - t < ventanaMs;
+    });
+  } catch {
+    return false;
+  }
+}
+
 async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
   try {
     if (!config || !quote || !quoteId) return;
     const numero = toText(quote?.Numero_Cotizacion);
+    if ((evento === "pagada" || evento === "aceptada") && (await yaSalioAvisoEvento(config.quoteModule, quoteId, evento))) {
+      console.log(`[quote-notify] omitido: aviso ${evento.toUpperCase()} ya enviado en las últimas 24 h quote=${numero || quoteId}`);
+      return;
+    }
     const clientEmail = toText(quote?.[config.contactEmailField]);
     const rut = toText(quote?.[config.companyRutField]);
     const dealId = toText(
