@@ -14,6 +14,7 @@
 const { getRecord, toText, updateRecordBestEffort } = require("./zoho-crm");
 const { zohoApiFetch } = require("./zoho-auth");
 const { runOnboardingHandoff } = require("./onboarding-handoff");
+const { onboardingPorChat } = require("./onboarding-chat");
 const {
   runNdvHandoff,
   quoteHasNdvReference,
@@ -343,6 +344,18 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
     } catch (notifyError) {
       console.warn(`[finalize] notificación PAGADA falló: ${toText(notifyError?.message || notifyError)}`);
     }
+  }
+
+  // ALTA POR CHAT (05-sep): si Vicky lleva el alta por WhatsApp, acá NO se
+  // genera la sesión del wizard — ni siquiera en silencio: el vigía del
+  // auto-onboarding y el equipo la verían como un onboarding pendiente que
+  // nadie va a completar. Mismo criterio que status.js.
+  const porChat = paymentsComplete && !onboardingUrl
+    ? await onboardingPorChat(acceptanceConfig, quoteId, pais).catch(() => false)
+    : false;
+  if (porChat) {
+    console.log(`[finalize] cotización ${quoteId}: alta por CHAT de Vicky — sin sesión de wizard.`);
+    return { paymentsComplete, onboardingUrl: "", oneShotApproved, subscriptionAuthorized, finalized: false, onboardingPorChat: true };
   }
 
   if (paymentsComplete && !onboardingUrl) {
