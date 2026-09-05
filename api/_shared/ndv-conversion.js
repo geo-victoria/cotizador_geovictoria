@@ -167,6 +167,17 @@ async function convertirYConfirmar(cotId, opciones) {
   // equipos, requiere orden de venta.
   const llevaEquipos = formOrder.some((f) => f.FormName === "Formulario_de_Equipos" && f.Selected);
   if (llevaEquipos) registro.RequireSO = true;
+  // El ID de la empresa va también en el registro de la NOTA: ConfirmNDV
+  // llena la Referencia NDV del CRM (Nombre_Empresa / ID_GeoVictoria) desde
+  // `ID_Empresa_GeoVictoria` del registro, no desde el formulario final
+  // (verificado con NDV-31587: dropdown puesto y referencia igual vacía).
+  if (empresaDropdown) {
+    const idPlataforma = empresaDropdown.slice(empresaDropdown.lastIndexOf("-") + 1).trim();
+    if (/^\d+$/.test(idPlataforma)) {
+      registro.ID_Empresa_GeoVictoria = idPlataforma;
+      registro.GeoCompanyIdCRM = idPlataforma;
+    }
+  }
 
   const rPost = await creatorApiFetch(`${base}/form/Nota_de_Venta`, {
     method: "POST",
