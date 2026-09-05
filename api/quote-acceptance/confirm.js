@@ -311,7 +311,12 @@ export default async function handler(req, res) {
     const billingEmailFromForm = normalizeEmail(acceptanceData?.billingEmail);
 
     const currentStatus = toText(quote?.[config.quoteStatusField]);
-    const alreadyAccepted = /Aceptada/i.test(currentStatus);
+    // "Pagada" TAMBIÉN cuenta como aceptada (05-sep, caso Maquinarias/COT1245):
+    // el cliente pagó con tarjeta, volvió a abrir el link y confirm.js
+    // reescribió el estado a Aceptada, mandó un segundo correo ACEPTADA, y el
+    // poll de pago volvió a "voltear" a Pagada con su segundo correo PAGADA y
+    // segunda bienvenida. Una cotización pagada nunca retrocede desde acá.
+    const alreadyAccepted = /aceptada|pagad/i.test(currentStatus);
     const existingAcceptedAt = toText(quote?.[config.quoteAcceptanceAtField]);
     const acceptedAtIso = existingAcceptedAt || toZohoDateTime();
 
