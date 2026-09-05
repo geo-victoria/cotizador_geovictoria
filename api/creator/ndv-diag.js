@@ -215,7 +215,12 @@ module.exports = async function handler(req, res) {
   // ── Conversión + confirmación, el camino del post-pago ───────────────────
   if (req.query?.convertir) {
     const { convertirYConfirmar } = require("../_shared/ndv-conversion");
-    const r = await convertirYConfirmar(String(req.query.convertir).trim()).catch((e) => ({
+    // ?empresa=NOMBRE-RUT-ID → la nota nace "Creada en Plataforma" (empresa
+    // que ya existe, p. ej. creada por el alta por chat de Vicky).
+    const empresaDropdown = String(req.query?.empresa || "").trim();
+    const r = await convertirYConfirmar(String(req.query.convertir).trim(), {
+      ...(empresaDropdown ? { empresaDropdown } : {}),
+    }).catch((e) => ({
       ok: false,
       error: e.message,
     }));

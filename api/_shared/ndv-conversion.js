@@ -80,6 +80,12 @@ const COPIAR_DIRECTO = [
  */
 async function convertirYConfirmar(cotId, opciones) {
   const confirmarAhora = opciones?.confirmar !== false;
+  // EMPRESA YA CREADA (Lalo 05-sep, caso Maquinarias Santa Sara / alta por
+  // chat de Vicky): cuando la empresa ya existe en la plataforma, la nota
+  // debe decir "Creada en Plataforma" con `Empresa_dropdown` = "NOMBRE-RUT-ID"
+  // (el ID que devolvió la API de alta, p. ej. 49). Sin este dato la nota
+  // sale como "Crear desde Nota de Venta" y el equipo crea una segunda empresa.
+  const empresaDropdown = texto(opciones?.empresaDropdown);
   const id = texto(cotId);
   if (!id) return { ok: false, error: "sin id de cotización en Creator" };
 
@@ -196,7 +202,8 @@ async function convertirYConfirmar(cotId, opciones) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         data: {
-          Empresa: "Crear desde Nota de Venta",
+          Empresa: empresaDropdown ? "Creada en Plataforma" : "Crear desde Nota de Venta",
+          ...(empresaDropdown ? { Empresa_dropdown: empresaDropdown } : {}),
           CAN_UPDATE_FIELDS: true,
           // Sin estos dos, otro workflow del mismo formulario revienta en
           // `EditNextStep` (currentIndex + 1 sobre nulo) y aborta la cadena
