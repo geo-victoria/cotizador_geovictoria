@@ -90,6 +90,19 @@ const INTERNAL_ACCOUNT_NAMES = (process.env.VICKY_INTERNAL_ACCOUNT_NAMES || "Geo
   .split(",")
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
+// Cuentas que JAMÁS se adoptan aunque el RUT o el nombre calcen (05-sep, caso
+// cuenta "-" de 2022): el conciliador de nombres deja Company="-" en leads sin
+// razón social, el convert de Zoho FUSIONA por nombre de cuenta y cuatro
+// clientes reales (Ponce, Tolaba, Naspeclinic, Vendemos Tu Automóvil)
+// terminaron colgando de la misma cuenta "-", cuyo RUT se iba pisando con cada
+// emisión. Orden de Lalo: "esa cuenta no es bolsa — que no vuelva a usarse".
+const ES_CUENTA_BLOQUEADA = /^[-–—\s]*$|^no usar\b/i;
+const esCuentaNoAdoptable = (name) => {
+  const n = String(name || "").trim();
+  return !n || INTERNAL_ACCOUNT_NAMES.includes(n.toLowerCase()) || ES_CUENTA_BLOQUEADA.test(n);
+};
+// Empresa "placeholder" en el LEAD (no es una razón social real).
+const ES_COMPANY_PLACEHOLDER = /^[-–—\s]*$|prospecto whatsapp|por identificar|sin empresa|tu empresa|no identificado/i;
 
 // Documentos hosteados (URLs permanentes en Supabase) que van como botones de
 // descarga en el correo de la cotización.
@@ -816,8 +829,7 @@ async function findAccountIdByRut(rutEmpresa, empresaName) {
   // RUT (típicamente un RUT de prueba/basura). Si solo matchearon internas, se
   // trata como "sin match" (el caller lanzará un error claro en vez de pegarse a
   // la cuenta interna).
-  const esInterna = (name) =>
-    INTERNAL_ACCOUNT_NAMES.includes(String(name || "").trim().toLowerCase());
+  const esInterna = (name) => esCuentaNoAdoptable(name);
   const externas = rows.filter((r) => !esInterna(r.Account_Name));
   if (!externas.length) {
     console.warn(
@@ -1275,6 +1287,30 @@ module.exports = async function handler(req, res) {
     // CAMINO B (creación directa con dedup por RUT). El lead queda huérfano
     // para revisión manual, pero el cliente recibe su cotización igual.
     if (existing.leadId) {
+      // EMPRESA REAL EN EL LEAD ANTES DE CONVERTIR (05-sep, cuenta "-"): Zoho
+      // nombra la cuenta nueva con Lead.Company y, si ya existe una cuenta con
+      // ese nombre, FUSIONA ahí sin avisar. Con Company="-" (conciliador de
+      // nombres sin razón social) o "Prospecto WhatsApp", cuatro clientes
+      // reales cayeron en una cuenta "-" de 2022. La emisión SIEMPRE trae la
+      // empresa real: se estampa en el lead antes del convert. Best-effort.
+      stage = "lead_company_pre_convert";
+      try {
+        const empresaReal = toText(cliente.empresa).trim();
+        if (empresaReal && !ES_COMPANY_PLACEHOLDER.test(empresaReal)) {
+          const leadPrev = await getRecord("Leads", existing.leadId).catch(() => null);
+          const companyPrev = toText(leadPrev?.Company).trim();
+          if (leadPrev && (!companyPrev || ES_COMPANY_PLACEHOLDER.test(companyPrev))) {
+            const rutPrev = toText(leadPrev?.RUT_Empresa).trim();
+            await updateRecord("Leads", existing.leadId, {
+              Company: empresaReal,
+              ...(cliente.rutEmpresa && !rutPrev ? { RUT_Empresa: cliente.rutEmpresa } : {}),
+            }, false);
+            console.warn(`[create-from-vicky] lead ${existing.leadId}: Company "${companyPrev || "∅"}" → "${empresaReal}" antes de convertir (evita fusión por nombre placeholder).`);
+          }
+        }
+      } catch (e) {
+        console.warn(`[create-from-vicky] pre-convert Company falló (se sigue): ${toText(e?.message || e).slice(0, 150)}`);
+      }
       stage = "convert_lead";
       try {
         const dealDataForConvert = {
@@ -1526,8 +1562,7 @@ module.exports = async function handler(req, res) {
             const homonimas = await executeCoqlQuery(
               `select id, RUT_Empresa, Account_Name from Accounts where Account_Name = '${cliente.empresa.replace(/'/g, "''")}' limit 5`,
             ).catch(() => []);
-            const esInterna = (name) =>
-              INTERNAL_ACCOUNT_NAMES.includes(String(name || "").trim().toLowerCase());
+            const esInterna = (name) => esCuentaNoAdoptable(name);
             const sinRut = (homonimas || []).find(
               (r) => !String(r.RUT_Empresa || "").trim() && !esInterna(r.Account_Name),
             );
