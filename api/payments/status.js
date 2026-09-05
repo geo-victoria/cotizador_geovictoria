@@ -26,6 +26,44 @@ function normalizeWhatsappPhone(value) {
 // pero el usuario "Vicky GeoVictoria" no tiene teléfono, así que el botón de
 // WhatsApp jamás aparecía y el cliente quedaba con un texto vago.
 const VICKY_WHATSAPP_PHONE = toText(process.env.VICKY_WHATSAPP_PHONE || "56967308227");
+
+const VICKY_AGENT_BASE = toText(
+  process.env.VICKY_AGENT_BASE || "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app",
+).replace(/\/$/, "");
+const VICKY_SHARED_SECRET = toText(process.env.VICKY_COTIZADORA_SECRET || "");
+const _chatOnboardingCache = new Map();
+
+/**
+ * ¿Este pago sigue por el alta por chat de Vicky? Solo Chile y solo si el
+ * agente confirma que el contacto está habilitado (piloto o flag global).
+ * Cualquier duda → false (wizard, como siempre). Cache por cotización: el
+ * poll de pago.html pega cada pocos segundos.
+ */
+async function onboardingPorChat(acceptanceConfig, quoteId, pais) {
+  try {
+    if (toText(pais).toLowerCase() && toText(pais).toLowerCase() !== "cl") return false;
+    if (!VICKY_SHARED_SECRET) return false;
+    const key = toText(quoteId);
+    if (_chatOnboardingCache.has(key)) return _chatOnboardingCache.get(key);
+    const q = await getRecordWithFields(acceptanceConfig.quoteModule, quoteId, ["Tel_fono_Contacto"]);
+    const fono = toText(q?.Tel_fono_Contacto).replace(/\D/g, "");
+    if (!/^569\d{8}$/.test(fono)) { _chatOnboardingCache.set(key, false); return false; }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`${VICKY_AGENT_BASE}/api/vic-onboarding-activo?contact=${fono}`, {
+      headers: { "x-vicky-secret": VICKY_SHARED_SECRET },
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+    const data = res.ok ? await res.json().catch(() => ({})) : {};
+    const activo = Boolean(data?.activo);
+    _chatOnboardingCache.set(key, activo);
+    if (activo) console.log(`[status] onboarding por CHAT de Vicky para quote=${key} fono=${fono}: sin wizard`);
+    return activo;
+  } catch (e) {
+    console.warn(`[status] onboardingPorChat falló (sigue wizard): ${toText(e?.message || e)}`);
+    return false;
+  }
+}
 // Correo de la fila "Email" en los datos de transferencia (Lalo 18-ago, dos
 // vueltas): vicky@ confundía (el cliente creía que el comprobante iba por
 // correo, y el caso SURCONTROL llegó SOLO por el aviso del banco a esa
@@ -172,6 +210,12 @@ export default async function handler(req, res) {
 
     let onboardingUrl = toText(quote?.[acceptanceConfig.quoteOnboardingUrlField]);
     let finalizeError = "";
+    // ONBOARDING DE VICKY POR CHAT (05-sep, caso Josefa/COT1250): si el
+    // contacto está en el alta por WhatsApp del agente, el cliente NO va al
+    // wizard — Vicky le manda el formulario de alta al confirmarse el pago.
+    // Se pregunta al agente ANTES de generar el link; ante cualquier falla se
+    // sigue con el wizard de siempre (fail-closed al comportamiento anterior).
+    const chatOnboarding = paymentsComplete ? await onboardingPorChat(acceptanceConfig, quoteId, pais) : false;
 
     // Pago real verificado en MP → "Pagada" al tiro (Lalo 24-ago). Solo con
     // cobro online efectivo: el camino sin cobro (transferencia) se declara
@@ -191,7 +235,7 @@ export default async function handler(req, res) {
       }
     }
 
-    if (paymentsComplete && !onboardingUrl) {
+    if (paymentsComplete && !onboardingUrl && !chatOnboarding) {
       try {
         const result = await finalizeAfterPayment({ config: acceptanceConfig, quoteId, dealId });
         onboardingUrl = toText(result?.onboardingUrl);
@@ -245,7 +289,9 @@ export default async function handler(req, res) {
       },
       paymentsComplete,
       transfer,
-      onboarding: { ready: Boolean(onboardingUrl), url: onboardingUrl },
+      onboarding: chatOnboarding
+        ? { ready: true, chat: true, url: "" }
+        : { ready: Boolean(onboardingUrl), url: onboardingUrl },
       finalizeError: finalizeError || undefined,
     });
   } catch (error) {

@@ -537,7 +537,19 @@
           // (la mensualidad va por facturación). CO en usted; PE reusa ese
           // texto (neutro y correcto también en tuteo peruano).
           var esCO = paisPago === "co" || paisPago === "pe";
-          if (state.onboarding.ready && state.onboarding.url) {
+          if (state.onboarding.ready && state.onboarding.chat) {
+            // Alta por CHAT de Vicky (05-sep): nada de wizard ni redirección —
+            // Vicky le manda el formulario de alta por WhatsApp.
+            contentEl.innerHTML =
+              '<div class="center">' +
+              '<h2>¡Pago confirmado! 🎉</h2>' +
+              '<p class="lead">Tu pago está confirmado. Ya eres parte de GeoVictoria.</p>' +
+              '<p class="lead">💬 En un momento Vicky te escribe por WhatsApp para crear tu cuenta ' +
+              "y dejar tu plataforma andando: toma un par de minutos y lo haces desde el mismo chat.</p>" +
+              '<p class="lead">Puedes cerrar esta página.</p>' +
+              "</div>";
+            setMessage("Revisa tu WhatsApp: Vicky sigue contigo por ahí.", "ok");
+          } else if (state.onboarding.ready && state.onboarding.url) {
             contentEl.innerHTML = esCO
               ? '<div class="center">' +
                 '<h2>¡Pago confirmado! 🎉</h2>' +
