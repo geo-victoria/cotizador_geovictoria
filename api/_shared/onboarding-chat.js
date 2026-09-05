@@ -30,7 +30,12 @@ async function onboardingPorChat(acceptanceConfig, quoteId, pais) {
     if (!VICKY_SHARED_SECRET) return false;
     const key = toText(quoteId);
     if (_chatOnboardingCache.has(key)) return _chatOnboardingCache.get(key);
-    const q = await getRecordWithFields(acceptanceConfig.quoteModule, quoteId, ["Tel_fono_Contacto"]);
+    const q = await getRecordWithFields(acceptanceConfig.quoteModule, quoteId, ["Tel_fono_Contacto", "Intervenci_n_Humana"]);
+    // SOLO el canal 100% Vicky va por chat. Una cotización de la cotizadora
+    // de ejecutivos ("Con intervención humana") sigue con el wizard de
+    // siempre aunque el teléfono esté habilitado: Vicky no le escribe a esos
+    // clientes (pregunta de Lalo 05-sep) y sin wizard se quedarían sin nada.
+    if (/intervenci/i.test(toText(q?.Intervenci_n_Humana))) { _chatOnboardingCache.set(key, false); return false; }
     const fono = toText(q?.Tel_fono_Contacto).replace(/\D/g, "");
     if (!/^569\d{8}$/.test(fono)) { _chatOnboardingCache.set(key, false); return false; }
     const controller = new AbortController();
