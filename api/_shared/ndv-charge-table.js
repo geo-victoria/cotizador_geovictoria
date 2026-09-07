@@ -140,8 +140,17 @@ function montosLinea(row, usaUf) {
   const unitario = usaUf ? toNumber(row?.precioUnitarioUf) : toNumber(row?.precioUnitarioClp);
   const subtotalDirecto = usaUf ? toNumber(row?.subtotalUf) : toNumber(row?.subtotalClp);
   const cantidad = toNumber(row?.cantidad);
+  // Línea BONIFICADA (Descuento_Pct = 100, caso "Envío de reloj" del arriendo,
+  // Lalo 24-ago): su Subtotal_UF es 0 a propósito. Antes el 0 se tomaba como
+  // "subtotal ausente" y se reconstruía unitario × cantidad, o sea el precio de
+  // LISTA: la nota de venta (y la orden de venta en Books) cobraban 0,5 UF de
+  // envío que la cotización regalaba (NDV-31596 TESLA, NDV-31619 Molinas).
+  // La línea se conserva con valor 0 para que el despacho igual figure.
+  if (toNumber(row?.descuentoPct) >= 100) {
+    return { unitario: 0, subtotal: 0, bonificada: true, unitarioLista: unitario };
+  }
   const subtotal = subtotalDirecto > 0 ? subtotalDirecto : unitario * cantidad;
-  return { unitario, subtotal };
+  return { unitario, subtotal, bonificada: false };
 }
 
 /**
@@ -349,7 +358,7 @@ function buildChargeTables({
     if (cantidad <= 0) return;
 
     const montos = montosLinea(row, usaUf);
-    if (montos.subtotal <= 0) {
+    if (montos.subtotal <= 0 && !montos.bonificada) {
       if (nombre) lineasSinPrecio.push(nombre);
       return;
     }
@@ -395,6 +404,10 @@ function buildChargeTables({
       }
       return;
     }
+
+    // Una línea recurrente bonificada al 100% no aporta a la tabla de cobro ni
+    // al arriendo: se deja fuera en vez de acumular un tramo en 0.
+    if (montos.bonificada) return;
 
     // Arriendo de equipos: su bloque es de EQUIPOS aunque el cobro sea mensual.
     // Solo se desvía cuando la línea resuelve a un artículo de hardware del

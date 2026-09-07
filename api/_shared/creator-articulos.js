@@ -154,6 +154,25 @@ const ITEM_ID_BOOKS = {
 };
 
 /**
+ * SKU de Books por artículo. Es lo que el JsonPdf de cada bloque de equipos
+ * lleva en `Sku` (los bloques hechos desde la interfaz lo traen siempre; se
+ * copian de las órdenes de venta SO-28148 / SO-28162 y del barrido del 16-ago).
+ * Sin SKU conocido va "", igual que las líneas de servicio de la interfaz.
+ */
+const SKU_BOOKS = {
+  "006.10": "CHL-BIO-SF2A-ZKT-WL-FHT", // Reloj Gama Entrada Facial WIFI/LAN
+  "012": "CHL-BIO-U4500-HID-USB-HI", // Huellero URU4500
+  "907": "CHL-SSTT-ENV-ASCOM", // Envío/Despacho Asistencia
+  "901": "CHL-SSTT-INST-ASCOM-RMET", // Instalación RM
+};
+
+/** @returns {string} SKU de Books del artículo, o "" si no está mapeado */
+function skuDeArticulo(articulo) {
+  const codigo = String(articulo || "").trim().split(" ")[0];
+  return SKU_BOOKS[codigo] || "";
+}
+
+/**
  * Bodega de las líneas chilenas. Las 142 líneas del barrido usan esta y solo
  * esta, así que es una constante y no algo a resolver por artículo.
  */
@@ -191,4 +210,6 @@ module.exports = {
   articuloDeServicio,
   idBooksDeArticulo,
   valorListaDeArticulo,
+  skuDeArticulo,
+  SKU_BOOKS,
 };

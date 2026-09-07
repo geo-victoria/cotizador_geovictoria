@@ -30,6 +30,10 @@ const DEFAULT_FIELD_MAP = {
   afectoIva: "Afecto_IVA",
   codigo: "Codigo_Item",
   zonaTarifa: "Zona_Tarifa",
+  // Descuento POR LÍNEA del subform (envío bonificado = 100). Lo lee la tabla
+  // de cobro de Creator; sin él la línea con Subtotal_UF=0 caía al precio de
+  // lista (unitario × cantidad) y la nota cobraba el envío a 0,5 UF.
+  descuentoPct: "Descuento_Pct",
 };
 
 // Codigo_Item de los servicios de instalación reconocidos. Si en el futuro
@@ -84,6 +88,7 @@ function sanitizeItems(items, fieldMap = DEFAULT_FIELD_MAP) {
     afectoIva: row?.[fieldMap.afectoIva] === true,
     codigo: String(row?.[fieldMap.codigo] || ""),
     zonaTarifa: String(row?.[fieldMap.zonaTarifa] || ""),
+    descuentoPct: toNumber(row?.[fieldMap.descuentoPct || "Descuento_Pct"]),
   }));
 }
 

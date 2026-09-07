@@ -11,7 +11,7 @@
 
 const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
 const { toText } = require("./zoho-crm");
-const { idBooksDeArticulo, valorListaDeArticulo, BODEGA_CHILE } = require("./creator-articulos");
+const { idBooksDeArticulo, valorListaDeArticulo, skuDeArticulo, BODEGA_CHILE } = require("./creator-articulos");
 
 /**
  * Términos y condiciones que Creator imprime en el bloque del servicio.
@@ -386,6 +386,145 @@ function buildFormularioArriendoRecord({ ndvId, ndvRecord, lineasArriendo, servi
   };
 }
 
+const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function rutaHardware(creatorConfig, bloqueId) {
+  return (
+    `/creator/v2.1/data/${encodeURIComponent(creatorConfig.ownerName)}/${encodeURIComponent(creatorConfig.appLinkName)}` +
+    `/report/HARDWARE_ALL_DATA/${encodeURIComponent(bloqueId)}`
+  );
+}
+
+async function leerBloqueEquipos(creatorConfig, bloqueId) {
+  const r = await creatorApiFetch(`${rutaHardware(creatorConfig, bloqueId)}?field_config=all`, { method: "GET" });
+  const j = await readJsonSafe(r);
+  return j?.data && typeof j.data === "object" ? j.data : null;
+}
+
+function glossRowVacio(bloque) {
+  try {
+    const j = JSON.parse(toText(bloque?.JsonPdf) || "{}");
+    return !(Array.isArray(j?.GlossRow) && j.GlossRow.length > 0);
+  } catch (_e) {
+    return true;
+  }
+}
+
+/**
+ * Verifica y COMPLETA un Formulario_de_Equipos después de dejarle el pedido en
+ * `Equipos_Por_API` / `Servicios_Por_API`.
+ *
+ * El flujo de Creator que procesa ese pedido inserta las filas de la grilla
+ * (resolviendo el artículo contra Books), pero NO siempre termina la segunda
+ * mitad: Monto, MontoHW, CAN_CREATE_PDF y el JsonPdf del bloque. Cuando se
+ * queda a medias, el bloque existe con su fila adentro y aun así el PDF lo
+ * imprime VACÍO y el total mensual de la nota no lo suma. Barrido del 07-sep
+ * sobre HARDWARE_ALL_DATA: 199 bloques de arriendo con la fila del reloj y
+ * Monto=0 (TESLA NDV-31596 y Molinas NDV-31619 entre ellos), frente a los que
+ * el mismo flujo sí completó (COT-61674: Monto 0.35, GlossRow con Sku/Modelo).
+ *
+ * Acá se espera a que las filas existan y, si el flujo no completó, se escriben
+ * los campos con la MISMA forma que dejan los bloques buenos. Best-effort: un
+ * fallo acá se registra en errors[] y no tumba la emisión.
+ */
+async function completarBloqueEquipos({ creatorConfig, bloqueId, tipo, lineas, errors }) {
+  const etiqueta = `Formulario_de_Equipos(${tipo})`;
+  let bloque = null;
+  let filas = 0;
+  for (let i = 0; i < 7; i++) {
+    bloque = await leerBloqueEquipos(creatorConfig, bloqueId).catch(() => null);
+    const eq = Array.isArray(bloque?.Equipos) ? bloque.Equipos.length : 0;
+    const sv = Array.isArray(bloque?.Servicios) ? bloque.Servicios.length : 0;
+    filas = eq + sv;
+    if (filas >= lineas.length) break;
+    await dormir(1500);
+  }
+  if (!bloque) {
+    errors.push(`${etiqueta}: no se pudo releer el bloque ${bloqueId} para verificarlo`);
+    return { verificado: false };
+  }
+  if (filas < lineas.length) {
+    console.warn(`[ndv-subforms] ${etiqueta} id=${bloqueId}: el flujo de Creator insertó ${filas}/${lineas.length} filas`);
+    errors.push(`${etiqueta}: grilla incompleta (${filas}/${lineas.length} filas) — revisar en Creator`);
+  }
+
+  const esArriendo = tipo === "arriendo";
+  const montoMensual = esArriendo ? lineas.reduce((acc, l) => acc + toNumber(l.totalMensual), 0) : 0;
+  const montoHw = lineas.reduce((acc, l) => {
+    const cant = toNumber(l.cantidad) || 1;
+    const unit = esArriendo ? valorListaDeArticulo(l.codigoCreator || l.codigo || l.item) : toNumber(l.valorUnitario);
+    return acc + unit * cant;
+  }, 0);
+  const faltaMonto = esArriendo && toNumber(bloque.Monto) <= 0 && montoMensual > 0;
+  const faltaPdf = glossRowVacio(bloque) && lineas.length > 0;
+  const faltaFlag = toText(bloque.CAN_CREATE_PDF) !== "true";
+  if (!faltaMonto && !faltaPdf && !faltaFlag) {
+    console.log(`[ndv-subforms] ${etiqueta} id=${bloqueId} completo por Creator (Monto=${bloque.Monto})`);
+    return { verificado: true, completadoPorNosotros: false };
+  }
+
+  const glossRow = lineas.map((l) => {
+    const item = toText(l.item);
+    const modelo = toText(l.modelo);
+    return esArriendo
+      ? {
+          Sku: skuDeArticulo(item),
+          Detail: modelo ? `${item}. Modelo: ${modelo}` : item,
+          Rate: toNumber(l.valorMensualUnitario),
+          Quantity: toNumber(l.cantidad) || 1,
+          QuantityToSubtract: 0,
+          DiscountAmount: 0,
+          DiscountType: "percent",
+        }
+      : {
+          Detail: item,
+          Rate: toNumber(l.valorUnitario),
+          Quantity: toNumber(l.cantidad) || 1,
+          DiscountAmount: 0,
+          DiscountType: "amount",
+          Sku: skuDeArticulo(item),
+        };
+  });
+  let jsonPdfPrevio = {};
+  try {
+    jsonPdfPrevio = JSON.parse(toText(bloque.JsonPdf) || "{}") || {};
+  } catch (_e) {
+    jsonPdfPrevio = {};
+  }
+  const data = { CAN_CREATE_PDF: true };
+  if (faltaPdf) {
+    data.JsonPdf = JSON.stringify({
+      Name: toText(jsonPdfPrevio.Name) || toText(bloque.Servicio_Producto) || (esArriendo ? "Arriendo de Equipos" : ""),
+      ProdCode: toText(jsonPdfPrevio.ProdCode) || (esArriendo ? "ARRIENDO EQUIPO" : ""),
+      Currency: toText(jsonPdfPrevio.Currency) || toText(bloque.Moneda) || "UF",
+      Terms: toText(jsonPdfPrevio.Terms) || "",
+      GlossRow: glossRow,
+      OdooGlossRows: glossRow,
+    });
+  }
+  if (esArriendo) {
+    if (faltaMonto) data.Monto = Number(montoMensual.toFixed(5));
+    if (toNumber(bloque.MontoHW) <= 0 && montoHw > 0) data.MontoHW = Number(montoHw.toFixed(5));
+  }
+  const resp = await creatorApiFetch(rutaHardware(creatorConfig, bloqueId), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data }),
+  });
+  const payload = await readJsonSafe(resp);
+  if (!resp.ok || isCreatorError(payload)) {
+    const detalle = JSON.stringify(payload).slice(0, 300);
+    console.warn(`[ndv-subforms] ${etiqueta} id=${bloqueId}: no se pudo completar (${detalle})`);
+    errors.push(`${etiqueta} completar Monto/JsonPdf: ${detalle}`);
+    return { verificado: true, completadoPorNosotros: false };
+  }
+  console.log(
+    `[ndv-subforms] ${etiqueta} id=${bloqueId} COMPLETADO por el puente: ` +
+      `${JSON.stringify({ ...data, JsonPdf: data.JsonPdf ? `${glossRow.length} fila(s)` : undefined })}`
+  );
+  return { verificado: true, completadoPorNosotros: true };
+}
+
 /**
  * Orquesta la creación de sub-formularios para un NDV recién creado.
  *
@@ -558,6 +697,14 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
         const detalle = JSON.stringify(pg).slice(0, 300);
         console.warn(`[ndv-subforms] grillas de ${bloque.producto} rechazadas: ${detalle}`);
         errors.push(`Formulario_de_Equipos(${bloque.producto}) grillas: ${detalle}`);
+      } else {
+        await completarBloqueEquipos({
+          creatorConfig,
+          bloqueId,
+          tipo: bloque.producto,
+          lineas: [...bloque.equipos, ...bloque.servicios],
+          errors,
+        }).catch((e) => errors.push(`Formulario_de_Equipos(${bloque.producto}) verificación: ${e.message}`));
       }
     } catch (err) {
       equiposRechazado = true;
@@ -632,6 +779,14 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
           const detalle = JSON.stringify(payload).slice(0, 300);
           console.warn(`[ndv-subforms] grilla del arriendo rechazada: ${detalle}`);
           errors.push(`Formulario_de_Equipos(arriendo) grilla: ${detalle}`);
+        } else {
+          await completarBloqueEquipos({
+            creatorConfig,
+            bloqueId: arriendoId,
+            tipo: "arriendo",
+            lineas: lineasArriendo,
+            errors,
+          }).catch((e) => errors.push(`Formulario_de_Equipos(arriendo) verificación: ${e.message}`));
         }
       }
       console.log(
