@@ -110,6 +110,96 @@ function mensualVendidoUF(quote, config) {
   return Number(rec.reduce((acc, x) => acc + (Number(x?.Subtotal_UF) || 0), 0).toFixed(5));
 }
 
+function tsCreator(v) {
+  const m = /^(\d{2})-(\d{2})-(\d{4}) (\d{2}):(\d{2}):(\d{2})$/.exec(texto(v));
+  return m ? Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4] + 3, +m[5], +m[6]) : 0;
+}
+
+/** Bloques Formulario_de_Equipos del espejo (HARDWARE_ALL_DATA). */
+async function bloquesHardwareDe(cfg, cotId) {
+  try {
+    const path =
+      `/creator/v2.1/data/${encodeURIComponent(cfg.ownerName)}/${encodeURIComponent(cfg.appLinkName)}` +
+      `/report/HARDWARE_ALL_DATA?criteria=${encodeURIComponent(`ID_Formulario==${cotId}`)}&limit=20&field_config=all`;
+    const r = await creatorApiFetch(path, { method: "GET" });
+    if (!r.ok) return [];
+    const j = await r.json().catch(() => ({}));
+    return Array.isArray(j?.data) ? j.data : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * ¿El espejo sirve para convertirlo tal cual? NO cuando:
+ *  (a) es más viejo que la última (re)emisión de la cotización — el cliente
+ *      cambió ítems después (Molinas 07-sep: pidió reloj + instalación 5 min
+ *      antes de pagar y la NDV nació sin ellos);
+ *  (b) nació con el puente viejo y trae el defecto del arriendo (fila del reloj
+ *      con Monto=0 → PDF vacío) o el envío bonificado cobrado a lista
+ *      (TESLA NDV-31596, Molinas NDV-31616/31619).
+ * En ambos casos se regenera desde los ítems VIGENTES de la cotización pagada.
+ */
+async function diagnosticoEspejo(cfg, cot, quote, config) {
+  const motivos = [];
+  const emitida = Date.parse(String(quote?.Fecha_Hora_Cotizacion || quote?.Created_Time || "")) || 0;
+  const nacido = tsCreator(cot.Added_Time);
+  if (emitida && nacido && nacido < emitida - 3 * 60 * 1000) motivos.push("espejo anterior a la última emisión");
+  const bloques = await bloquesHardwareDe(cfg, texto(cot.ID));
+  const items = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
+  const envioBonificado = items.some(
+    (x) => /envio/i.test(texto(x?.Codigo_Item)) && Number(x?.Descuento_Pct) >= 100,
+  );
+  for (const b of bloques) {
+    const eq = Array.isArray(b.Equipos) ? b.Equipos : [];
+    const sv = Array.isArray(b.Servicios) ? b.Servicios : [];
+    if (/arriendo/i.test(texto(b.Servicio_Producto)) && eq.length > 0 && Number(b.Monto) <= 0) {
+      motivos.push("bloque de arriendo con fila y Monto=0");
+    }
+    if (envioBonificado && sv.some((r) => /^907/.test(texto(r.Items)) && Number(r.Valor_Unidad) > 0)) {
+      motivos.push("envío bonificado cobrado a lista");
+    }
+  }
+  return { regenerar: motivos.length > 0, motivos };
+}
+
+/** Espejo nuevo desde los ítems vigentes: mismo camino que crear-ndv-desde-cot
+ * (self-request, así se reusa TODO el puente sin duplicar código). */
+async function regenerarEspejo(quoteId, timeoutMs) {
+  const base = toText(process.env.COTIZADOR_SELF_BASE) || "https://cotizacion.geovictoria.com";
+  const secreto = toText(process.env.VICKY_COTIZADORA_SECRET);
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const r = await fetch(`${base}/api/creator/crear-ndv-desde-cot`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-vicky-secret": secreto, "User-Agent": "Mozilla/5.0 vicky-ndv-alta" },
+      body: JSON.stringify({ quoteId, status: "BORRADOR", formulario: "Cotizacion" }),
+      signal: ctl.signal,
+    });
+    const j = await r.json().catch(() => ({}));
+    return { ok: r.ok && j?.ok !== false, ndvId: texto(j?.ndvId), idNdv: texto(j?.idNdv), error: texto(j?.error) };
+  } catch (e) {
+    return { ok: false, error: e?.name === "AbortError" ? "timeout" : texto(e?.message) };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function anularEspejo(cfg, cotId) {
+  try {
+    const r = await creatorApiFetch(`${reportPath(cfg)}/${encodeURIComponent(cotId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { STATUS: "ANULADA", UpdateCheckbox: true } }),
+    });
+    const j = await r.json().catch(() => ({}));
+    return r.ok && Number(j?.code) === 3000;
+  } catch {
+    return false;
+  }
+}
+
 async function referenciaPorCreatorId(ndvId) {
   const rows = await coqlQuery(
     `select id, Name, ESTADO from ${REFERENCIAS_MODULE} where ID_ZOHO = '${String(ndvId).replace(/[^0-9]/g, "")}'`,
@@ -140,7 +230,7 @@ async function espejoDeCotizacion(cfg, quote, quoteId) {
   const accountId = texto(quote?.Cuenta_Asociada?.id || quote?.Cuenta_Asociada);
   if (!accountId) return { cot: null, por: "sin_cuenta" };
   const porCuenta = (await filasCreator(cfg, `(CRM_Account == "${accountId}")`)).filter(
-    (f) => texto(f.Formulario) === "Cotización",
+    (f) => texto(f.Formulario) === "Cotización" && texto(f.STATUS) !== "ANULADA",
   );
   if (!porCuenta.length) return { cot: null, por: "sin_espejo" };
   const emitida = Date.parse(String(quote?.Fecha_Hora_Cotizacion || quote?.Created_Time || "")) || 0;
@@ -154,7 +244,12 @@ async function espejoDeCotizacion(cfg, quote, quoteId) {
     const convertida = texto(f.ESTADO_COT) === "Convertida a NDV" ? 1 : 0;
     const rutF = texto(f.Identificador_Tributario_Empresa).replace(/[^0-9kK]/g, "").toUpperCase();
     const rutDistinto = rutQ && rutF && rutQ !== rutF ? 1 : 0;
-    return [rutDistinto, convertida, Math.abs(ts(f) - emitida)];
+    // FRESCO = nacido en (o después de) la última emisión/actualización de la
+    // cotización. Un espejo regenerado por este mismo endpoint es más nuevo
+    // que la emisión y debe ganarle al original aunque el original esté "más
+    // cerca" en el tiempo.
+    const viejo = ts(f) < emitida - 3 * 60 * 1000 ? 1 : 0;
+    return [rutDistinto, convertida, viejo, Math.abs(ts(f) - emitida)];
   };
   porCuenta.sort((a, b) => {
     const pa = puntaje(a);
@@ -184,7 +279,9 @@ module.exports = async function handler(req, res) {
     const quoteId = toText(body.quoteId).replace(/\D/g, "");
     const companyId = toText(body.companyId).replace(/\D/g, "");
     if (!quoteId) return sendJson(res, 400, { ok: false, error: "Falta quoteId." });
-    if (!companyId) return sendJson(res, 400, { ok: false, error: "Falta companyId (id de la empresa en la plataforma)." });
+    if (!companyId && body.soloEspejo !== true) {
+      return sendJson(res, 400, { ok: false, error: "Falta companyId (id de la empresa en la plataforma)." });
+    }
 
     const config = getAcceptanceConfig(req);
     paso = "load_quote";
@@ -235,6 +332,18 @@ module.exports = async function handler(req, res) {
     const cotId = texto(cot.ID);
     pasos.push({ espejo: { cotId, numero: texto(cot.ID_NDV), por, candidatos, estadoCot: texto(cot.ESTADO_COT) } });
 
+    // soloEspejo=true: ubica/diagnostica/regenera el espejo SIN convertir nada
+    // (para preparar la nota antes del alta, o para inspección admin).
+    if (body.soloEspejo === true) {
+      const diag = await diagnosticoEspejo(cfg, cot, quote, config);
+      if (diag.regenerar && !cotForzado) {
+        const anulado = await anularEspejo(cfg, cotId);
+        const nuevo = await regenerarEspejo(quoteId, Math.max(15_000, queda() - 5_000));
+        return sendJson(res, 200, { ok: true, soloEspejo: true, cotId, diag, viejoAnulado: anulado, nuevo, pasos });
+      }
+      return sendJson(res, 200, { ok: true, soloEspejo: true, cotId, diag, pasos });
+    }
+
     const empresaDropdown = empresaDropdownDe({
       nombre: toText(body.empresaNombre) || texto(cot.CRM_ACCOUNT_NAME) || texto(quote?.Cuenta_Asociada?.name),
       rut: toText(body.rut) || texto(quote?.RUT_Cliente) || texto(cot.Identificador_Tributario_Empresa),
@@ -250,7 +359,35 @@ module.exports = async function handler(req, res) {
         (f) => texto(f.Formulario) === "Nota de Venta" && texto(f.STATUS) !== "ANULADA",
       ) || null;
     if (!nota) {
-      if (texto(cot.ESTADO_COT) === "Convertida a NDV") {
+      // 1b. ESPEJO DESACTUALIZADO O DEFECTUOSO → se regenera desde los ítems
+      //     vigentes de la cotización PAGADA (la fuente de verdad), se anula el
+      //     viejo y la próxima pasada convierte el nuevo. Con `cotId` forzado
+      //     no se toca (el admin ya eligió).
+      const yaConvertidaSinNota = texto(cot.ESTADO_COT) === "Convertida a NDV";
+      const diag = cotForzado ? { regenerar: false, motivos: [] } : await diagnosticoEspejo(cfg, cot, quote, config);
+      if (yaConvertidaSinNota && !cotForzado) diag.motivos.push("figura convertida pero su nota no está viva");
+      if (diag.motivos.length > 0 && !cotForzado) {
+        paso = "regenerar_espejo";
+        const anulado = await anularEspejo(cfg, cotId);
+        const nuevo = queda() > 20_000 ? await regenerarEspejo(quoteId, Math.max(15_000, queda() - 8_000)) : { ok: false, error: "sin presupuesto" };
+        pasos.push({ regenerarEspejo: { motivos: diag.motivos, viejoAnulado: anulado, nuevo } });
+        console.log(
+          `[ndv-alta-chat] espejo ${cotId} regenerado (${diag.motivos.join("; ")}) → ${nuevo.ok ? nuevo.ndvId : `pendiente: ${nuevo.error}`}`,
+        );
+        // Siempre reintentable: si el POST alcanzó a crear el espejo aunque el
+        // timeout cortara la respuesta, la próxima pasada lo encuentra (es el
+        // fresco y el viejo quedó anulado); si no, vuelve a intentarlo.
+        return sendJson(res, 200, {
+          ok: true,
+          listo: false,
+          reintentable: true,
+          pendiente: "espejo_regenerado",
+          cotId,
+          espejoNuevo: nuevo.ndvId || undefined,
+          pasos,
+        });
+      }
+      if (yaConvertidaSinNota) {
         return sendJson(res, 200, {
           ok: false,
           listo: false,
