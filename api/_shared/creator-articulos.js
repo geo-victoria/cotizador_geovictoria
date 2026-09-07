@@ -14,9 +14,10 @@
 
 /**
  * Hardware: id del catálogo → artículo de Creator.
- * Vicky tiene habilitados DOS equipos (`disponibleParaVicky` en
- * lib/catalogo/hardware.ts del agente): el Senseface 2A y el huellero URU4500.
- * Los otros 14 del catálogo existen pero no son vendibles por ella.
+ * Vicky tiene habilitados (`disponibleParaVicky` en lib/catalogo/hardware.ts
+ * del agente): Senseface 2A, huellero URU4500, tarjetas de proximidad,
+ * impresora térmica y el kit QR (07-sep). El resto del catálogo existe pero no
+ * es vendible por ella.
  *
  * Si algún día se habilita otro, agregar su código acá — sin eso la línea queda
  * fuera del PDF y de la orden de venta, y solo se avisa por log.
@@ -40,6 +41,37 @@ const HARDWARE_A_ARTICULO = {
     item: "012 - Huellero URU4500",
     modelo: "URU4500",
     valorListaUF: 3,
+  },
+  // ── Habilitados el 07-sep (cierre de objeciones, Lalo). Nombres y SKU
+  // leídos de Books ese día (misma convención que 006.10/012: el Item de la
+  // grilla es el nombre del artículo de Books).
+  // Tarjeta de proximidad (Vicky la vende desde el 01-sep; hasta hoy la línea
+  // quedaba FUERA de Creator — caso Valuaciones, 20 tarjetas sin registrar).
+  // Books: "026.1 - Tarjeta ID (delgada)", SKU CHL-ACC-IDCTN-ZKT, rate 1.200 CLP
+  // (~0,03 UF, que es el precio de lista de Vicky).
+  tarjeta_id: {
+    item: "026.1 - Tarjeta ID (delgada)",
+    modelo: "ID CardThin",
+    valorListaUF: 0.03,
+  },
+  // Impresora térmica de comprobantes (accesorio del reloj; venta 7 / arriendo
+  // 1,2 según lista de Nacho). Books: "013 - Impresora Termica (Fiscal)",
+  // SKU CHL-ACC-SLKT-SWO-SER, rate 7.
+  impresora_termica: {
+    item: "013 - Impresora Termica (Fiscal)",
+    modelo: "SLK-TL202II",
+    valorListaUF: 7,
+  },
+  // Kit QR (arriendo 1,8 UF/mes del kit completo): en Books NO existe como un
+  // artículo único — es Senseface 3A + gabinete lector CI (019) + lector
+  // Vuquest 3320g (024). La línea se registra sobre el reloj (006.9) con el
+  // detalle del kit en el modelo; el gabinete y el lector no mueven
+  // inventario por esta vía (pendiente Nacho: artículo "Kit QR" o
+  // desglose en 3 filas).
+  kit_qr: {
+    item: "006.9 - Reloj Gama Estándar Facial WIFI/LAN",
+    modelo: "Senseface 3A — Kit QR (incluye gabinete lector CI 019 y lector Vuquest 3320g 024)",
+    valorListaUF: 8,
   },
 };
 
@@ -73,6 +105,15 @@ const ALIAS_CODIGO = {
   senseface_2a_promo: "senseface_2a",
   huellero_uru4500: "uru4500",
   uru_4500: "uru4500",
+  // Accesorios y kit QR: ids de la calculadora comercial y variantes.
+  tarjeta_id_1: "tarjeta_id",
+  tarjeta_id_2: "tarjeta_id",
+  tarjeta_de_proximidad: "tarjeta_id",
+  slk_tl202ii: "impresora_termica",
+  impresora: "impresora_termica",
+  impresora_termica_de_comprobantes: "impresora_termica",
+  kit_qr_arriendo: "kit_qr",
+  reloj_con_lector_qr: "kit_qr",
   // Servicios asociados: la Cotizadora de Ejecutivos usa ids cortos
   // ("envio", "instalacion") y la calculadora el slug del nombre con zona.
   envio: "envio_reloj",
@@ -142,7 +183,12 @@ function articuloDeServicio(codigoItem, zona) {
  */
 const ITEM_ID_BOOKS = {
   "006.10": "1758661000072468396", // Reloj Gama Entrada Facial WIFI/LAN
+  "006.9": "1758661000071719207", // Reloj Gama Estándar Facial WIFI/LAN (Senseface 3A, kit QR)
   "012": "1758661000001524374", // Huellero URU4500
+  "013": "1758661000001962344", // Impresora Termica (Fiscal) SLK-TL202II
+  "019": "1758661000006232024", // Gabinete para Lector CI (parte del kit QR)
+  "024": "1758661000006049431", // Lector de Cédula/barras Vuquest 3320g (parte del kit QR)
+  "026.1": "1758661000011723057", // Tarjeta ID (delgada)
   "907": "1758661000044939114", // Envío/Despacho Asistencia
   "901": "1758661000038441163", // Instalación RM
   "902": "1758661000038441184", // Instalación Regiones
@@ -162,6 +208,9 @@ const ITEM_ID_BOOKS = {
 const SKU_BOOKS = {
   "006.10": "CHL-BIO-SF2A-ZKT-WL-FHT", // Reloj Gama Entrada Facial WIFI/LAN
   "012": "CHL-BIO-U4500-HID-USB-HI", // Huellero URU4500
+  "006.9": "CHL-BIO-SF3A-ZKT-WL-FHT", // Senseface 3A (kit QR)
+  "013": "CHL-ACC-SLKT-SWO-SER", // Impresora Termica (Fiscal)
+  "026.1": "CHL-ACC-IDCTN-ZKT", // Tarjeta ID (delgada)
   "907": "CHL-SSTT-ENV-ASCOM", // Envío/Despacho Asistencia
   "901": "CHL-SSTT-INST-ASCOM-RMET", // Instalación RM
 };
