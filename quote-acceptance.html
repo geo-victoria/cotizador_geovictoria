@@ -1679,6 +1679,8 @@
       };
       const flowState = {
         acceptedLocked: false,
+        isPaid: false,
+        onboardingPorChat: false,
         acceptedAt: "",
         onboardingUrl: "",
         redirectPending: false,
@@ -2069,7 +2071,12 @@
         // abre (y en mobile quedaba la página sin ningún botón). El click de
         // toVerifyBtn ya resuelve ambos flujos: natural → confirma directo;
         // empresa → abre el pop-up con el mismo botón.
-        if (flowState.onboardingUrl) {
+        // PAGADA sin wizard (alta por chat de Vicky, o pago ya registrado):
+        // ningún botón — no hay nada más que hacer en esta página.
+        const pagadaSinWizard = flowState.isPaid && !flowState.onboardingUrl;
+        if (pagadaSinWizard) {
+          toVerifyBtn.classList.add("hidden");
+        } else if (flowState.onboardingUrl) {
           toVerifyBtn.textContent = "Ir a mi auto-onboarding";
           toVerifyBtn.classList.remove("hidden");
         } else if (flowState.needsPayment && flowState.paymentUrl) {
@@ -2081,7 +2088,10 @@
 
         const confirmBtn = document.getElementById("confirmBtn");
         if (confirmBtn) {
-          if (flowState.onboardingUrl) {
+          if (pagadaSinWizard) {
+            confirmBtn.textContent = "Cotización pagada ✅";
+            confirmBtn.disabled = true;
+          } else if (flowState.onboardingUrl) {
             confirmBtn.textContent = "Ir a mi auto-onboarding";
             confirmBtn.disabled = false;
           } else if (flowState.needsPayment && flowState.paymentUrl) {
@@ -2096,8 +2106,18 @@
         // Con onboarding listo la cotización ya está PAGADA (el link de
         // onboarding solo existe después del pago): el estado lo dice claro
         // en vez del genérico "ya aceptada" (pedido de Lalo, 31-jul).
-        setStatus(flowState.onboardingUrl ? "Cotización pagada ✅" : "Cotización ya aceptada", "ok");
-        if (flowState.onboardingUrl) {
+        setStatus(flowState.isPaid || flowState.onboardingUrl ? "Cotización pagada ✅" : "Cotización ya aceptada", "ok");
+        if (pagadaSinWizard) {
+          setMessage(
+            "Esta cotización ya fue aceptada y pagada" +
+              (acceptedAtLabel ? " (aceptada el " + acceptedAtLabel + ")" : "") +
+              ". " +
+              (flowState.onboardingPorChat
+                ? "Vicky te acompaña con la creación de tu cuenta por WhatsApp — sigue en el mismo chat."
+                : "Nuestro equipo te contactará para la puesta en marcha."),
+            "ok"
+          );
+        } else if (flowState.onboardingUrl) {
           setMessage(
             "Esta cotización ya fue aceptada y pagada" +
               (acceptedAtLabel ? " (aceptada el " + acceptedAtLabel + ")" : "") +
@@ -2267,7 +2287,11 @@
           setStepClass(stepVerifyEl, "done");
           journeyHintEl.textContent = flowState.onboardingUrl
             ? "Tu cotización ya está pagada. Te llevamos al auto-onboarding para iniciar tu experiencia con GeoVictoria."
-            : "Tu cotización ya fue aceptada. Estamos terminando de preparar tu enlace de onboarding.";
+            : flowState.isPaid
+              ? (flowState.onboardingPorChat
+                  ? "Tu cotización ya está pagada. La creación de tu cuenta sigue por WhatsApp con Vicky."
+                  : "Tu cotización ya está pagada. Nuestro equipo te contactará para la puesta en marcha.")
+              : "Tu cotización ya fue aceptada. Estamos terminando de preparar tu enlace de onboarding.";
           return;
         }
 
@@ -2958,6 +2982,8 @@
           verificationState.maskedEmailHint = maskEmailForHint(fields.contactEmail.value);
           updateVerifyTargetHint(verificationState.maskedEmailHint);
           flowState.acceptedLocked = q.isAcceptedLocked === true;
+          flowState.isPaid = q.isPaid === true;
+          flowState.onboardingPorChat = q.onboardingPorChat === true;
           flowState.acceptedAt = q.acceptedAt || "";
           flowState.onboardingUrl = q.onboardingUrl || "";
           flowState.pendingConfirmAfterVerification = false;

@@ -9,6 +9,7 @@ const {
 } = require("../_shared/proposal-constants");
 const { getRecord, getRecordWithFields, getUserById, toText } = require("../_shared/zoho-crm");
 const { getQuoteConRespaldo } = require("../_shared/respaldo-cotizacion");
+const { onboardingPorChat } = require("../_shared/onboarding-chat");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { getMercadoPagoConfig } = require("../_shared/mercadopago-config");
 const { signVerificationPayload } = require("../_shared/verification-token");
@@ -316,7 +317,12 @@ export default async function handler(req, res) {
     // 3-sep). Ver api/_shared/respaldo-cotizacion.js.
     const { quote, degradado } = await getQuoteConRespaldo(config.quoteModule, payload.quoteId);
     const status = toText(quote?.[config.quoteStatusField]);
-    const isAcceptedLocked = /Aceptada/i.test(status);
+    // "Pagada" (estado que existe desde el 24-ago, marcarEstadoPagada) TAMBIÉN
+    // es aceptada-y-bloqueada: hasta el 07-sep solo se miraba /Aceptada/ y un
+    // cliente que ya había pagado volvía a ver el flujo completo de aceptar y
+    // pagar (caso TESLA AUSTRAL — riesgo de doble pago).
+    const isPaid = /Pagada/i.test(status);
+    const isAcceptedLocked = isPaid || /Aceptada/i.test(status);
     const acceptedAt = toText(quote?.[config.quoteAcceptanceAtField]);
     const onboardingUrl = toText(quote?.[config.quoteOnboardingUrlField]);
     const onboardingToken = toText(quote?.[config.quoteOnboardingTokenField]);
@@ -387,7 +393,11 @@ export default async function handler(req, res) {
     // por transferencia BANORTE, indicada en el PDF). Nunca se mintea un link
     // de pago para una cotización MX — cobraría con la app chilena en CLP.
     // CL/CO no cambian.
-    const needsPayment = isAcceptedLocked && paymentsEnabled && !onboardingReady && pais !== "mx";
+    const needsPayment = isAcceptedLocked && !isPaid && paymentsEnabled && !onboardingReady && pais !== "mx";
+    // Pagada SIN link de onboarding = alta por chat de Vicky (el post-pago no
+    // genera wizard cuando el agente conduce el alta por WhatsApp). La página
+    // lo dice así en vez de "estamos preparando tu enlace de onboarding".
+    const porChat = isPaid && !onboardingUrl ? await onboardingPorChat(config, payload.quoteId, pais).catch(() => false) : false;
     const paymentUrl = needsPayment
       ? buildPaymentUrlForQuote(mpConfig, {
           quoteId: payload.quoteId,
@@ -427,6 +437,8 @@ export default async function handler(req, res) {
         name: toText(quote?.Name),
         status,
         isAcceptedLocked,
+        isPaid,
+        onboardingPorChat: porChat,
         acceptedAt,
         onboardingUrl,
         onboardingId,
