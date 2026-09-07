@@ -89,6 +89,10 @@
       "memory": 1024,
       "maxDuration": 60
     },
+    "api/creator/ndv-alta-chat.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
     "api/payments/webhook.js": {
       "memory": 1024,
       "maxDuration": 60
