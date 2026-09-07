@@ -212,9 +212,18 @@ module.exports = async function handler(req, res) {
       return sendJson(res, 500, { ok: false, error: `Faltan variables de Zoho Creator: ${cfg.missing.join(", ")}` });
     }
 
-    // 1. Espejo en Creator.
+    // 1. Espejo en Creator. `cotId` explícito (admin) fuerza uno: al REHACER
+    //    una nota, el espejo viejo —convertido a una NDV que luego se anuló—
+    //    sigue siendo el más cercano a la fecha de emisión y ganaría el sorteo.
     paso = "espejo";
-    const { cot, por, candidatos } = await espejoDeCotizacion(cfg, quote, quoteId);
+    const cotForzado = toText(body.cotId).replace(/\D/g, "");
+    const { cot, por, candidatos } = cotForzado
+      ? {
+          cot: (await filasCreator(cfg, `(ID == ${cotForzado})`)).find((f) => texto(f.Formulario) === "Cotización") || null,
+          por: "cotId",
+          candidatos: 1,
+        }
+      : await espejoDeCotizacion(cfg, quote, quoteId);
     if (!cot) {
       return sendJson(res, 200, {
         ok: false,
@@ -234,9 +243,12 @@ module.exports = async function handler(req, res) {
 
     // 2. Nota de venta existente (cualquier estado) o conversión nueva.
     paso = "nota";
+    // Una nota ANULADA no cuenta: se convierte de nuevo (caso Molinas 07-sep,
+    // NDV-31616/31619 anuladas para rehacer la nota con el reloj).
     let nota =
-      (await filasCreator(cfg, `(Cotizacion_Origen == ${cotId})`)).find((f) => texto(f.Formulario) === "Nota de Venta") ||
-      null;
+      (await filasCreator(cfg, `(Cotizacion_Origen == ${cotId})`)).find(
+        (f) => texto(f.Formulario) === "Nota de Venta" && texto(f.STATUS) !== "ANULADA",
+      ) || null;
     if (!nota) {
       if (texto(cot.ESTADO_COT) === "Convertida a NDV") {
         return sendJson(res, 200, {
