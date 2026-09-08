@@ -529,7 +529,10 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
         const r = await coqlQuery(
           `select id, Numero_Cotizacion, Created_Time from ${config.quoteModule} where Deal_Asociado = ${String(dealId).replace(/\D/g, "")} and Intervenci_n_Humana = '100% Vicky' limit 20`,
         );
-        const previas = (r?.data || []).filter((q) => {
+        // coqlQuery devuelve el ARREGLO de filas (no {data}); se toleran las dos formas.
+        const filas = Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
+        console.log(`[quote-internal-notify] ${quoteId} origen: ${filas.length} cotización(es) 100% Vicky en el deal ${dealId}`);
+        const previas = filas.filter((q) => {
           if (String(q.id) === String(quoteId)) return false;
           const cMs = Date.parse(toText(q.Created_Time));
           return !Number.isFinite(creadaMs) || !Number.isFinite(cMs) || cMs <= creadaMs;
