@@ -96,13 +96,13 @@ const INTERNAL_ACCOUNT_NAMES = (process.env.VICKY_INTERNAL_ACCOUNT_NAMES || "Geo
 // clientes reales (Ponce, Tolaba, Naspeclinic, Vendemos Tu Automóvil)
 // terminaron colgando de la misma cuenta "-", cuyo RUT se iba pisando con cada
 // emisión. Orden de Lalo: "esa cuenta no es bolsa — que no vuelva a usarse".
-const ES_CUENTA_BLOQUEADA = /^[-–—\s]*$|^no usar\b/i;
+const ES_CUENTA_BLOQUEADA = /^[-–—\s]*$|^no usar\b|no declarado/i;
 const esCuentaNoAdoptable = (name) => {
   const n = String(name || "").trim();
   return !n || INTERNAL_ACCOUNT_NAMES.includes(n.toLowerCase()) || ES_CUENTA_BLOQUEADA.test(n);
 };
 // Empresa "placeholder" en el LEAD (no es una razón social real).
-const ES_COMPANY_PLACEHOLDER = /^[-–—\s]*$|prospecto whatsapp|por identificar|sin empresa|tu empresa|no identificado/i;
+const ES_COMPANY_PLACEHOLDER = /^[-–—\s]*$|prospecto whatsapp|por identificar|sin empresa|tu empresa|no identificado|no declarado/i;
 
 // Documentos hosteados (URLs permanentes en Supabase) que van como botones de
 // descarga en el correo de la cotización.
