@@ -11,7 +11,7 @@
  */
 
 const { zohoApiFetch } = require("./zoho-auth");
-const { getRecordWithFields, toText } = require("./zoho-crm");
+const { getRecordWithFields, toText, coqlQuery } = require("./zoho-crm");
 const { getMercadoPagoConfig } = require("./mercadopago-config");
 const { esCotizacionCO } = require("./payment-session");
 const {
@@ -212,7 +212,7 @@ async function detallePagosMP(quoteId) {
   }
 }
 
-function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId }) {
+function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId, reemision }) {
   const titulo = evento === "pagada" ? "💰 Cotización PAGADA" : "✅ Cotización ACEPTADA";
   const dealLink = dealId
     ? `<a href="${DEAL_URL_BASE}${encodeURIComponent(dealId)}">Ver el Deal en Zoho</a>`
@@ -238,7 +238,9 @@ function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId
     canal === "ejecutivo"
       ? `<tr><td><b>Canal</b></td><td>👤 Ejecutivo (cotizadora)</td></tr>`
       : canal === "vicky"
-        ? `<tr><td><b>Canal</b></td><td>🤖 Vicky (WhatsApp)</td></tr>`
+        ? reemision
+          ? `<tr><td><b>Canal</b></td><td>🤖 Vicky (WhatsApp) — esta cotización la reemitió el ejecutivo sobre un deal que Vicky ya había cotizado; la venta cuenta para Vicky</td></tr>`
+          : `<tr><td><b>Canal</b></td><td>🤖 Vicky (WhatsApp)</td></tr>`
         : "";
   // NDV MANUAL (Lalo 01-sep, dolor Victoria Luna): con la conversión
   // automática apagada, el correo del pago recuerda el paso humano — y lleva
@@ -513,6 +515,36 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
     } catch (_e) {
       canal = "";
     }
+    // REEMISIÓN DEL EJECUTIVO SOBRE UNA VENTA DE VICKY (Lalo 08-sep, caso
+    // UDES/COT1324): Vicky cotizó COT1288, traspasó, la clienta aceptó y al
+    // cambiar el RUT el ejecutivo emitió OTRA cotización en vez de actualizar
+    // la de Vicky → el correo salió "Canal: EJECUTIVO" y el dash perdió la
+    // venta. Si el mismo deal ya tenía una cotización '100% Vicky' emitida
+    // ANTES que esta, la venta es de Vicky (asistida): el ejecutivo solo la
+    // reemitió. Best-effort: si la COQL falla, queda la marca de la emisión.
+    let reemision = false;
+    if (canal === "ejecutivo" && dealId) {
+      try {
+        const creadaMs = Date.parse(toText(quote?.Created_Time));
+        const r = await coqlQuery(
+          `select id, Numero_Cotizacion, Created_Time from ${config.quoteModule} where Deal_Asociado = ${String(dealId).replace(/\D/g, "")} and Intervenci_n_Humana = '100% Vicky' limit 20`,
+        );
+        const previas = (r?.data || []).filter((q) => {
+          if (String(q.id) === String(quoteId)) return false;
+          const cMs = Date.parse(toText(q.Created_Time));
+          return !Number.isFinite(creadaMs) || !Number.isFinite(cMs) || cMs <= creadaMs;
+        });
+        if (previas.length) {
+          reemision = true;
+          canal = "vicky";
+          console.log(
+            `[quote-internal-notify] ${quoteId} reemitida por ejecutivo sobre venta de Vicky (deal ${dealId}: ${previas.map((q) => q.Numero_Cotizacion || q.id).join(", ")})`,
+          );
+        }
+      } catch (e) {
+        console.warn(`[quote-internal-notify] origen Vicky no verificable para ${quoteId}: ${e.message}`);
+      }
+    }
     // VENTA AUTÓNOMA vs ASISTIDA (Lalo 24-ago): en el PAGO de una venta de
     // Vicky, el correo dice si el ejecutivo registró gestión en el deal
     // (nota humana o nota-espejo). Sin gestión, el agente además devuelve el
@@ -522,7 +554,13 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
       venta = (await hayGestionEjecutivoEnDeal(dealId)) ? "asistida" : "autonoma";
     }
     const sufijoCanal =
-      (canal === "ejecutivo" ? " · Canal: EJECUTIVO (cotizadora)" : canal === "vicky" ? " · Canal: VICKY" : "") +
+      (canal === "ejecutivo"
+        ? " · Canal: EJECUTIVO (cotizadora)"
+        : canal === "vicky"
+          ? reemision
+            ? " · Canal: VICKY (reemitida por ejecutivo)"
+            : " · Canal: VICKY"
+          : "") +
       (venta === "autonoma" ? " · VENTA AUTÓNOMA" : venta === "asistida" ? " · VENTA ASISTIDA" : "");
     const subject = `[GeoVictoria] Cotización ${numero || quoteId} ${
       evento === "pagada" ? "PAGADA" : "ACEPTADA"
@@ -539,7 +577,7 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
         creatorId = toText(fresco?.[campoNdv]);
       }
     } catch (_e) { /* fila sin id */ }
-    const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId });
+    const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId, reemision });
     // Multi-país: en cotizaciones CO la ejecutiva es Laura (no Anderson);
     // en cotizaciones MX es Yahel Segura. CL sigue con los destinatarios de
     // siempre.
