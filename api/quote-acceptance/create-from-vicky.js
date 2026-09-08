@@ -310,6 +310,30 @@ async function findOpenLeadIdByPhone(telefono) {
   }
 }
 
+// Consulta al AGENTE (vic_kv del Supabase de Vicky, que este repo no ve) si el
+// contacto está marcado para reactivar un deal perdido: `reactivar_deal_<fono>`
+// = id del deal. Best-effort: sin envs o sin respuesta, "" (regla clásica).
+async function dealAReactivarEnAgente(fono) {
+  try {
+    const base = toText(process.env.VICKY_AGENT_NOTIFY_URL);
+    const secret = toText(process.env.VICKY_AGENT_CRON_SECRET);
+    if (!base || !secret || !fono) return "";
+    const origin = new URL(base).origin;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 4000);
+    const r = await fetch(`${origin}/api/vic-admin-kv?k=reactivar_deal_${encodeURIComponent(fono)}`, {
+      headers: { "x-cron-secret": secret },
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(t));
+    if (!r.ok) return "";
+    const j = await r.json().catch(() => ({}));
+    const v = toText(j?.value);
+    return /^\d{6,}$/.test(v) ? v : "";
+  } catch {
+    return "";
+  }
+}
+
 // LEAD-FIRST (Lalo 30-jul, cierre del patrón Odalisca): si el contacto ya
 // tiene un lead CONVERTIDO (la sincronización de hitos convierte apenas ve
 // el preform), la formal debe COLGARSE de ese deal — no crear otro. Busca el
@@ -340,7 +364,19 @@ async function findConvertedIdsByPhone(telefono) {
       // deal propio (reglas 4 y 6 del Proceso de Gestión de Leads). La
       // cuenta y el contacto sí se reusan: la empresa es la misma.
       const deal = await getRecord("Deals", ids.dealId);
-      if (["Cierre Perdido", "8. Facturando"].includes(toText(deal?.Stage))) ids.dealId = "";
+      if (["Cierre Perdido", "8. Facturando"].includes(toText(deal?.Stage))) {
+        // CAMPAÑA DE REMARKETING (Lalo 03-sep / 08-sep): si el agente marcó
+        // este contacto para reactivar SU deal perdido (vic_kv reactivar_deal_),
+        // la cotización nueva cuelga de ese mismo deal y Vicky lo revive con
+        // la regla de David (crm-hitos.revivirDealDeCampana). Sin marca, el
+        // perdido sigue siendo terminal y nace ciclo nuevo.
+        const marcado = toText(deal?.Stage) === "Cierre Perdido" ? await dealAReactivarEnAgente(fono) : "";
+        if (marcado && marcado === ids.dealId) {
+          console.warn(`[create-from-vicky] ${fono}: deal ${ids.dealId} en Cierre Perdido marcado por campaña de reactivación — se reusa`);
+        } else {
+          ids.dealId = "";
+        }
+      }
     }
     if (ids.accountId || ids.contactId || ids.dealId) {
       console.warn(
