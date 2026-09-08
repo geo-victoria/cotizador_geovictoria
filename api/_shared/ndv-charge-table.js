@@ -128,6 +128,28 @@ function factorDescuentoLinea(row, descuentos) {
 }
 
 /**
+ * Regla SSTT (Ivonne Rojas, 08-sep): si entre los servicios asociados hay
+ * instalación, las líneas de envío/despacho se quitan. La orden de servicio
+ * debe declarar solo lo que se hará. Devuelve un arreglo nuevo; no muta.
+ */
+function filtrarUnSoloServicioTecnico(lineas) {
+  const lista = Array.isArray(lineas) ? lineas : [];
+  const esEnvio = (l) =>
+    /^envio/i.test(String(l?.codigo || "")) ||
+    /env[ií]o|despacho/i.test(String(l?.item || l?.nombre || ""));
+  const esInstalacion = (l) =>
+    isInstalacionItem(l) || /instalaci/i.test(String(l?.item || l?.nombre || ""));
+  if (!lista.some(esInstalacion)) return lista;
+  const fuera = lista.filter(esEnvio).map((l) => l?.nombre || l?.item);
+  if (fuera.length) {
+    console.log(
+      `[ndv-charge-table] regla SSTT un-solo-servicio: fuera envío (${fuera.join(", ")}) porque hay instalación`
+    );
+  }
+  return lista.filter((l) => !esEnvio(l));
+}
+
+/**
  * Montos de la línea en la moneda en que está denominada la cotización.
  *
  * Chile guarda UF en los campos *_UF y su equivalente en pesos en los *_CLP.
@@ -575,12 +597,20 @@ function buildChargeTables({
     );
   }
 
+  // UN SOLO SERVICIO TÉCNICO EN LA NOTA (Ivonne Rojas / SSTT, 08-sep, ticket
+  // Molinas rechazado): la NDV debe llevar únicamente el servicio que de verdad
+  // se ejecuta. Con instalación técnica el equipo lo lleva el técnico, así que
+  // la línea de envío (bonificada en $0 en el arriendo, o cobrada) NO va: con
+  // las dos, SSTT rechaza la orden y obliga a rehacer la nota. Sin instalación,
+  // el envío se conserva aunque venga en 0 — es el único servicio que ocurre.
+  const lineasServiciosSsTt = filtrarUnSoloServicioTecnico(lineasServicios);
+
   return {
     master,
     porServicio,
     descuentoPorServicio,
     lineasEquipos,
-    lineasServicios,
+    lineasServicios: lineasServiciosSsTt,
     lineasArriendo,
     // Vigencia del descuento del plan, para el campo Cantidad_de_Meses_de_descuento
     // del Servicio_Recurrente. Sin campo configurado en el CRM manda la política
