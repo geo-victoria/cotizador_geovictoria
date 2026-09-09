@@ -1323,6 +1323,16 @@ module.exports = async function handler(req, res) {
     // CAMINO B (creación directa con dedup por RUT). El lead queda huérfano
     // para revisión manual, pero el cliente recibe su cotización igual.
     if (existing.leadId) {
+      // LEAD SOURCE HEREDADA (Lalo 09-sep, "dejar de forzar SEO y pisar la
+      // Lead Source del deal"): el convert estampaba VICKY_LEAD_SOURCE ("SEO")
+      // en el deal aunque el lead viniera de Google Ads / Direct / AI. El deal
+      // hereda la fuente del lead; el default solo aplica si el lead no la tiene.
+      let leadSourceHeredada = "";
+      try {
+        const leadSrc = await getRecord("Leads", existing.leadId).catch(() => null);
+        leadSourceHeredada = toText(leadSrc?.Lead_Source).trim();
+      } catch { /* sin fuente: default */ }
+      const leadSourceDeal = leadSourceHeredada || VICKY_LEAD_SOURCE;
       // EMPRESA REAL EN EL LEAD ANTES DE CONVERTIR (05-sep, cuenta "-"): Zoho
       // nombra la cuenta nueva con Lead.Company y, si ya existe una cuenta con
       // ese nombre, FUSIONA ahí sin avisar. Con Company="-" (conciliador de
@@ -1371,7 +1381,7 @@ module.exports = async function handler(req, res) {
           // ejecutivo a mano (backfill 30-jul lo rellenó retroactivamente).
           Tipo_de_Cobro: (Number(cliente.userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
           Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
-          Lead_Source: VICKY_LEAD_SOURCE,
+          Lead_Source: leadSourceDeal,
           // El deal nace en Vicky y la tómbola de abajo lo sortea al tiro
           // (Lalo 04-ago). Si el sorteo falla, "dueño=Vicky" es la señal.
           // División por RUT: el deal hermano tenía vendedor humano → este
@@ -1429,7 +1439,7 @@ module.exports = async function handler(req, res) {
             Sector: sectorParaZoho,
             N_Empleados_que_marcan: cliente.userCount,
             Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
-            Lead_Source: VICKY_LEAD_SOURCE,
+            Lead_Source: leadSourceDeal,
             Description: `Deal creado por Vicky desde Lead convertido.\nUsuarios: ${cliente.userCount}\nTotal: ${cotizacion.totalUF} UF / ${cotizacion.totalCLP} CLP\nSector: ${sectorParaZoho}`,
           }, true);
         } else {
