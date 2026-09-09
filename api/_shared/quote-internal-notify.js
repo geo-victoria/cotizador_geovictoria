@@ -558,6 +558,30 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false
       } catch (e) {
         console.warn(`[quote-internal-notify] origen Vicky no verificable para ${quoteId}: ${e.message}`);
       }
+      // CASO C (Lalo 09-sep, "agrega Seguridad GSL"): sin cotización de Vicky
+      // pero con PRECIO MOSTRADO por ella en el chat antes de esta emisión →
+      // también es venta de Vicky. La señal vive en la base del agente, así
+      // que se le pregunta (mismo par URL/secreto del aviso por WhatsApp).
+      // Best-effort: sin config o con falla, queda la marca de la emisión.
+      if (!reemision && tel9.length === 9 && AGENT_NOTIFY_URL && AGENT_CRON_SECRET) {
+        try {
+          const base = new URL(AGENT_NOTIFY_URL).origin;
+          const tel = toText(quote?.Tel_fono_Contacto).replace(/\D/g, "").replace(/^5656/, "56");
+          const antes = toText(quote?.Created_Time);
+          const rp = await fetch(
+            `${base}/api/vic-precio-mostrado?tel=${encodeURIComponent(tel)}&antes=${encodeURIComponent(antes)}`,
+            { headers: { "x-cron-secret": AGENT_CRON_SECRET }, signal: AbortSignal.timeout(6000) },
+          );
+          const jp = rp.ok ? await rp.json().catch(() => ({})) : {};
+          if (jp && jp.mostrado === true) {
+            reemision = true;
+            canal = "vicky";
+            console.log(`[quote-internal-notify] ${quoteId} precio mostrado por Vicky el ${jp.at} antes de la emisión ejecutiva → venta de Vicky`);
+          }
+        } catch (e) {
+          console.warn(`[quote-internal-notify] precio mostrado no verificable para ${quoteId}: ${e.message}`);
+        }
+      }
     }
     // VENTA AUTÓNOMA vs ASISTIDA (Lalo 24-ago): en el PAGO de una venta de
     // Vicky, el correo dice si el ejecutivo registró gestión en el deal
