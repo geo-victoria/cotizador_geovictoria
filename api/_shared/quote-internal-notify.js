@@ -454,11 +454,13 @@ async function yaSalioAvisoEvento(quoteModule, quoteId, evento, ventanaMs = 24 *
   }
 }
 
-async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
+async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false }) {
   try {
     if (!config || !quote || !quoteId) return;
     const numero = toText(quote?.Numero_Cotizacion);
-    if ((evento === "pagada" || evento === "aceptada") && (await yaSalioAvisoEvento(config.quoteModule, quoteId, evento))) {
+    // `forzar` (09-sep): reenvío manual desde notify-paid?forzar=1 — p. ej.
+    // cuando el aviso salió con el canal mal atribuido (Clínica Talca COT1327).
+    if (!forzar && (evento === "pagada" || evento === "aceptada") && (await yaSalioAvisoEvento(config.quoteModule, quoteId, evento))) {
       console.log(`[quote-notify] omitido: aviso ${evento.toUpperCase()} ya enviado en las últimas 24 h quote=${numero || quoteId}`);
       return;
     }
@@ -523,15 +525,24 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento }) {
     // ANTES que esta, la venta es de Vicky (asistida): el ejecutivo solo la
     // reemitió. Best-effort: si la COQL falla, queda la marca de la emisión.
     let reemision = false;
-    if (canal === "ejecutivo" && dealId) {
+    // Deal O teléfono (Lalo 09-sep, caso Clínica Talca/COT1327: Vicky cotizó
+    // COT407 en un deal y el ejecutivo emitió en OTRO deal del mismo cliente
+    // — por deal solo, el correo salió "Canal: EJECUTIVO").
+    const tel9 = toText(quote?.Tel_fono_Contacto).replace(/\D/g, "").slice(-9);
+    if (canal === "ejecutivo" && (dealId || tel9.length === 9)) {
       try {
         const creadaMs = Date.parse(toText(quote?.Created_Time));
+        const partes = [
+          dealId ? `Deal_Asociado = '${String(dealId).replace(/\D/g, "")}'` : "",
+          tel9.length === 9 ? `Tel_fono_Contacto like '%${tel9}%'` : "",
+        ].filter(Boolean);
+        const cond = partes.length === 2 ? `(${partes[0]} or ${partes[1]})` : partes[0];
         const r = await coqlQuery(
-          `select id, Numero_Cotizacion, Created_Time from ${config.quoteModule} where Deal_Asociado = ${String(dealId).replace(/\D/g, "")} and Intervenci_n_Humana = '100% Vicky' limit 20`,
+          `select id, Numero_Cotizacion, Created_Time from ${config.quoteModule} where (${cond} and Intervenci_n_Humana = '100% Vicky') limit 20`,
         );
         // coqlQuery devuelve el ARREGLO de filas (no {data}); se toleran las dos formas.
         const filas = Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
-        console.log(`[quote-internal-notify] ${quoteId} origen: ${filas.length} cotización(es) 100% Vicky en el deal ${dealId}`);
+        console.log(`[quote-internal-notify] ${quoteId} origen: ${filas.length} cotización(es) 100% Vicky en el deal ${dealId || "-"} / tel ${tel9 || "-"}`);
         const previas = filas.filter((q) => {
           if (String(q.id) === String(quoteId)) return false;
           const cMs = Date.parse(toText(q.Created_Time));

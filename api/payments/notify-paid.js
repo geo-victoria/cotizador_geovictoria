@@ -77,7 +77,8 @@ module.exports = async function handler(req, res) {
     // El aviso de PAGADA sale UNA vez por cotización: si ya está en la related
     // list, se responde ok (para que el reintento del agente borre su marca)
     // sin volver a mandarlo.
-    if (!/^1|true$/i.test(toText(req?.query?.forzar))) {
+    const forzar = /^1|true$/i.test(toText(req?.query?.forzar));
+    if (!forzar) {
       const yaSalio = await yaSalioCorreoPagada(config.quoteModule, quoteId);
       if (yaSalio) {
         console.log(`[notify-paid] correo PAGADA ya enviado antes, se omite quote=${quoteId}`);
@@ -86,8 +87,8 @@ module.exports = async function handler(req, res) {
     }
     // notifyQuoteEvent es best-effort por diseño (nunca lanza): el resultado
     // real queda en los logs [quote-notify]. Acá solo confirmamos el disparo.
-    await notifyQuoteEvent({ config, quote, quoteId, evento: "pagada" });
-    return sendJson(res, 200, { ok: true, quoteId, numero: toText(quote?.Numero_Cotizacion) });
+    await notifyQuoteEvent({ config, quote, quoteId, evento: "pagada", forzar });
+    return sendJson(res, 200, { ok: true, quoteId, numero: toText(quote?.Numero_Cotizacion), forzado: forzar });
   } catch (err) {
     return sendJson(res, 500, { ok: false, error: toText(err?.message || err).slice(0, 300) });
   }
