@@ -119,7 +119,14 @@ module.exports = async function handler(req, res) {
       return sendJson(res, 200, { ok: true, skipped: "mp_disabled", reconciliadas: 0 });
     }
 
-    const atascadas = await buscarAtascadas(acceptanceConfig, mpConfig.statusPaymentPending);
+    // MODO PUNTUAL (10-sep, caso Eduardo Guzmán "ya está pagado" con la
+    // cotización todavía Aceptada): `?quoteId=` / body.quoteId verifica UNA
+    // cotización contra MP sin importar su estado ni la gracia, para
+    // confirmar un pago que el cliente declara antes de creerle.
+    const quoteIdPuntual = toText(req.query?.quoteId || (req.body && req.body.quoteId) || "");
+    const atascadas = quoteIdPuntual
+      ? [{ id: quoteIdPuntual }]
+      : await buscarAtascadas(acceptanceConfig, mpConfig.statusPaymentPending);
     // BARRIDO PAREJO (24-ago): en orden fijo (Created_Time desc) + timeout,
     // cada corrida moría procesando SIEMPRE las mismas primeras candidatas y
     // las viejas jamás se alcanzaban. Mezclar reparte la cobertura entre las
