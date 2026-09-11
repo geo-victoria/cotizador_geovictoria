@@ -1491,6 +1491,11 @@ module.exports = {
   runNdvHandoff,
   runNdvHandoffFromDraft,
   resolveServiciosRecurrentesDeFila,
+  // Exportadas para el arreglo del espejo EN SITIO (ndv-espejo-sitio): el plan
+  // tiene que comparar contra la MISMA dotación y los MISMOS servicios que el
+  // puente usa al crear. Duplicar esa inferencia allá sería duplicar la verdad.
+  inferCommittedEmployees,
+  inferServiciosCreator,
   persistNdvReferences,
   quoteHasNdvReference,
 };

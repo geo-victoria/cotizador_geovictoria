@@ -186,6 +186,73 @@ async function regenerarEspejo(quoteId, timeoutMs) {
   }
 }
 
+/**
+ * ARREGLO EN SITIO antes de regenerar (Lalo 11-sep: "por qué en vez de anular
+ * no actualiza? está generando muchos correlativos"). Compara el espejo con la
+ * venta pagada y, si la diferencia es de VALORES (dotación, tabla de cobro,
+ * descuento) o hay un bloque de hardware sobrante, lo PARCHEA en sitio con los
+ * mismos campos que el puente escribe al crear — cero correlativos quemados.
+ * Devuelve null cuando no se pudo arreglar así: ahí el llamador regenera, que
+ * es el camino probado.
+ */
+async function intentarArregloEnSitio(cfg, cotId, quote, config) {
+  try {
+    const { serviciosDelEspejo, bloquesDelEspejo, planEnSitio, aplicarPlanEnSitio } =
+      require("../_shared/ndv-espejo-sitio");
+    const { buildChargeTables, resolverDescuentos } = require("../_shared/ndv-charge-table");
+    const {
+      resolveServiciosRecurrentesDeFila,
+      inferCommittedEmployees,
+      inferServiciosCreator,
+    } = require("../_shared/ndv-handoff");
+
+    const [serviciosEspejo, bloquesEspejo] = await Promise.all([
+      serviciosDelEspejo(cfg, cotId),
+      bloquesDelEspejo(cfg, cotId),
+    ]);
+    if (!serviciosEspejo.length) return null; // sin hijos legibles: no arriesgar
+
+    const servicios = inferServiciosCreator(quote, config);
+    const empleados = inferCommittedEmployees(quote, null, undefined);
+    const principal = texto(servicios?.serviciosRecurrentes?.[0]) || "Control de Asistencia";
+    const tablas = buildChargeTables({
+      quote,
+      config,
+      committedEmployees: empleados,
+      moneda: texto(quote?.Moneda) || "UF",
+      servicioPrincipal: principal,
+      resolveServicios: resolveServiciosRecurrentesDeFila,
+    });
+    const items = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
+    const hayHardware = items.some((x) => /hardware|equipo/i.test(texto(x?.Tipo_Item) || texto(x?.Tipo)));
+
+    const plan = planEnSitio({
+      serviciosEspejo,
+      bloquesEspejo,
+      deseado: {
+        empleados,
+        descuentoPct: resolverDescuentos(quote, config).recurrentePct,
+        tablasPorServicio: tablas?.porServicio || {},
+        hayHardware,
+      },
+    });
+    if (plan.modo === "regenerar") {
+      console.log(`[ndv-alta-chat] espejo ${cotId}: en sitio NO alcanza (${plan.motivos.join("; ")})`);
+      return null;
+    }
+    if (plan.modo === "ok") return { modo: "ok", acciones: [] };
+    const aplicado = await aplicarPlanEnSitio(cfg, plan);
+    if (!aplicado.ok) return null;
+    console.log(
+      `[ndv-alta-chat] espejo ${cotId} ARREGLADO EN SITIO (${plan.acciones.map((a) => a.tipo).join(", ")}) — sin quemar correlativo`,
+    );
+    return { modo: "en_sitio", acciones: aplicado.resultados };
+  } catch (e) {
+    console.warn(`[ndv-alta-chat] arreglo en sitio falló (${String(e?.message || e).slice(0, 120)}) — se regenera`);
+    return null;
+  }
+}
+
 async function anularEspejo(cfg, cotId) {
   try {
     const r = await creatorApiFetch(`${reportPath(cfg)}/${encodeURIComponent(cotId)}`, {
@@ -367,6 +434,16 @@ module.exports = async function handler(req, res) {
       const diag = cotForzado ? { regenerar: false, motivos: [] } : await diagnosticoEspejo(cfg, cot, quote, config);
       if (yaConvertidaSinNota && !cotForzado) diag.motivos.push("figura convertida pero su nota no está viva");
       if (diag.motivos.length > 0 && !cotForzado) {
+        // Primero EN SITIO: si la diferencia es de valores (o hay un bloque
+        // sobrante que se puede neutralizar), se parchea y se sigue con la
+        // conversión en esta misma pasada, sin quemar un correlativo.
+        paso = "arreglo_en_sitio";
+        const enSitio = await intentarArregloEnSitio(cfg, cotId, quote, config);
+        if (enSitio) {
+          // El maestro no se toca en este arreglo (los PATCH van a sus hijos),
+          // así que `cot` sigue vigente y la conversión continúa en esta pasada.
+          pasos.push({ arregloEnSitio: { motivos: diag.motivos, ...enSitio } });
+        } else {
         paso = "regenerar_espejo";
         const anulado = await anularEspejo(cfg, cotId);
         const nuevo = queda() > 20_000 ? await regenerarEspejo(quoteId, Math.max(15_000, queda() - 8_000)) : { ok: false, error: "sin presupuesto" };
@@ -386,6 +463,7 @@ module.exports = async function handler(req, res) {
           espejoNuevo: nuevo.ndvId || undefined,
           pasos,
         });
+        }
       }
       if (yaConvertidaSinNota) {
         return sendJson(res, 200, {
