@@ -3041,6 +3041,16 @@
             return 0;
           }
 
+          // LÍNEA BONIFICADA (14-sep, COT1443/Francisca): la propia línea del
+          // subform trae Descuento_Pct = 100 y Subtotal 0 — envío del arriendo
+          // (24-ago) e instalación de arriendo en RM (07-sep). La página no
+          // leía ese campo y la fila quedaba "1 UF · – · $0": a la vista
+          // parecía un cobro. Acá se pinta como lo que es: tarifa de lista
+          // tachada, −100 % e "Incluida".
+          function esLineaBonificada(row) {
+            return Number(row.descuentoPct || 0) >= 100;
+          }
+
           function itemRowHtml(row) {
             if (esMX) {
               // México: 6 columnas sin UF; subtotalClp guarda MXN (convención
@@ -3106,7 +3116,19 @@
             let dctoCell = "-";
             let subUfCell = fmtUF(stUf);
             let subClpCell = fmtCLP(stClp);
-            if (dctoPct > 0) {
+            if (esLineaBonificada(row)) {
+              // El subtotal YA viene en 0: la tarifa tachada es la de lista
+              // (unitario × cantidad), no el subtotal.
+              const listaUf = Number(row.precioUnitarioUf || 0) * Number(row.cantidad || 0);
+              const listaClp = Number(row.precioUnitarioClp || 0) * Number(row.cantidad || 0);
+              dctoCell = "&minus;100%";
+              subUfCell =
+                '<span style="text-decoration:line-through;color:#9ca3af">' +
+                fmtUF(listaUf) + "</span> " + fmtUF(0);
+              subClpCell =
+                '<span style="text-decoration:line-through;color:#9ca3af">' +
+                fmtCLP(listaClp) + '</span> <b style="color:#0f9d58">Incluida</b>';
+            } else if (dctoPct > 0) {
               dctoCell = "&minus;" + dctoPct + "%";
               subUfCell =
                 '<span style="text-decoration:line-through;color:#9ca3af">' +

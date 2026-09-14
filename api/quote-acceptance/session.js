@@ -70,6 +70,7 @@ function sanitizeItems(items, fieldMap) {
     afectoIva: row?.[fieldMap.afectoIva] === true,
     codigo: toText(row?.[fieldMap.codigo]),
     zonaTarifa: toText(row?.[fieldMap.zonaTarifa]),
+    descuentoPct: Number(row?.[fieldMap.descuentoPct || "Descuento_Pct"] || 0),
   }));
 }
 
@@ -371,6 +372,14 @@ export default async function handler(req, res) {
       afectoIva: "Afecto_IVA",
       codigo: "Codigo_Item",
       zonaTarifa: config.quoteItemZonaTarifaField,
+      // DESCUENTO POR LÍNEA (14-sep, reclamo de Lalo sobre COT1443/Francisca):
+      // la línea bonificada (envío del arriendo, instalación de arriendo RM)
+      // viene con Subtotal 0 y Descuento_Pct 100, pero la página no leía ese
+      // campo: pintaba el precio de lista en "PRECIO UNIT.", un guion en
+      // "DCTO." y $0 en el subtotal. A la vista parecía que cobrábamos la
+      // instalación que Vicky había dicho que iba incluida. El PDF sí la
+      // tachaba desde el 24-ago; la página de aceptación, no.
+      descuentoPct: "Descuento_Pct",
     };
     const items = sanitizeItems(quote?.[config.quoteItemsSubformField], fieldMap);
     const descuentos = {
