@@ -200,6 +200,21 @@ module.exports = async function handler(req, res) {
             estadoCot,
             creador,
             creado: texto(r.Added_Time) || texto(r.Fecha),
+            // IDENTIDAD del cliente + tipo de formulario (Lalo 14-sep: cruzar
+            // las cotizaciones hechas "por otro lado" contra lo que Vicky ya
+            // había cotizado o mostrado por WhatsApp). Sin estos campos el
+            // cruce solo puede ir por nombre de cuenta y produce falsos
+            // positivos (caso ARIDOS vs R&H, 14-sep).
+            formulario: texto(r.Formulario),
+            email: texto(r.Email),
+            telefono: texto(r.Tel_fono),
+            rut: texto(r.Identificador_Tributario_Empresa),
+            crmAccount: texto(r.CRM_Account),
+            crmRef: texto(r.CRM_REFERENCE_ID),
+            addedUser: texto(r.Added_User),
+            mensual: texto(r.TOTAL_SERVICIOS_MENSUALES),
+            adelantado: texto(r.TOTAL_SERVICIOS_ADELANTADOS),
+            ndv: texto(r.ID_NDV),
           });
         }
       }
@@ -222,6 +237,6 @@ module.exports = async function handler(req, res) {
     por_estado: ordenar(porEstado),
     por_formulario: ordenar(porFormulario),
     por_creador: ordenar(porCreador),
-    ...(detalle ? { filas: filas.slice(0, 500) } : {}),
+    ...(detalle ? { filas: filas.slice(0, 2000) } : {}),
   });
 };
