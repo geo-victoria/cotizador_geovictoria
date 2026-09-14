@@ -2238,8 +2238,14 @@
           !String((fields.contactEmail && fields.contactEmail.value) || "").trim() ||
           !String((fields.billingEmail && fields.billingEmail.value) || "").trim() ||
           !String((fields.companyRut && fields.companyRut.value) || "").trim();
+        // El cliente que PIDE factura de empresa (link del flujo natural) abre
+        // el modal aunque los datos minimos esten completos: si no, el gate de
+        // "cobrar primero" deja el link sin efecto (caso Gianella 14-sep).
         if (billingModalEl)
-          billingModalEl.classList.toggle("hidden", !isStep2 || esFlujoNatural() || !faltanDatosMinimos);
+          billingModalEl.classList.toggle(
+            "hidden",
+            !isStep2 || esFlujoNatural() || (!faltanDatosMinimos && !flowState.quiereFacturaEmpresa),
+          );
         if (isStep2 && esFlujoNatural() && fields.companyGiro && !fields.companyGiro.value.trim()) {
           fields.companyGiro.value = "Persona Natural";
         }
@@ -2248,22 +2254,23 @@
       // Link "¿necesitas factura?" del flujo natural: vive junto al checkbox
       // de términos (el paso 2 no existe para este flujo).
       function mostrarLinkFacturaNatural() {
-        // RETIRADO (Eduardo 17-ago): la tarjeta del checkbox va limpia, sin el
-        // aviso de persona natural ni el link "Completar datos aquí". La
-        // función queda como no-op (y no borrada) porque la llaman varios
-        // puntos del flujo; si un natural necesita factura de empresa, hoy el
-        // camino es pedirla por el chat.
-        return;
-        // eslint-disable-next-line no-unreachable
+        // DEVUELTO (Lalo 14-sep): "debería poder llenar esos datos aunque sea
+        // persona natural, por si quiere factura para una empresa". Se retiró
+        // el 17-ago junto con el resto del ruido de la tarjeta del checkbox, y
+        // ahí quedó sin ninguna puerta: el pop-up no se levanta para naturales
+        // y el link era lo único. No frena nada — es un link, no un paso.
         if (!esFlujoNatural() || document.getElementById("naturalFacturaLink")) return;
-        const ancla = termsAcceptedInput && termsAcceptedInput.closest("div");
+        // HERMANO de .accept, no hijo: esa tarjeta es flex y el aviso quedaba
+        // apretado al lado del label en vez de debajo.
+        const tarjeta = termsAcceptedInput && termsAcceptedInput.closest(".accept");
+        const ancla = tarjeta && tarjeta.parentNode;
         if (!ancla) return;
         const nfl = document.createElement("div");
         nfl.id = "naturalFacturaLink";
-        nfl.style.cssText = "margin-top:8px;font-size:12.5px;color:#64748b";
+        nfl.style.cssText = "margin:8px 2px 0;font-size:12.5px;color:#64748b";
         nfl.innerHTML =
           'Con tu RUT de persona natural no te pedimos datos de facturación. ¿Necesitas factura de empresa? <a href="#" id="naturalFacturaAbrir" style="font-weight:600">Completar datos aquí</a>';
-        ancla.appendChild(nfl);
+        ancla.insertBefore(nfl, tarjeta.nextSibling);
         const abrir = document.getElementById("naturalFacturaAbrir");
         if (abrir)
           abrir.addEventListener("click", function (ev) {
@@ -3842,6 +3849,12 @@
       // cerrar en aceptada, el botón del resumen reaparece para poder volver.
       function closeBillingModal() {
         stageState.current = 1;
+        // Un natural que abrió el formulario y se arrepiente vuelve a su flujo
+        // y recupera el link: si no, queda sin puerta por el resto de la visita.
+        if (flowState.personaNatural && flowState.quiereFacturaEmpresa && !flowState.acceptedLocked) {
+          flowState.quiereFacturaEmpresa = false;
+          try { mostrarLinkFacturaNatural(); } catch (e) {}
+        }
         renderStage();
         updateJourneyState();
         if (flowState.acceptedLocked) {
