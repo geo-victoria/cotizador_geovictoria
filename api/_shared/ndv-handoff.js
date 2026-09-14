@@ -7,6 +7,7 @@ const {
   toText,
 } = require("./zoho-crm");
 const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
+const { repararMojibake } = require("./mojibake");
 const { buildChargeTables } = require("./ndv-charge-table");
 const { construirNotasPdf, resolverEjecutivo } = require("./ndv-notas");
 const { ejecutivoPorOwner } = require("./ejecutivo-cl");
@@ -799,7 +800,10 @@ async function buildNdvRecord({
   const accountId = toText(account?.id || quote?.CRM_Account?.id || deal?.Account_Name?.id);
   const contactId = toText(contact?.id || quote?.CONTACT_ID || quote?.[config.quoteContactLookupField]?.id);
   const dealName = toText(deal?.Deal_Name || quote?.CRM_Deal);
-  const accountName = toText(account?.Account_Name || quote?.CRM_ACCOUNT_NAME || deal?.Account_Name?.name);
+  // El nombre puede venir ya roto desde una cuenta creada antes del arreglo del
+  // 14-sep (caso COTEL): se repara aquí para que el carácter de control que deja
+  // la doble codificación nunca llegue al espejo ni al nombre del PDF de la nota.
+  const accountName = repararMojibake(toText(account?.Account_Name || quote?.CRM_ACCOUNT_NAME || deal?.Account_Name?.name));
   const contactName = toText(contact?.Full_Name || quote?.Contact_Name || quote?.Contacto_CRM);
   const contactEmail = normalizeEmail(
     quote?.[config.contactEmailField] || contact?.Email || acceptanceData?.contactEmail

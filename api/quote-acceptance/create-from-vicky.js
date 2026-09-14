@@ -1,4 +1,8 @@
 const { codigoCortoDeCotizacion, linkCortoDeCotizacion } = require("../_shared/codigo-corto");
+// Razón social con la codificación rota (padrón SII, caso COTEL 14-sep): el
+// nombre se repara en cada punto donde nace un registro con él, para que un
+// texto roto que ya venga en el body no llegue a Zoho ni de ahí a Creator.
+const { repararMojibake } = require("../_shared/mojibake");
 const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
@@ -1360,7 +1364,7 @@ module.exports = async function handler(req, res) {
       stage = "convert_lead";
       try {
         const dealDataForConvert = {
-          Deal_Name: `${cliente.empresa} - Cotización Vicky`,
+          Deal_Name: `${repararMojibake(cliente.empresa)} - Cotización Vicky`,
           // RUT también en el DEAL (Lalo 10-ago): la cuenta lo llevaba en
           // RUT_Empresa pero el deal quedaba sin Rut/ID Account — el equipo
           // comercial lo necesita en ambos registros.
@@ -1572,7 +1576,7 @@ module.exports = async function handler(req, res) {
       if (needCreateAccount) {
         stage = "create_account";
         const createAccountPayload = {
-          Account_Name: cliente.empresa,
+          Account_Name: repararMojibake(cliente.empresa),
           RUT_Empresa: cliente.rutEmpresa,
           Phone: cliente.contactoTelefono || undefined,
           Billing_Street: cliente.direccionEmpresa || undefined,
@@ -1761,7 +1765,7 @@ module.exports = async function handler(req, res) {
       if (!dealId) {
         stage = "create_deal";
         const dealResult = await createRecord("Deals", {
-          Deal_Name: `${cliente.empresa} - Cotización Vicky`,
+          Deal_Name: `${repararMojibake(cliente.empresa)} - Cotización Vicky`,
           // RUT en el deal, no solo en la cuenta (Lalo 10-ago).
           ...(cliente.rutEmpresa ? { Rut_ID_Account: cliente.rutEmpresa } : {}),
           ...(accountId ? { Account_Name: { id: accountId } } : {}),
@@ -1812,7 +1816,7 @@ module.exports = async function handler(req, res) {
         const acc = await getRecord("Accounts", accountId).catch(() => null);
         if (acc && ES_PLACEHOLDER.test(toText(acc.Account_Name))) {
           await updateRecord("Accounts", accountId, {
-            Account_Name: cliente.empresa,
+            Account_Name: repararMojibake(cliente.empresa),
             ...(cliente.rutEmpresa ? { RUT_Empresa: cliente.rutEmpresa } : {}),
           }, true);
         }
@@ -2085,7 +2089,7 @@ module.exports = async function handler(req, res) {
       stage = "create_quote";
       const quoteFields = {
         // Zoho capa Name a 120 chars (caso Anderson 28-ago: razón social EIRL de 137 chars → INVALID_DATA maximum_length): se recorta la empresa, la fecha siempre sobrevive.
-        Name: `Cotización ${String(cliente.empresa || "").trim()}`.slice(0, 107) + ` - ${new Date().toISOString().slice(0, 10)}`,
+        Name: `Cotización ${repararMojibake(String(cliente.empresa || "").trim())}`.slice(0, 107) + ` - ${new Date().toISOString().slice(0, 10)}`,
         // La cotización sigue al dueño del deal (tómbola de Zoho, Lalo 31-jul).
         Owner: quoteOwner,
         ...(dealId ? { [config.quoteDealLookupField]: { id: dealId } } : {}),
