@@ -1945,7 +1945,9 @@
           const conRecargo = paisPg !== "co" && paisPg !== "pe" && pct > 0 && oneShot > umbral;
           const recargoClp = conRecargo ? Math.round((oneShot * pct) / 100) : 0;
           const totalTarjeta = oneShot + recargoClp;
-          const soloTarjeta = paisPg === "co" || paisPg === "pe";
+          // PE con transferencia desde el 15-sep (cuenta BBVA de GEOVICTORIA
+          // PERU S.A.C., datos de Lalo); CO sigue solo con tarjeta.
+          const soloTarjeta = paisPg === "co";
           const t = st.transfer || {};
           const cotRef = String(t.quoteNumber || (st.quote && st.quote.name) || "").trim();
           const waPhone = String(t.whatsappPhone || "").replace(/[^\d]/g, "");
@@ -1980,10 +1982,17 @@
           const transferHtml =
             '<h3 style="margin:0 0 8px;font-size:16px;color:#0f2b47">Datos para transferencia</h3>' +
             '<ul style="list-style:none;margin:0 0 10px;padding:0;font-size:13.5px">' +
-            '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Titular</span><strong>Victoria S.A</strong></li>' +
-            '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">RUT</span><strong>76.188.587-1</strong></li>' +
-            '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Banco</span><strong>Banco de Chile</strong></li>' +
-            '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Cuenta corriente</span><strong>8001204108</strong></li>' +
+            (paisPg === "pe"
+              ? '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Beneficiario</span><strong>GEOVICTORIA PERU S.A.C.</strong></li>' +
+                '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">RUC</span><strong>20605842055</strong></li>' +
+                '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Banco</span><strong>BBVA</strong></li>' +
+                '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Cuenta corriente soles</span><strong>0011-0123-0100091134-75</strong></li>' +
+                '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">CCI</span><strong>011-123-000100091134-75</strong></li>' +
+                '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Detracciones (12%, serv. informáticos)</span><strong>Banco de la Nación 00022055488</strong></li>'
+              : '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Titular</span><strong>Victoria S.A</strong></li>' +
+                '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">RUT</span><strong>76.188.587-1</strong></li>' +
+                '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Banco</span><strong>Banco de Chile</strong></li>' +
+                '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Cuenta corriente</span><strong>8001204108</strong></li>') +
             (mailEjecPg ? '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Email</span><strong>' + mailEjecPg.replace(/</g, "&lt;") + "</strong></li>" : "") +
             (cotRef ? '<li style="display:flex;justify-content:space-between;padding:6px 0"><span style="color:#6b7280">Referencia</span><strong>' + cotRef.replace(/</g, "&lt;") + "</strong></li>" : "") +
             "</ul>" +

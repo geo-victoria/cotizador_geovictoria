@@ -395,7 +395,10 @@
           // transferencia chilenos (Victoria S.A / Banco de Chile) a un cliente CO.
           // PE: SOLO tarjeta vía MP Perú — no hay cuenta bancaria PE
           // configurada para transferencias; JAMÁS mostrar los datos chilenos.
-          var methodsHtml = esCO || esPE
+          // PE (15-sep, datos bancarios de Lalo): transferencia habilitada con la
+          // cuenta BBVA de GEOVICTORIA PERU S.A.C. (transferPanelHtml la elige
+          // por país). CO sigue solo con tarjeta.
+          var methodsHtml = esCO
             ? '<div id="payMethods">' +
               '<button class="btn" id="payCardBtn">Pagar con tarjeta ' + fmtMonto(a.oneShotClp) + "</button>" +
               '<p class="pay-note">El pago con tarjeta es inmediato y seguro. Todo lo gestiona Mercado Pago.</p>' +
@@ -499,20 +502,32 @@
           // dueño es el robot o su ficha no tiene teléfono.
           var nombreEjec = String((state.transfer && state.transfer.executiveName) || "Vicky").trim() || "Vicky";
           var waLink = transferWhatsappLink(state);
+          // Cuenta por país: Chile (Victoria S.A / Banco de Chile) o Perú
+          // (GEOVICTORIA PERU S.A.C. / BBVA, datos de Lalo 15-sep). JAMÁS los
+          // chilenos a un cliente peruano.
+          var esPEt = paisPago === "pe";
+          var filasCuenta = esPEt
+            ? "<li><span>Beneficiario</span><strong>GEOVICTORIA PERU S.A.C.</strong></li>" +
+              "<li><span>RUC</span><strong>20605842055</strong></li>" +
+              "<li><span>Banco</span><strong>BBVA</strong></li>" +
+              "<li><span>Cuenta corriente soles</span><strong>0011-0123-0100091134-75</strong></li>" +
+              "<li><span>CCI</span><strong>011-123-000100091134-75</strong></li>" +
+              "<li><span>Detracciones (12%, servicios inform&aacute;ticos)</span><strong>Banco de la Naci&oacute;n 00022055488</strong></li>"
+            : "<li><span>Titular</span><strong>Victoria S.A</strong></li>" +
+              "<li><span>RUT</span><strong>76.188.587-1</strong></li>" +
+              "<li><span>Giro</span><strong>Empresa de Servicios Integrales de Informatica</strong></li>" +
+              "<li><span>Banco</span><strong>Banco de Chile</strong></li>" +
+              "<li><span>Cuenta corriente</span><strong>8001204108</strong></li>";
           var waBtn = waLink
             ? '<a class="btn" id="transferWaBtn" href="' + waLink +
               '" target="_blank" rel="noopener noreferrer" onclick="pfPing(&quot;transfer_wsp_click&quot;)">Enviar comprobante por WhatsApp</a>'
             : '<p class="transfer-help">Env&iacute;ale el comprobante a Vicky por WhatsApp ' +
-              "(+56 9 6730 8227) para procesar tu pedido.</p>";
+              (esPEt ? "(+51 922 067 167)" : "(+56 9 6730 8227)") + " para procesar tu pedido.</p>";
           return (
             '<div id="transferPanel" class="transfer-panel hidden">' +
             '<div class="transfer-title">Datos para transferencia</div>' +
             '<ul class="transfer-data">' +
-            "<li><span>Titular</span><strong>Victoria S.A</strong></li>" +
-            "<li><span>RUT</span><strong>76.188.587-1</strong></li>" +
-            "<li><span>Giro</span><strong>Empresa de Servicios Integrales de Informatica</strong></li>" +
-            "<li><span>Banco</span><strong>Banco de Chile</strong></li>" +
-            "<li><span>Cuenta corriente</span><strong>8001204108</strong></li>" +
+            filasCuenta +
             (mailEjec ? "<li><span>Email</span><strong>" + mailEjec + "</strong></li>" : "") +
             (cotRef
               ? "<li><span>Referencia</span><strong>" + cotRef + "</strong></li>"

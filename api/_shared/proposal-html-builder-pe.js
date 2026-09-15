@@ -27,7 +27,8 @@ const VALIDEZ_DIAS_PE = 30;
 const ORG_PE = {
   nombre: "GEOVICTORIA PERU S.A.C.",
   ruc: "20605842055",
-  direccion: "Av. Juan de Aliaga 425 Int. 612, Magdalena del Mar",
+  // Dirección FISCAL (doc de Lalo 15-sep; antes iba la comercial de Magdalena).
+  direccion: "Av. General Trinidad Morán 1340, Urb. Risso, Lince",
   ciudad: "Lima, Perú",
 };
 
