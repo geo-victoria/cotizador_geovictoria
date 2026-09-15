@@ -234,9 +234,11 @@ export default async function handler(req, res) {
       // Regla del recargo tarjeta — MISMA fuente que create-preference
       // (Rodrigo 17-ago: umbral $200.000). pago.html la lee de acá en vez de
       // espejarla hardcodeada: botón y cobro jamás se desalinean.
+      // El recargo es SOLO Chile (create-preference no lo cobra en CO/PE):
+      // pct 0 fuera de CL para que pago.html no lo muestre a un peruano.
       recargo: {
         umbralClp: Number(process.env.MP_RECARGO_UMBRAL_CLP || 200000),
-        pct: Number(process.env.MP_RECARGO_PCT || 3),
+        pct: pais === "co" || pais === "pe" ? 0 : Number(process.env.MP_RECARGO_PCT || 3),
       },
       amounts: {
         oneShotClp: amounts.oneShotClp,

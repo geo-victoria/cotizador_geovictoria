@@ -93,6 +93,15 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toText(value).toLowerCase());
 }
 
+// Versión de T&C por país (15-sep, prueba E2E Perú: la sesión PE salía con
+// TYC-CL): el token de aceptación trae `pais` cuando es co/pe.
+function termsVersionPara(config, pais) {
+  const p = toText(pais).toLowerCase();
+  if (p === "pe") return config.termsVersionPE || config.termsVersion;
+  if (p === "co") return config.termsVersionCO || config.termsVersion;
+  return config.termsVersion;
+}
+
 function buildPaymentSessionToken(mpConfig, { quoteId, dealId, billingEmail, pais }) {
   const ttlMinutes = Math.max(5, Number(mpConfig.paymentSessionTtlMinutes) || 1440);
   return signVerificationPayload(
@@ -435,7 +444,7 @@ export default async function handler(req, res) {
           quoteId: payload.quoteId,
           dealId: payload.dealId,
           acceptedAt: acceptedAtIso,
-          termsVersion: toText(quote?.[config.quoteTermsVersionField]) || config.termsVersion,
+          termsVersion: toText(quote?.[config.quoteTermsVersionField]) || termsVersionPara(config, payload.pais),
           acceptanceData: {
             billingEmail: normalizeEmail(quote?.[config.billingEmailField]),
             billingPhone: toText(quote?.[config.billingPhoneField]),
@@ -543,7 +552,7 @@ export default async function handler(req, res) {
         [config.quoteStatusField]: "Aceptada",
         [config.quoteAcceptanceAtField]: acceptedAtIso,
         [config.quoteTermsAcceptedField]: true,
-        [config.quoteTermsVersionField]: config.termsVersion,
+        [config.quoteTermsVersionField]: termsVersionPara(config, payload.pais),
         [config.billingEmailField]: billingEmailFromForm,
         [config.billingPhoneField]: toText(acceptanceData.billingPhone),
         [config.companyGiroField]: toText(acceptanceData.companyGiro),
@@ -663,7 +672,7 @@ export default async function handler(req, res) {
         quoteId: payload.quoteId,
         dealId: payload.dealId,
         acceptedAt: acceptedAtIso,
-        termsVersion: config.termsVersion,
+        termsVersion: termsVersionPara(config, payload.pais),
         acceptanceData: {
           billingEmail: billingEmailFromForm,
           billingPhone: toText(acceptanceData.billingPhone),

@@ -75,9 +75,16 @@ const VICKY_PE_PRODUCTO = toText(process.env.VICKY_PRODUCTO_DEFAULT) || "Control
 const VICKY_PE_SECTOR = toText(process.env.VICKY_SECTOR_FALLBACK) || "19. Servicios";
 const VICKY_PE_EXPANSION = toText(process.env.VICKY_EXPANSION_REGIONAL) || "No";
 
-// Mónica Mendoza — ejecutiva única del canal PE (ficha Zoho verificada).
+// Mónica Mendoza — ejecutiva única de telemarketing PE (ficha Zoho verificada).
 const VICKY_PE_OWNER_ID = toText(process.env.VICKY_PE_OWNER_ID) || "3525045000323383015";
-const OWNER_PE = VICKY_PE_OWNER_ID ? { id: VICKY_PE_OWNER_ID } : undefined;
+// PERÚ = REGLA CHILENA (Lalo 15-sep: "siempre considera la regla chilena de
+// traspaso para definir la de Perú; cambian las personas, la operación y los
+// roles son los mismos"): cuenta, contacto, deal y cotización NACEN con el
+// usuario Vicky (interina, como en CL) y los entrega el traspaso (Mónica) o la
+// venta autónoma sin gestión (Cecilia). Antes nacían con Mónica y por eso la
+// venta autónoma jamás pasaba a Cecilia (hallazgo 1 de la prueba E2E).
+const VICKY_PE_OWNER_INTERINO_ID = toText(process.env.VICKY_PE_OWNER_INTERINO_ID) || "3525045000484500876";
+const OWNER_PE = { id: VICKY_PE_OWNER_INTERINO_ID };
 
 // Owners cuyo lead vivo se puede cerrar/adoptar (bot + Mónica): un lead de
 // otro dueño humano no se toca.
