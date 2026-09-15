@@ -736,7 +736,7 @@ function buildContactFullPayload(cliente) {
     Last_Name: lastName,
     Email: cliente.contactoEmail,
     Phone: cliente.contactoTelefono || undefined,
-    Lead_Source: VICKY_LEAD_SOURCE,
+    Lead_Source: cliente.leadSource || VICKY_LEAD_SOURCE,
     Territorio: VICKY_TERRITORIO,
   };
 }
@@ -1166,6 +1166,12 @@ module.exports = async function handler(req, res) {
   try {
     const body = parseBody(req);
     const cliente = body.cliente || {};
+    // LEAD SOURCE POR CANAL (Lalo 15-sep): una emisión que nace de Messenger/
+    // Instagram trae `leadSource: "Facebook"` desde el agente; con eso nacen el
+    // lead, el contacto y el deal que ESTA emisión crea. Sin el campo, el
+    // default de siempre. Lo que ya existía hereda su fuente (regla 09-sep).
+    const leadSourceEmision = toText(body.leadSource).trim() || VICKY_LEAD_SOURCE;
+    cliente.leadSource = leadSourceEmision;
     const cotizacion = body.cotizacion || {};
     const existing = body.existing || {};
     // CANAL EJECUTIVO (Lalo 11-ago, principio 4 de la cotizadora): la emisión
@@ -1336,7 +1342,7 @@ module.exports = async function handler(req, res) {
         const leadSrc = await getRecord("Leads", existing.leadId).catch(() => null);
         leadSourceHeredada = toText(leadSrc?.Lead_Source).trim();
       } catch { /* sin fuente: default */ }
-      const leadSourceDeal = leadSourceHeredada || VICKY_LEAD_SOURCE;
+      const leadSourceDeal = leadSourceHeredada || leadSourceEmision;
       // EMPRESA REAL EN EL LEAD ANTES DE CONVERTIR (05-sep, cuenta "-"): Zoho
       // nombra la cuenta nueva con Lead.Company y, si ya existe una cuenta con
       // ese nombre, FUSIONA ahí sin avisar. Con Company="-" (conciliador de
@@ -1713,7 +1719,7 @@ module.exports = async function handler(req, res) {
           Email: cliente.contactoEmail,
           Phone: cliente.contactoTelefono || undefined,
           Account_Name: { id: accountId },
-          Lead_Source: VICKY_LEAD_SOURCE,
+          Lead_Source: leadSourceEmision,
           Territorio: VICKY_TERRITORIO,
           Owner: VICKY_BOT_OWNER,
         };
@@ -1772,7 +1778,7 @@ module.exports = async function handler(req, res) {
           ...(contactId ? { Contact_Name: { id: contactId } } : {}),
           Stage: VICKY_DEAL_STAGE,
           Pipeline: "Standard (Standard)",
-          Lead_Source: VICKY_LEAD_SOURCE,
+          Lead_Source: leadSourceEmision,
           Amount: cotizacion.totalCLP || undefined,
           Description: `Deal creado por Vicky para cotización WhatsApp.\nUsuarios: ${cliente.userCount}\nTotal: ${cotizacion.totalUF} UF / ${cotizacion.totalCLP} CLP\nSector: ${sectorParaZoho}`,
           Territorio: VICKY_TERRITORIO,
