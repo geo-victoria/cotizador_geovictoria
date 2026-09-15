@@ -516,9 +516,16 @@ function buildChargeTables({
     // calculadora". La escalera oficial ya espeja la de Vicky en 1-50 y trae
     // los tramos del canal ejecutivo de 51 en adelante.
     //
-    // Solo aplica al cobro POR USUARIO. Un servicio de tarifa fija (un módulo
-    // plano, un cobro único) no tiene escalera que mostrar.
-    if (montos.todasPorUsuario) {
+    // Aplica al cobro POR USUARIO y también al tramo FIJO de la escalera de
+    // asistencia (1-2 y 3-10 usuarios). CICATRIZ (NDV-31738 DUONET, 8 usuarios,
+    // 15-sep, Lalo "le faltan rangos"): la condición era solo `todasPorUsuario`,
+    // así que toda venta de ≤10 usuarios cuya nota se rehacía DESPUÉS de la
+    // emisión (espejo regenerado, crear-ndv-desde-cot, arreglo en sitio) salía
+    // con UNA fila "Rango Fijo 1..N" — sin la escalera el cliente que crece a
+    // 11 no tiene precio en la nota. Lo que no tiene escalera es un módulo plano
+    // o un cobro único, no el tramo fijo de asistencia: se decide por el CÓDIGO.
+    const codigoEscalonado = codigos.length === 1 && /^asistencia$/i.test(codigos[0]);
+    if (montos.todasPorUsuario || codigoEscalonado) {
       const completa = escaleraAFilas(
         PRICING_TIERS.filter((t) => toNumber(t?.uf) > 0).map((t) => ({
           desde: toPositiveInt(t.min),
