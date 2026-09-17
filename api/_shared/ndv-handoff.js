@@ -703,6 +703,12 @@ async function createNdvWithFormFallback({
         attemptedForms,
       };
     }
+    // Cada intento deja su propio error: el que se devuelve al final es el del
+    // ÚLTIMO nombre de formulario probado (típicamente un 404 "No form named
+    // …"), que tapa el rechazo real del formulario correcto (17-sep, Perú).
+    console.warn(
+      `[ndv-handoff] alta en form=${formLinkName} → ${createResp.status} ${JSON.stringify(createPayload).slice(0, 400)}`
+    );
 
     if (stopOnFirstFailure) {
       break;
