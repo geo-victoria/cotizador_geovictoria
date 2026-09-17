@@ -67,7 +67,12 @@ function monedaYPais({ overrides, quote, deal } = {}) {
  */
 function escalerasDefaultPorMoneda(moneda) {
   const m = normalizar(moneda);
-  if (m === "pen" || m === "sol") return { asistencia: ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t })) };
+  // El plan PE viaja en el subform como `plan_asistencia` (agente pe/tools.ts);
+  // `asistencia` queda por simetría con Chile.
+  if (m === "pen" || m === "sol") {
+    const filas = ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t }));
+    return { plan_asistencia: filas, asistencia: filas.map((t) => ({ ...t })) };
+  }
   return {};
 }
 

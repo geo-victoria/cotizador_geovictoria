@@ -14,6 +14,7 @@ test("monedaYPais: overrides mandan, luego el deal (Territorio / Monda_del_trato
 
 test("escalera PE por defecto solo en soles", () => {
   assert.deepEqual(escalerasDefaultPorMoneda("PEN").asistencia, ESCALERA_ASISTENCIA_PE);
+  assert.deepEqual(escalerasDefaultPorMoneda("PEN").plan_asistencia, ESCALERA_ASISTENCIA_PE);
   assert.deepEqual(escalerasDefaultPorMoneda("UF"), {});
 });
 
@@ -21,13 +22,13 @@ test("tabla de cobro en PEN: tramos peruanos en soles, sin extender con la escal
   const config = { quoteItemsSubformField: "Detalle_Items_Cotizacion" };
   const quote = {
     Detalle_Items_Cotizacion: [
-      { Nombre_Item: "Control de Asistencia", Codigo_Item: "asistencia", Cantidad: 1, Precio_Unitario_UF: 100, Precio_Unitario_CLP: 100, Subtotal_UF: 100, Subtotal_CLP: 100, Modalidad: "Único", Es_Recurrente: true },
+      { Nombre_Item: "Control de Asistencia", Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 100, Precio_Unitario_CLP: 100, Subtotal_UF: 100, Subtotal_CLP: 100, Modalidad: "Único", Es_Recurrente: true },
     ],
   };
   const r = buildChargeTables({
     quote, config, committedEmployees: 8, moneda: "PEN", servicioPrincipal: "Control de Asistencia",
     resolveServicios: () => ["Control de Asistencia"],
-    escalerasEnMemoria: { asistencia: ESCALERA_ASISTENCIA_PE },
+    escalerasEnMemoria: escalerasDefaultPorMoneda("PEN"),
   });
   const filas = r.porServicio["Control de Asistencia"];
   assert.ok(Array.isArray(filas) && filas.length === 3, `esperaba 3 tramos PE, hay ${filas && filas.length}`);

@@ -786,7 +786,10 @@ module.exports = async function handler(req, res) {
           quoteId,
           dealId,
           acceptanceData: { companyRut: rucParaGuardar(ruc) },
-          escalerasPrecio: { asistencia: ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t })) },
+          escalerasPrecio: {
+            plan_asistencia: ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t })),
+            asistencia: ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t })),
+          },
           userCount: Number(userCount) || 0,
           crmIncompleto,
           motivo: "emision-pe",
