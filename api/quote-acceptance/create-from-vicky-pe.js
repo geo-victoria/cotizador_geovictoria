@@ -811,7 +811,13 @@ module.exports = async function handler(req, res) {
         // PDF y el correo son la ruta crítica del cliente. Sin esto la venta
         // PE no tenía espejo en Creator y la nota de venta se hacía a mano
         // (hallazgo 2 de la prueba E2E del 15-sep).
-        await emitirCotizacionEnCreator({
+        // DOS NOTAS, como se maneja desde siempre en Perú (Lalo 17-sep): el
+        // PLAN en soles y, si hay reloj, el HARDWARE en una nota APARTE en
+        // USD con el artículo [PER] 304 (arriendo US$24/mes · venta US$90).
+        // La referencia de la cotización apunta a la del plan; la del
+        // hardware queda en una nota de Zoho.
+        const hayHardware = items.some((it) => String(it?.tipo || "").toLowerCase() === "hardware");
+        const emisionPlan = await emitirCotizacionEnCreator({
           config,
           quoteId,
           dealId,
@@ -823,8 +829,35 @@ module.exports = async function handler(req, res) {
           userCount: Number(userCount) || 0,
           crmIncompleto,
           motivo: "emision-pe",
-          creatorOverrides: { moneda: "PEN", pais: "Perú", tipoCambio, tipoCambioFuente },
+          creatorOverrides: { moneda: "PEN", pais: "Perú", tipoCambio, tipoCambioFuente, ...(hayHardware ? { filtroLineas: "sin_hardware" } : {}) },
         });
+        if (hayHardware && emisionPlan?.status !== "skipped") {
+          const emisionHw = await emitirCotizacionEnCreator({
+            config,
+            quoteId,
+            dealId,
+            acceptanceData: { companyRut: rucParaGuardar(ruc) },
+            userCount: Number(userCount) || 0,
+            crmIncompleto,
+            motivo: "emision-pe-hardware-usd",
+            forzarNueva: true,
+            persistirReferencia: false,
+            creatorOverrides: { moneda: "USD", pais: "Perú", filtroLineas: "solo_hardware", tipoCambio, tipoCambioFuente },
+          });
+          if (emisionHw?.ndvId) {
+            const { createRecord } = require("../_shared/zoho-crm");
+            await createRecord("Notes", {
+              Note_Title: "Cotización en Creator: hardware en USD (nota aparte)",
+              Note_Content:
+                `Perú emite el plan y el hardware en notas separadas. Plan (PEN): Creator id ${emisionPlan?.ndvId || "?"}. ` +
+                `Hardware (USD, artículo 304 - [PER] Reloj Gama Estándar FACIAL LAN WIFI): Creator id ${emisionHw.ndvId}. ` +
+                `Al cliente se le cotizó el reloj en soles al dólar SUNAT ${tipoCambio || "?"} (${tipoCambioFuente || "?"}). ` +
+                `Convertir AMBAS a Nota de Venta al confirmar el pago.`,
+              Parent_Id: quoteId,
+              $se_module: config.quoteModule,
+            }, true).catch(() => {});
+          }
+        }
       })().catch((bgErr) =>
         console.error("[create-from-vicky-pe] PDF en segundo plano falló:", bgErr?.message || bgErr),
       ),

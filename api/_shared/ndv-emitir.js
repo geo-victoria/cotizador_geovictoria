@@ -42,6 +42,9 @@ async function emitirCotizacionEnCreator({
   forzarNueva = false,
   crmIncompleto = false,
   creatorOverrides,
+  // false = NO escribir la referencia en la cotización (la nota SECUNDARIA de
+  // hardware en USD de Perú: la referencia de la cotización apunta al plan).
+  persistirReferencia = true,
 }) {
   if (!config.ndvHandoffEnabled) {
     return { status: "skipped", ndvId: "", error: "" };
@@ -87,7 +90,7 @@ async function emitirCotizacionEnCreator({
 
     // La referencia apunta SIEMPRE a la última cotización creada: es la vigente,
     // y es contra la que la aceptación decide si tiene algo que hacer.
-    await persistNdvReferences(config, quoteId, ndvId);
+    if (persistirReferencia) await persistNdvReferences(config, quoteId, ndvId);
     await runNdvSubformSetup({
       ndvId,
       ndvRecord: resultado?.ndvRecord || {},

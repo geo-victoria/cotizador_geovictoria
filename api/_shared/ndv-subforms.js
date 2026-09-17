@@ -11,7 +11,7 @@
 
 const { getCreatorConfig, creatorApiFetch } = require("./zoho-creator-auth");
 const { toText } = require("./zoho-crm");
-const { idBooksDeArticulo, valorListaDeArticulo, skuDeArticulo, BODEGA_CHILE } = require("./creator-articulos");
+const { idBooksDeArticulo, valorListaDeArticulo, skuDeArticulo, bodegaDeArticulo } = require("./creator-articulos");
 
 /**
  * Términos y condiciones que Creator imprime en el bloque del servicio.
@@ -535,6 +535,13 @@ async function completarBloqueEquipos({ creatorConfig, bloqueId, tipo, lineas, e
  *   del maestro, o sea el precio del servicio titular repetido en el PDF.
  * @returns {{ serviceCount, finalizarId, errors }}
  */
+// Bodega del pedido a Books según el artículo (Chile o Perú). Sin id conocido
+// (Perú sin env) el pedido va sin bodega y Books aplica su default.
+function bodegaPedido(articulo) {
+  const b = bodegaDeArticulo(articulo);
+  return b.id ? { bodegaId: b.id, bodega: b.nombre } : {};
+}
+
 async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) {
   const creatorConfig = getCreatorConfig();
   if (creatorConfig.missing.length > 0) {
@@ -680,8 +687,7 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
           cantidad: toNumber(l.cantidad) || 1,
           valor: toNumber(l.valorUnitario),
           idItem: idBooksDeArticulo(l.codigoCreator),
-          bodegaId: BODEGA_CHILE.id,
-          bodega: BODEGA_CHILE.nombre,
+          ...bodegaPedido(l.item || l.codigoCreator),
         }));
       const data = { currentEditIndex: 0, maxIndex: 0 };
       if (bloque.equipos.length) data.Equipos_Por_API = JSON.stringify(pedido(bloque.equipos));
@@ -758,8 +764,7 @@ async function runNdvSubformSetup({ ndvId, ndvRecord, chargeTables, notasPdf }) 
           // Deluge lo alcance a resolver contra Books.
           valor: valorListaDeArticulo(toText(l.codigoCreator) || toText(l.codigo)),
           idItem: idBooksDeArticulo(toText(l.codigoCreator) || toText(l.codigo)),
-          bodegaId: BODEGA_CHILE.id,
-          bodega: BODEGA_CHILE.nombre,
+          ...bodegaPedido(l.item || toText(l.codigoCreator) || toText(l.codigo)),
         }));
         const resp = await creatorApiFetch(path, {
           method: "PATCH",

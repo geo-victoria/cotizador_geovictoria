@@ -23,6 +23,21 @@
  * fuera del PDF y de la orden de venta, y solo se avisa por log.
  */
 const HARDWARE_A_ARTICULO = {
+  // ── PERÚ (17-sep, Lalo: "para los documentos internos como NDV dejémoslo
+  // como se viene manejando de siempre") ──
+  // El reloj de Vicky PE es el MISMO Senseface 2A, pero en Perú el artículo es
+  // el [PER] 304 y se FACTURA EN DÓLARES, en una nota de venta aparte de la
+  // del plan (golden NDV-32020 de Mónica: Valor 90 / Valor_Mensual 24 USD).
+  // Books: rate 90, SKU PER-BIO-SF2A-ZKT-LW-HTF, id 1758661000080530243.
+  // `moneda` marca que los valores de acá van en USD: ndv-charge-table los usa
+  // en vez del subtotal en soles del subform cuando la nota es en USD.
+  reloj_pe: {
+    item: "304 - [PER] Reloj Gama Estándar FACIAL LAN WIFI",
+    modelo: "Senseface 2A",
+    valorListaUF: 90,
+    valorMensual: 24,
+    moneda: "USD",
+  },
   senseface_2a: {
     item: "006.10 - Reloj Gama Entrada Facial WIFI/LAN",
     modelo: "Senseface 2A",
@@ -100,9 +115,6 @@ const SERVICIO_A_ARTICULO = {
  * Caso que lo destapó: COT575 / NDV-30762 (MASTERDENT SPA, 17-ago).
  */
 const ALIAS_CODIGO = {
-  // Perú (17-sep): el catálogo PE nombra al reloj `reloj_pe` y es el MISMO
-  // ZKTECO Senseface 2A (VB Diego 05-ago) — mismo artículo de Books.
-  reloj_pe: "senseface_2a",
   // Promo del Senseface 2A: es el MISMO equipo, cambia solo la tarifa.
   senseface_2a_promocion: "senseface_2a",
   senseface_2a_promo: "senseface_2a",
@@ -185,6 +197,7 @@ function articuloDeServicio(codigoItem, zona) {
  * que se vayan habilitando.
  */
 const ITEM_ID_BOOKS = {
+  "304": "1758661000080530243", // [PER] Reloj Gama Estándar FACIAL LAN WIFI (Senseface 2A, Perú)
   "006.10": "1758661000072468396", // Reloj Gama Entrada Facial WIFI/LAN
   "006.9": "1758661000071719207", // Reloj Gama Estándar Facial WIFI/LAN (Senseface 3A, kit QR)
   "012": "1758661000001524374", // Huellero URU4500
@@ -209,6 +222,7 @@ const ITEM_ID_BOOKS = {
  * Sin SKU conocido va "", igual que las líneas de servicio de la interfaz.
  */
 const SKU_BOOKS = {
+  "304": "PER-BIO-SF2A-ZKT-LW-HTF", // [PER] Reloj Gama Estándar FACIAL LAN WIFI
   "006.10": "CHL-BIO-SF2A-ZKT-WL-FHT", // Reloj Gama Entrada Facial WIFI/LAN
   "012": "CHL-BIO-U4500-HID-USB-HI", // Huellero URU4500
   "006.9": "CHL-BIO-SF3A-ZKT-WL-FHT", // Senseface 3A (kit QR)
@@ -229,6 +243,21 @@ function skuDeArticulo(articulo) {
  * esta, así que es una constante y no algo a resolver por artículo.
  */
 const BODEGA_CHILE = { id: "1758661000005909009", nombre: "GeoVictoria Chile" };
+
+/**
+ * Bodega de las líneas peruanas ([PER]). No aparece en los bloques de las
+ * notas hechas a mano (Bodega=null), así que solo se manda si alguien la
+ * configura por env; sin env el pedido va SIN bodega y Books usa su default.
+ */
+const BODEGA_PERU = {
+  id: String(process.env.CREATOR_BODEGA_PE_ID || "").trim(),
+  nombre: String(process.env.CREATOR_BODEGA_PE_NOMBRE || "GeoVictoria Perú").trim(),
+};
+
+/** Bodega según el artículo: los [PER] van a la peruana, el resto a Chile. */
+function bodegaDeArticulo(articulo) {
+  return /\[PER\]/i.test(String(articulo || "")) ? BODEGA_PERU : BODEGA_CHILE;
+}
 
 /**
  * @param {string} articulo valor de picklist ("907 - [CHI] Envío/Despacho…")
@@ -258,6 +287,8 @@ module.exports = {
   SERVICIO_A_ARTICULO,
   ITEM_ID_BOOKS,
   BODEGA_CHILE,
+  BODEGA_PERU,
+  bodegaDeArticulo,
   articuloDeHardware,
   articuloDeServicio,
   idBooksDeArticulo,

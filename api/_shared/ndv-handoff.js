@@ -793,6 +793,16 @@ async function buildNdvRecord({
   escalerasPrecio,
 }) {
   const creatorOverrides = overrides && typeof overrides === "object" ? overrides : {};
+  // FILTRO DE LÍNEAS (17-sep, Perú): el plan y el hardware van en notas
+  // SEPARADAS y en monedas distintas (PEN / USD), como se maneja desde siempre
+  // en Perú. `sin_hardware` deja solo servicios; `solo_hardware`, solo equipos.
+  const filtroLineas = toText(creatorOverrides.filtroLineas).toLowerCase();
+  if (filtroLineas === "sin_hardware" || filtroLineas === "solo_hardware") {
+    const rowsTodas = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
+    const filtradas = rowsTodas.filter((row) => (filtroLineas === "solo_hardware" ? esFilaDeHardware(row) : !esFilaDeHardware(row)));
+    quote = { ...quote, [config.quoteItemsSubformField]: filtradas };
+    console.log(`[ndv-handoff] filtroLineas=${filtroLineas}: ${filtradas.length}/${rowsTodas.length} líneas`);
+  }
   const creatorFormulario = toText(creatorOverrides.formulario) || "Nota de Venta";
   const creatorStatus =
     toText(creatorOverrides.status) || config.ndvCreatorStatusPending || "PENDIENTE";
@@ -855,7 +865,15 @@ async function buildNdvRecord({
     resolveServicios: resolveServiciosRecurrentesDeFila,
     escalerasEnMemoria: escalerasEfectivas,
   });
-  const chargeTable = chargeTables.master;
+  let chargeTable = chargeTables.master;
+  if (filtroLineas === "solo_hardware") {
+    // La nota de hardware no lleva tabla de cobro (golden NDV-32020/32024:
+    // Tabla_de_Cobro vacía; el dinero vive en el Formulario_de_Equipos). Sin
+    // esto la tabla caía al fallback Valor=1 y el guardrail marcaba la
+    // cotización como INCOMPLETA.
+    chargeTable = [];
+    if (chargeTables.diagnostico) chargeTables.diagnostico.fallback = false;
+  }
   // Línea de negocio: las cotizaciones sanas del canal telemarketing —el que
   // atiende Vicky— van como "Telemarketing"; "Estándar" era un hardcode que no
   // correspondía (COT-59509 sana: Telemarketing · COT-59530 de Vicky: Estándar).
@@ -940,7 +958,7 @@ async function buildNdvRecord({
     Cantidad_de_Usuarios_PDF: committedEmployees || undefined,
     Cantidad_de_Usuarios: committedEmployees || undefined,
     Plantilla_Tabla_de_Cobro: "Sin Plantilla",
-    Tabla_de_Cobro: chargeTable,
+    ...(Array.isArray(chargeTable) && chargeTable.length > 0 ? { Tabla_de_Cobro: chargeTable } : {}),
     Servicios_Recurrentes: servicios.serviciosRecurrentes,
     Servicio_Recurrente_Configurado: servicios.servicioRecurrenteConfigurado,
     ...(servicios.serviciosNoRecurrentes.length > 0

@@ -350,7 +350,13 @@ function buildChargeTables({
       ? escalerasEnMemoria
       : leerEscaleras(quote, config);
   const usaUf = normalizar(moneda) === "uf" || !moneda;
+  const usaUsd = normalizar(moneda) === "usd";
   const descuentos = resolverDescuentos(quote, config);
+  // Artículo con precio de lista en USD (Perú): cuando la nota es en USD la
+  // línea toma los valores del CATÁLOGO (arriendo US$24 · venta US$90) y no
+  // el subtotal en soles del subform, que es lo que el cliente vio en el chat.
+  const preciosUsdDe = (articulo) =>
+    usaUsd && articulo && String(articulo.moneda || "").toUpperCase() === "USD" ? articulo : null;
 
   const cantidadMaxima = rows.reduce((acc, row) => Math.max(acc, toPositiveInt(row?.cantidad)), 0);
   const empleados = Math.max(toPositiveInt(committedEmployees), cantidadMaxima, 1);
@@ -415,8 +421,12 @@ function buildChargeTables({
       // ("senseface_2a") no existe allá.
       const codigoDe = (nombre) => String(nombre || "").split(" - ")[0].trim();
       if (articulo) {
+        const usd = preciosUsdDe(articulo);
         lineasEquipos.push({
           ...linea,
+          ...(usd
+            ? { valorUnitario: redondear(usd.valorListaUF), total: redondear(usd.valorListaUF * cantidad), descuentoPct: 0 }
+            : {}),
           item: articulo.item,
           modelo: articulo.modelo,
           codigoCreator: codigoDe(articulo.item),
@@ -441,10 +451,11 @@ function buildChargeTables({
       const codigo = String(row?.codigo || "").trim();
       const articulo = articuloDeHardware(codigo);
       if (articulo) {
-        const factor = factorDescuentoLinea(row, descuentos);
-        const unitarioMensual = redondear(
-          (montos.unitario > 0 ? montos.unitario : montos.subtotal / cantidad) * factor
-        );
+        const usd = preciosUsdDe(articulo);
+        const factor = usd ? 1 : factorDescuentoLinea(row, descuentos);
+        const unitarioMensual = usd
+          ? redondear(usd.valorMensual)
+          : redondear((montos.unitario > 0 ? montos.unitario : montos.subtotal / cantidad) * factor);
         lineasArriendo.push({
           nombre,
           codigo,
@@ -456,7 +467,7 @@ function buildChargeTables({
           // artículo ("006.10"), que es lo único que Books reconoce.
           codigoCreator: String(articulo.item || "").split(" - ")[0].trim(),
           valorMensualUnitario: unitarioMensual,
-          totalMensual: redondear(montos.subtotal * factor),
+          totalMensual: usd ? redondear(unitarioMensual * cantidad) : redondear(montos.subtotal * factor),
         });
         return;
       }
