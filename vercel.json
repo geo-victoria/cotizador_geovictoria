@@ -96,6 +96,10 @@
     "api/payments/webhook.js": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "api/quote-acceptance/create-from-vicky-pe.js": {
+      "memory": 1536,
+      "maxDuration": 300
     }
   },
   "crons": [
