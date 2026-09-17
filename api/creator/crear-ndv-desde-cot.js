@@ -175,6 +175,7 @@ module.exports = async function handler(req, res) {
         // infieren del deal en el handoff; acá solo se fuerzan si vienen.
         ...(toText(body.moneda) ? { moneda: toText(body.moneda) } : {}),
         ...(toText(body.pais) ? { pais: toText(body.pais) } : {}),
+        ...(toText(body.escaleraPais) ? { escaleraPais: toText(body.escaleraPais) } : {}),
       },
     });
     const ndvId = toText(ndvResult?.ndvId);

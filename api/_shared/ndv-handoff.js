@@ -829,8 +829,14 @@ async function buildNdvRecord({
   if (mp.origen !== "default") console.log(`[ndv-handoff] moneda=${moneda} país=${paisFacturacion} (${mp.origen})`);
   // Sin escalera en memoria y en soles, la escalera peruana por defecto: la
   // completación desde PRICING_TIERS (UF) no aplica a una cotización en PEN.
+  // `escaleraPais` (diagnóstico): "cl" fuerza la chilena (ninguna en memoria),
+  // "pe" la peruana, "none" ninguna (tramo único).
+  const escaleraForzada = toText(creatorOverrides.escaleraPais).toLowerCase();
   const escalerasEfectivas =
-    escalerasPrecio && Object.keys(escalerasPrecio).length > 0 ? escalerasPrecio : escalerasDefaultPorMoneda(moneda);
+    escaleraForzada === "pe" ? escalerasDefaultPorMoneda("PEN")
+    : escaleraForzada === "cl" || escaleraForzada === "none" ? {}
+    : escalerasPrecio && Object.keys(escalerasPrecio).length > 0 ? escalerasPrecio : escalerasDefaultPorMoneda(moneda);
+  if (escaleraForzada) console.log(`[ndv-handoff] escalera forzada=${escaleraForzada} filas=${(escalerasEfectivas.asistencia || []).length}`);
 
   // La tabla se construye con la MISMA moneda que declara el registro: mandarla
   // en pesos con Moneda=UF es lo que inflaba el PDF ~39.000x.
@@ -1160,6 +1166,10 @@ async function runNdvHandoff({
   const createPayload = createAttempt.payload;
   if (!createAttempt.ok) {
     const creatorDetail = creatorErrorMessage(createPayload, "respuesta invalida");
+    console.error(
+      `[ndv-handoff] alta FALLÓ (${createResp?.status || 0}) moneda=${ndvRecord.Moneda} pais=${ndvRecord.Pa_s_Facturaci_n} ` +
+        `tabla=${Array.isArray(ndvRecord.Tabla_de_Cobro) ? ndvRecord.Tabla_de_Cobro.length : "?"} payload=${JSON.stringify(createPayload).slice(0, 600)}`
+    );
     throw new NdvBusinessError(
       normalizeCreatorBusinessError(creatorDetail),
       `Creator create NDV failed (${createResp?.status || 0}) [forms=${createAttempt.attemptedForms.join(", ")}]: ${creatorDetail}`,
