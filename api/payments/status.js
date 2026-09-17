@@ -36,7 +36,10 @@ const VICKY_WHATSAPP_PHONE = toText(process.env.VICKY_WHATSAPP_PHONE || "5696730
 // Vicky robot no cuenta (interina): se cae al Owner del DEAL y, sin humano,
 // al env TRANSFER_CONTACT_EMAIL (vacío = la fila no sale). El canal del
 // COMPROBANTE sigue siendo el botón de WhatsApp.
-const TRANSFER_CONTACT_EMAIL = toText(process.env.TRANSFER_CONTACT_EMAIL || "");
+// 17-sep (Lalo "deja el correo de vicky"): la fila Email vuelve a ser la
+// casilla de Vicky — ahí llega el AVISO del banco y un lector automático
+// (agente: lib/pago-por-correo) registra el pago sin que nadie suba nada.
+const TRANSFER_CONTACT_EMAIL = toText(process.env.TRANSFER_CONTACT_EMAIL || "vicky@geovictoria.com");
 const ROBOT_EMAIL = "vicky@geovictoria.com";
 // pago.html hace poll de /status cada pocos segundos: el Owner del deal y su
 // ficha de usuario se cachean para no pegarle a Zoho en cada tick.
@@ -109,7 +112,7 @@ async function buildTransferInfo(quote) {
     executiveName,
     whatsappPhone,
     ejecutivoNombre,
-    transferEmail: (dueno && dueno.email) || TRANSFER_CONTACT_EMAIL,
+    transferEmail: RECEIPT_TO_OWNER && dueno && dueno.email ? dueno.email : TRANSFER_CONTACT_EMAIL,
     quoteNumber: toText(quote?.Numero_Cotizacion),
   };
 }
