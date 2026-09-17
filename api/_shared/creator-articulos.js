@@ -100,6 +100,9 @@ const SERVICIO_A_ARTICULO = {
  * Caso que lo destapó: COT575 / NDV-30762 (MASTERDENT SPA, 17-ago).
  */
 const ALIAS_CODIGO = {
+  // Perú (17-sep): el catálogo PE nombra al reloj `reloj_pe` y es el MISMO
+  // ZKTECO Senseface 2A (VB Diego 05-ago) — mismo artículo de Books.
+  reloj_pe: "senseface_2a",
   // Promo del Senseface 2A: es el MISMO equipo, cambia solo la tarifa.
   senseface_2a_promocion: "senseface_2a",
   senseface_2a_promo: "senseface_2a",

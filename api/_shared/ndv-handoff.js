@@ -819,7 +819,18 @@ async function buildNdvRecord({
   const servicios = inferServiciosCreator(quote, config);
   const committedEmployees = inferCommittedEmployees(quote, deal, creatorOverrides.userCount);
   const firstServicio = toText(servicios.serviciosRecurrentes[0]) || "Control de Asistencia";
-  const moneda = toText(quote?.Moneda) || "UF";
+  // MONEDA Y PAÍS (17-sep, Perú): el módulo de cotizaciones no tiene esos
+  // campos, así que salen de los overrides (la emisión PE los manda) o del
+  // DEAL (Territorio "Perú" / Monda_del_trato "SOL"). Default: UF/Chile.
+  const { monedaYPais, escalerasDefaultPorMoneda } = require("./escaleras-pais");
+  const mp = monedaYPais({ overrides: creatorOverrides, quote, deal });
+  const moneda = mp.moneda;
+  const paisFacturacion = mp.pais;
+  if (mp.origen !== "default") console.log(`[ndv-handoff] moneda=${moneda} país=${paisFacturacion} (${mp.origen})`);
+  // Sin escalera en memoria y en soles, la escalera peruana por defecto: la
+  // completación desde PRICING_TIERS (UF) no aplica a una cotización en PEN.
+  const escalerasEfectivas =
+    escalerasPrecio && Object.keys(escalerasPrecio).length > 0 ? escalerasPrecio : escalerasDefaultPorMoneda(moneda);
 
   // La tabla se construye con la MISMA moneda que declara el registro: mandarla
   // en pesos con Moneda=UF es lo que inflaba el PDF ~39.000x.
@@ -830,7 +841,7 @@ async function buildNdvRecord({
     moneda,
     servicioPrincipal: firstServicio,
     resolveServicios: resolveServiciosRecurrentesDeFila,
-    escalerasEnMemoria: escalerasPrecio,
+    escalerasEnMemoria: escalerasEfectivas,
   });
   const chargeTable = chargeTables.master;
   // Línea de negocio: las cotizaciones sanas del canal telemarketing —el que
@@ -896,7 +907,7 @@ async function buildNdvRecord({
     Deals_Asociados: dealsAsociados || undefined,
     CRM_REFERENCE_ID: toSafeCreatorNumber(quote?.id),
     Moneda: moneda,
-    Pa_s_Facturaci_n: toText(quote?.Pa_s_Facturaci_n) || "Chile",
+    Pa_s_Facturaci_n: paisFacturacion,
     // IdDuplicatedMasterForm NO va acá: el formulario Nota_de_Venta no tiene ese
     // campo (verificado en el fuente Deluge de la app). Mandarlo era escribir a
     // un campo inexistente, y por eso el error de BIGINT siguió apareciendo

@@ -26,6 +26,9 @@ const { runNdvSubformSetup } = require("./ndv-subforms");
  *   justamente lo que se quiere, no un duplicado accidental.
  * @param {object} [args.escalerasPrecio] Escalera de precios en memoria. La
  *   emisión la tiene en su propio request; el descuento la lee del CRM.
+ * @param {object} [args.creatorOverrides] Overrides del maestro (p. ej.
+ *   `{ moneda: "PEN", pais: "Perú" }` en la emisión peruana). Se fusionan
+ *   sobre los defaults de la emisión en runNdvHandoff.
  * @returns {Promise<{status: string, ndvId: string, error?: string}>}
  */
 async function emitirCotizacionEnCreator({
@@ -38,6 +41,7 @@ async function emitirCotizacionEnCreator({
   motivo = "emision",
   forzarNueva = false,
   crmIncompleto = false,
+  creatorOverrides,
 }) {
   if (!config.ndvHandoffEnabled) {
     return { status: "skipped", ndvId: "", error: "" };
@@ -72,6 +76,7 @@ async function emitirCotizacionEnCreator({
       acceptanceData: acceptanceData || {},
       escalerasPrecio,
       userCount,
+      creatorOverrides,
     });
 
     const ndvId = toText(resultado?.ndvId);

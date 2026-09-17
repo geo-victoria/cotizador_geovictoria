@@ -267,8 +267,10 @@ function completarEscaleraSobreTope(escalera) {
  * un precio unitario. Es la misma distinción que Creator hace entre
  * "Rango Fijo" y "Rango por Usuario".
  */
-function escaleraAFilas(escalera, factorDescuento) {
-  const completa = completarEscaleraSobreTope(escalera);
+function escaleraAFilas(escalera, factorDescuento, extenderConOficial = true) {
+  // En una moneda que no es UF (PEN, COP, MXN) la escalera oficial chilena no
+  // aplica: la tabla se queda donde llega el catálogo del país (17-sep, Perú).
+  const completa = extenderConOficial ? completarEscaleraSobreTope(escalera) : escalera;
   const ultimoDesde = completa.reduce((acc, t) => Math.max(acc, toPositiveInt(t?.desde)), 0);
   return completa
     .map((tramo) => {
@@ -502,7 +504,7 @@ function buildChargeTables({
     const codigos = Array.from(new Set(montos.codigos.filter(Boolean)));
     const escalera = codigos.length === 1 ? escaleras[codigos[0]] : null;
     if (Array.isArray(escalera) && escalera.length > 0) {
-      const filas = escaleraAFilas(escalera, factorIncorporado);
+      const filas = escaleraAFilas(escalera, factorIncorporado, usaUf);
       if (filas.length > 0) {
         porServicio[servicio] = filas;
         serviciosConEscalera.push(servicio);
@@ -525,7 +527,10 @@ function buildChargeTables({
     // 11 no tiene precio en la nota. Lo que no tiene escalera es un módulo plano
     // o un cobro único, no el tramo fijo de asistencia: se decide por el CÓDIGO.
     const codigoEscalonado = codigos.length === 1 && /^asistencia$/i.test(codigos[0]);
-    if (montos.todasPorUsuario || codigoEscalonado) {
+    // Solo en UF: PRICING_TIERS es la escalera CHILENA; en soles o pesos una
+    // cotización sin escalera propia se queda con el tramo único (montos
+    // correctos) antes que con tramos en otra moneda.
+    if ((montos.todasPorUsuario || codigoEscalonado) && usaUf) {
       const completa = escaleraAFilas(
         PRICING_TIERS.filter((t) => toNumber(t?.uf) > 0).map((t) => ({
           desde: toPositiveInt(t.min),

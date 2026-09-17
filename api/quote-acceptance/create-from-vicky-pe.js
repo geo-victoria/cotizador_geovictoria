@@ -54,6 +54,8 @@ const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtmlPE, IGV_PE } = require("../_shared/proposal-html-builder-pe");
+const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
+const { ESCALERA_ASISTENCIA_PE } = require("../_shared/escaleras-pais");
 
 let waitUntil;
 try {
@@ -772,6 +774,24 @@ module.exports = async function handler(req, res) {
             console.error("[create-from-vicky-pe] correo de cotización falló:", mailErr?.message || mailErr),
           );
         }
+
+        // ── Cotización en Zoho Creator (17-sep, "terminar de implementar Perú") ──
+        // Mismo puente que Chile, con moneda PEN, país Perú y la escalera de
+        // asistencia peruana en soles. Va ÚLTIMO y best-effort: el link, el
+        // PDF y el correo son la ruta crítica del cliente. Sin esto la venta
+        // PE no tenía espejo en Creator y la nota de venta se hacía a mano
+        // (hallazgo 2 de la prueba E2E del 15-sep).
+        await emitirCotizacionEnCreator({
+          config,
+          quoteId,
+          dealId,
+          acceptanceData: { companyRut: rucParaGuardar(ruc) },
+          escalerasPrecio: { asistencia: ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t })) },
+          userCount: Number(userCount) || 0,
+          crmIncompleto,
+          motivo: "emision-pe",
+          creatorOverrides: { moneda: "PEN", pais: "Perú" },
+        });
       })().catch((bgErr) =>
         console.error("[create-from-vicky-pe] PDF en segundo plano falló:", bgErr?.message || bgErr),
       ),
