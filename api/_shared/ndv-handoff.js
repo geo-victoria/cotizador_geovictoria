@@ -836,8 +836,22 @@ async function buildNdvRecord({
       ownerUser?.Email
   );
   const servicios = inferServiciosCreator(quote, config);
+  if (filtroLineas === "solo_hardware") {
+    // Nota SOLO de hardware (Perú): sin servicio de software. Golden NDV-32020
+    // (arriendo): Servicios_Recurrentes = Servicio_Recurrente_Configurado =
+    // ["Arriendo de Equipos"]; NDV-32024 (venta): solo los no recurrentes.
+    // Sin esto el inferidor caía al default "Control de Asistencia" y el
+    // setup intentaba un Servicio_Recurrente con tabla vacía (rechazado).
+    const rowsHw = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
+    const hayArriendo = rowsHw.some((r) => normalizeItemName(r?.Modalidad).includes("arriendo"));
+    const hayVenta = rowsHw.some((r) => normalizeItemName(r?.Modalidad).includes("venta"));
+    servicios.serviciosRecurrentes = hayArriendo ? ["Arriendo de Equipos"] : [];
+    servicios.servicioRecurrenteConfigurado = hayArriendo ? ["Arriendo de Equipos"] : [];
+    servicios.serviciosNoRecurrentes = hayVenta ? ["Venta de Equipos Asistencia"] : [];
+    servicios.servicioNoRecurrenteConfigurado = hayVenta ? ["Venta de Equipos Asistencia"] : [];
+  }
   const committedEmployees = inferCommittedEmployees(quote, deal, creatorOverrides.userCount);
-  const firstServicio = toText(servicios.serviciosRecurrentes[0]) || "Control de Asistencia";
+  const firstServicio = filtroLineas === "solo_hardware" ? "" : toText(servicios.serviciosRecurrentes[0]) || "Control de Asistencia";
   // MONEDA Y PAÍS (17-sep, Perú): el módulo de cotizaciones no tiene esos
   // campos, así que salen de los overrides (la emisión PE los manda) o del
   // DEAL (Territorio "Perú" / Monda_del_trato "SOL"). Default: UF/Chile.
@@ -951,7 +965,7 @@ async function buildNdvRecord({
       toText(acceptanceData?.companyRut || quote?.RUT_Cliente || quote?.RUT || quote?.Identificador_Tributario_Empresa) ||
       undefined,
     Linea_de_Negocio: resolvedBusinessLine,
-    Servicio_Recurrente: firstServicio,
+    ...(firstServicio ? { Servicio_Recurrente: firstServicio } : {}),
     Hito_de_Facturaci_n: forcedBillingMilestone || resolvedBillingMilestone || "Adelantado",
     // Estos picklists se resuelven en Creator por scripts internos y catálogos dinámicos.
     // Si enviamos un valor no compatible, Creator rechaza el alta con INVALID_DATA.
