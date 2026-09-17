@@ -81,27 +81,34 @@ async function telefonoUsuario(userId) {
   _userPhoneCache.set(userId, { fono, at: Date.now() });
   return fono;
 }
+// OPCIÓN 1 (Lalo 17-sep, tras Clinisonrie/Pizza di Napoli/Dejavu): el
+// COMPROBANTE va SIEMPRE a VICKY por WhatsApp, aunque la cotización tenga
+// dueño humano — es el único canal que lo registra solo (Pagada + adjunto +
+// correo al ejecutivo + marcas del dash). Cuando iba al ejecutivo (19-ago,
+// caso MATER) el registro dependía de que él lo subiera o de que su espejo
+// estuviera vivo, y con el espejo caído la venta quedaba Aceptada por días
+// mientras Vicky seguía tocando a un cliente que ya había pagado. El
+// ejecutivo NO pierde nada: la fila Email sigue siendo la suya (aviso del
+// banco) y el registro automático le manda el correo de PAGADA. Rollback sin
+// deploy: env TRANSFER_RECEIPT_TO_OWNER=1 vuelve a mandar el botón al dueño.
+const RECEIPT_TO_OWNER = /^(1|true|on)$/i.test(toText(process.env.TRANSFER_RECEIPT_TO_OWNER));
 async function buildTransferInfo(quote) {
   const dueno = await propietarioHumano(quote).catch(() => null);
-  // WHATSAPP DEL COMPROBANTE (Lalo 19-ago, caso MATER): el del EJECUTIVO
-  // propietario de la cotización, con su nombre — el cliente del canal
-  // ejecutivo le habla a SU vendedor, no a Vicky. Fallbacks: dueño humano
-  // sin teléfono en su ficha de Zoho, o cotización de Vicky (dueño robot)
-  // → Vicky como siempre (el botón JAMÁS puede desaparecer — bug 25-jul).
-  // Ojo operativo: cuando el comprobante va al ejecutivo, el registro del
-  // pago y el onboarding dejan de ser automáticos — los procesa él.
   let executiveName = "Vicky";
   let whatsappPhone = normalizeWhatsappPhone(VICKY_WHATSAPP_PHONE);
-  if (dueno && dueno.id) {
+  // Nombre del ejecutivo para el texto ("tu ejecutivo X recibe el aviso").
+  const ejecutivoNombre = dueno ? toText(dueno.name).split(" ")[0] : "";
+  if (RECEIPT_TO_OWNER && dueno && dueno.id) {
     const fono = normalizeWhatsappPhone(await telefonoUsuario(dueno.id).catch(() => ""));
     if (fono) {
-      executiveName = toText(dueno.name).split(" ")[0] || "tu ejecutivo";
+      executiveName = ejecutivoNombre || "tu ejecutivo";
       whatsappPhone = fono;
     }
   }
   return {
     executiveName,
     whatsappPhone,
+    ejecutivoNombre,
     transferEmail: (dueno && dueno.email) || TRANSFER_CONTACT_EMAIL,
     quoteNumber: toText(quote?.Numero_Cotizacion),
   };

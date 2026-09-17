@@ -501,6 +501,11 @@
           // propietario de la cotización; el servidor cae a "Vicky" cuando el
           // dueño es el robot o su ficha no tiene teléfono.
           var nombreEjec = String((state.transfer && state.transfer.executiveName) || "Vicky").trim() || "Vicky";
+          // Opción 1 (Lalo 17-sep): el comprobante va a Vicky y el ejecutivo
+          // dueño recibe el aviso — se le nombra para que el cliente sepa que
+          // no lo está saltando.
+          var ejecAviso = String((state.transfer && state.transfer.ejecutivoNombre) || "").trim();
+          var avisoEjec = nombreEjec === "Vicky" && ejecAviso ? " Vicky lo registra al instante y " + ejecAviso + ", tu ejecutivo, recibe el aviso." : "";
           var waLink = transferWhatsappLink(state);
           // Cuenta por país: Chile (Victoria S.A / Banco de Chile) o Perú
           // (GEOVICTORIA PERU S.A.C. / BBVA, datos de Lalo 15-sep). JAMÁS los
@@ -537,7 +542,7 @@
             (cotRef ? " indicando la referencia <b>" + cotRef + "</b> en el comentario de la transferencia" : " e indica el número de cotización") +
             ". Luego envíale el comprobante a " + nombreEjec + " por WhatsApp" +
             (cotRef ? " mencionando esa misma referencia" : "") +
-            " para procesar tu pedido. " +
+            " para procesar tu pedido." + avisoEjec + " " +
             "La verificación de la transferencia toma máximo 24 horas hábiles; confirmado el pago, " + nombreEjec + " te " +
             "escribe por WhatsApp para comenzar la configuración de tu cuenta.</p>" +
             waBtn +
