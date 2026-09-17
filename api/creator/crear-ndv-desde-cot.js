@@ -171,6 +171,10 @@ module.exports = async function handler(req, res) {
         status: statusPedido,
         formStatus: "BEING EDITED",
         hitoFacturacion: "Cargando...",
+        // Moneda/país explícitos (17-sep, diagnóstico Perú): por defecto se
+        // infieren del deal en el handoff; acá solo se fuerzan si vienen.
+        ...(toText(body.moneda) ? { moneda: toText(body.moneda) } : {}),
+        ...(toText(body.pais) ? { pais: toText(body.pais) } : {}),
       },
     });
     const ndvId = toText(ndvResult?.ndvId);
