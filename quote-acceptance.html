@@ -3242,6 +3242,17 @@
               '<tr class="cost-row-total"><td colspan="5">Pago inicial — al aceptar</td><td>' +
               fmtPEN(pe.pagoInicialPen) + "</td></tr>";
             if (Number(pe.mensualidadPen || 0) > 0) {
+              // Descuento del plan (escalera chilena, Lalo 17-sep): la fila de
+              // lista, la rebaja y la vigencia salen del servidor (computeTotalsPE).
+              if (Number(pe.descuentoPct || 0) > 0 && Number(pe.descuentoPlanNetoPen || 0) > 0) {
+                var mesesPE = Number(pe.mesesDescuento || 0);
+                totalsRowsHtml +=
+                  '<tr class="cost-row-sub"><td colspan="5">Mensualidad de lista (neto)</td><td>' +
+                  fmtPEN(pe.mensualidadListaNetaPen) + "</td></tr>" +
+                  '<tr class="cost-row-sub" style="color:#15803d"><td colspan="5">Descuento ' + Math.round(pe.descuentoPct) +
+                  " % en el plan" + (mesesPE > 0 ? " (primeros " + mesesPE + " meses)" : "") + "</td><td>−" +
+                  fmtPEN(pe.descuentoPlanNetoPen) + "</td></tr>";
+              }
               totalsRowsHtml +=
                 '<tr class="cost-row-sub"><td colspan="5">Mensualidad del servicio (neto)</td><td>' +
                 fmtPEN(pe.mensualidadNetaPen) + "</td></tr>";
@@ -3253,10 +3264,16 @@
               totalsRowsHtml +=
                 '<tr class="cost-row-sub"><td colspan="5">Mensualidad — desde el mes siguiente</td><td>' +
                 fmtPEN(pe.mensualidadPen) + "/mes</td></tr>";
+              if (Number(pe.descuentoPct || 0) > 0 && Number(pe.mesesDescuento || 0) > 0) {
+                totalsRowsHtml +=
+                  '<tr class="cost-row-sub" style="color:#6b7280"><td colspan="5">Desde el mes ' + (Number(pe.mesesDescuento) + 1) +
+                  " (precio de lista)</td><td>" + fmtPEN(pe.mensualidadListaPen) + "/mes</td></tr>";
+              }
             }
             totalsRowsHtml +=
               '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
-              "El <b>Pago inicial</b> se cobra al aceptar; la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado. " +
+              "El <b>Pago inicial</b> se cobra al aceptar; la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado" +
+              (Number(pe.descuentoPct || 0) > 0 ? " (ya con el descuento del plan)" : "") + ". " +
               "La <b>mensualidad</b> se factura desde el mes siguiente; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
               "</td></tr>";
           } else if (esCO) {

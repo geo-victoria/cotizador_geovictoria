@@ -112,7 +112,7 @@ async function resolvePaymentSession(req, token) {
       : pais === "pe"
       ? // PE: pago único = no recurrentes (Activación = primer mes completo
         // adelantado) + IGV 18% por línea afecta (en PE: todas).
-        computePaymentAmountsPE(items)
+        computePaymentAmountsPE(items, descuentos)
       : computePaymentAmounts(items, descuentos, {
           includeIva: mpConfig.includeIva,
           includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,

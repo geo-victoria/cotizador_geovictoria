@@ -290,23 +290,49 @@ function computePaymentAmountsCO(items) {
 // decimales, como MX): el descuento de cierre 20% produce céntimos exactos.
 const IGV_RATE_PE = 0.18;
 
-function computeTotalsPE(items) {
+// ¿La fila es el PLAN (servicio recurrente de software) y no el arriendo de un
+// equipo? En PE el descuento aplica SOLO al plan (misma regla que Chile desde
+// el fix del 11-ago: el arriendo de hardware va a lista).
+function esFilaPlanPE(row) {
+  const codigo = String(row?.codigo || "").toLowerCase();
+  if (codigo.startsWith("plan")) return true;
+  if (/reloj|equipo|hardware|arriendo/.test(codigo)) return false;
+  const modalidad = String(row?.modalidad || "").toLowerCase();
+  return isRecurrentModalidad(modalidad) && /asistencia|plan/.test(String(row?.nombre || "").toLowerCase());
+}
+
+/**
+ * Totales PERÚ. `descuentos.recurrentePct` (Descuento_Recurrente_Pct de la
+ * cotización, escalera chilena 10 → 20 %) rebaja SOLO las filas del plan; la
+ * Activación llega ya calculada por el agente (primer mes con descuento) y no
+ * se toca. Devuelve además la mensualidad de LISTA para que el front y el PDF
+ * puedan decir "desde el mes N+1".
+ */
+function computeTotalsPE(items, descuentos) {
   const rows = Array.isArray(items) ? items : [];
+  const d = normalizeDescuentos(descuentos);
+  const pct = Number(d.recurrentePct || 0);
+  const factorPlan = pct > 0 ? 1 - pct / 100 : 1;
   const r2 = (v) => Math.round(v * 100) / 100;
   let pagoInicialNeto = 0;
   let pagoInicialIgv = 0;
   let mensualidadNeta = 0;
   let mensualidadIgv = 0;
+  let mensualidadListaNeta = 0;
+  let descuentoPlanNeto = 0;
 
   rows.forEach((row) => {
-    const montoPen = toNumber(row?.subtotalClp);
-    const igvPen = row?.afectoIva === true ? montoPen * IGV_RATE_PE : 0;
+    const montoLista = toNumber(row?.subtotalClp);
+    const afecto = row?.afectoIva === true;
     if (isRecurrentModalidad(row?.modalidad)) {
-      mensualidadNeta += montoPen;
-      mensualidadIgv += igvPen;
+      const monto = esFilaPlanPE(row) ? montoLista * factorPlan : montoLista;
+      mensualidadListaNeta += montoLista;
+      descuentoPlanNeto += montoLista - monto;
+      mensualidadNeta += monto;
+      mensualidadIgv += afecto ? monto * IGV_RATE_PE : 0;
     } else {
-      pagoInicialNeto += montoPen;
-      pagoInicialIgv += igvPen;
+      pagoInicialNeto += montoLista;
+      pagoInicialIgv += afecto ? montoLista * IGV_RATE_PE : 0;
     }
   });
 
@@ -317,6 +343,11 @@ function computeTotalsPE(items) {
     mensualidadNetaPen: r2(mensualidadNeta),
     mensualidadIgvPen: r2(mensualidadIgv),
     mensualidadPen: r2(mensualidadNeta + mensualidadIgv),
+    // Descuento del plan (escalera chilena): 0 cuando no hay.
+    descuentoPct: pct,
+    descuentoPlanNetoPen: r2(descuentoPlanNeto),
+    mensualidadListaNetaPen: r2(mensualidadListaNeta),
+    mensualidadListaPen: r2(mensualidadListaNeta * (1 + IGV_RATE_PE)),
   };
 }
 
@@ -326,8 +357,9 @@ function computeTotalsPE(items) {
  * subform). Pago único = no recurrentes (la Activación ya es el primer mes
  * completo adelantado) + IGV 18% por línea afecta; firstMonthClp = 0 siempre.
  */
-function computePaymentAmountsPE(items) {
-  const totals = computeTotalsPE(items);
+function computePaymentAmountsPE(items, descuentos) {
+  const totals = computeTotalsPE(items, descuentos);
+  const d = normalizeDescuentos(descuentos);
   return {
     oneShotClp: totals.pagoInicialPen,
     oneShotItemsClp: totals.pagoInicialPen,
@@ -335,8 +367,8 @@ function computePaymentAmountsPE(items) {
     recurringClp: totals.mensualidadPen,
     includeIva: true,
     includeFirstMonth: false,
-    descuentoPct: 0,
-    descuentos: { recurrentePct: 0, instalacionRMPct: 0, instalacionRegionPct: 0 },
+    descuentoPct: d.recurrentePct,
+    descuentos: d,
     breakdown: {
       oneShotNetClp: totals.pagoInicialNetoPen,
       oneShotIvaClp: totals.pagoInicialIgvPen,

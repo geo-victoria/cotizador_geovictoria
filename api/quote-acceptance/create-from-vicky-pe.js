@@ -54,6 +54,7 @@ const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtmlPE, IGV_PE } = require("../_shared/proposal-html-builder-pe");
+const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
 const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
 const { ESCALERA_ASISTENCIA_PE } = require("../_shared/escaleras-pais");
 
@@ -446,6 +447,18 @@ module.exports = async function handler(req, res) {
     const ruc = toText(body.ruc);
     const contactoTelefono = toText(body.contactoTelefono);
     const userCount = Number(body.userCount) > 0 ? Number(body.userCount) : undefined;
+    // DESCUENTO = CHILE (Lalo 17-sep): el agente manda el ESCALÓN aceptado
+    // (1 = 10 %, 2 = 20 %, sobre el plan, 6 meses) y los ítems a precio de
+    // LISTA; acá se estampa en la cotización (Descuento_Recurrente_Pct +
+    // Escalon_Descuento) para que sesión, PDF, aceptación y la nota de venta lo
+    // apliquen SOLO al plan, exactamente como en Chile.
+    const escalonDescuento = Math.max(0, Math.min(DISCOUNT_LADDER.length, Math.floor(Number(body.escalonDescuento) || 0)));
+    const descuentoPlanPct = escalonDescuento > 0 ? Number(DISCOUNT_LADDER[escalonDescuento - 1].pct) : 0;
+    const descuentos = { recurrentePct: descuentoPlanPct, instalacionRMPct: 0, instalacionRegionPct: 0 };
+    // Dólar venta SUNAT con el que el agente convirtió el reloj a soles (viaja a
+    // Creator para la nota de venta del hardware, que en Perú va en USD).
+    const tipoCambio = Number(body.tipoCambio) > 0 ? Number(body.tipoCambio) : undefined;
+    const tipoCambioFuente = toText(body.tipoCambioFuente);
 
     if (!empresa || !contacto || !contactoEmail || !ruc) {
       return sendJson(res, 400, {
@@ -686,8 +699,23 @@ module.exports = async function handler(req, res) {
       [config.companyRutField]: rucParaGuardar(ruc),
       [config.quoteItemsSubformField]: subformItems,
       [config.quoteVersionPdfField]: 1,
+      // Descuento del plan, misma forma que create-from-vicky (CL).
+      ...(escalonDescuento > 0
+        ? {
+            [config.quoteEscalonField]: escalonDescuento,
+            [config.quoteEscalonNegociacionField]: escalonDescuento,
+            [config.quoteDiscountUnlockedField]: true,
+            [config.quoteDiscountPctField]: descuentoPlanPct,
+            [config.quoteDiscountInstRMPctField]: 0,
+            [config.quoteDiscountInstRegionPctField]: 0,
+          }
+        : {}),
     }, true);
     const quoteId = toText(quoteResult?.id);
+    if (escalonDescuento > 0) {
+      console.log(`[create-from-vicky-pe] cotización ${quoteId} con ${descuentoPlanPct} % en el plan (escalón ${escalonDescuento}, ${MESES_DESCUENTO_PLAN} meses).`);
+    }
+    if (tipoCambio) console.log(`[create-from-vicky-pe] reloj convertido con dólar SUNAT ${tipoCambio} (${tipoCambioFuente || "?"}).`);
     if (!quoteId) throw new Error("No se obtuvo quoteId");
     await setIdempotente(idemClave, { quoteId, dealId, accountId, contactId });
 
@@ -742,6 +770,8 @@ module.exports = async function handler(req, res) {
           acceptanceUrl,
           cotizacionId: numeroParaPdf(numeroCotizacion, quoteId),
           validezHasta: new Date(expMs).toISOString(),
+          descuentos,
+          mesesDescuento: MESES_DESCUENTO_PLAN,
         });
         const pdfBuffer = await htmlToPdfBuffer(html, { format: "Letter", margin: "0" });
         const { pdfUrl } = await uploadPdfToSupabase({ pdfBuffer, quoteId, empresa });
@@ -793,7 +823,7 @@ module.exports = async function handler(req, res) {
           userCount: Number(userCount) || 0,
           crmIncompleto,
           motivo: "emision-pe",
-          creatorOverrides: { moneda: "PEN", pais: "Perú" },
+          creatorOverrides: { moneda: "PEN", pais: "Perú", tipoCambio, tipoCambioFuente },
         });
       })().catch((bgErr) =>
         console.error("[create-from-vicky-pe] PDF en segundo plano falló:", bgErr?.message || bgErr),

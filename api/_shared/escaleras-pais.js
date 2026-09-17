@@ -15,9 +15,10 @@
 
 /** Escalera de asistencia PE en soles, en la forma que lee ndv-charge-table. */
 const ESCALERA_ASISTENCIA_PE = Object.freeze([
-  { desde: 1, hasta: 10, modalidad: "fijo", precioUF: 100 },
-  { desde: 11, hasta: 20, modalidad: "fijo", precioUF: 200 },
-  { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 5 },
+  { desde: 1, hasta: 10, modalidad: "fijo", precioUF: 55 },
+  { desde: 11, hasta: 50, modalidad: "por_usuario", precioUF: 5.5 },
+  { desde: 51, hasta: 100, modalidad: "por_usuario", precioUF: 5 },
+  { desde: 101, hasta: 500, modalidad: "por_usuario", precioUF: 4.5 },
 ]);
 
 const MONEDA_POR_PAIS = Object.freeze({

@@ -22,7 +22,7 @@ test("tabla de cobro en PEN: tramos peruanos en soles, sin extender con la escal
   const config = { quoteItemsSubformField: "Detalle_Items_Cotizacion" };
   const quote = {
     Detalle_Items_Cotizacion: [
-      { Nombre_Item: "Control de Asistencia", Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 100, Precio_Unitario_CLP: 100, Subtotal_UF: 100, Subtotal_CLP: 100, Modalidad: "Único", Es_Recurrente: true },
+      { Nombre_Item: "Control de Asistencia", Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 55, Precio_Unitario_CLP: 55, Subtotal_UF: 55, Subtotal_CLP: 55, Modalidad: "Único", Es_Recurrente: true },
     ],
   };
   const r = buildChargeTables({
@@ -31,11 +31,13 @@ test("tabla de cobro en PEN: tramos peruanos en soles, sin extender con la escal
     escalerasEnMemoria: escalerasDefaultPorMoneda("PEN"),
   });
   const filas = r.porServicio["Control de Asistencia"];
-  assert.ok(Array.isArray(filas) && filas.length === 3, `esperaba 3 tramos PE, hay ${filas && filas.length}`);
-  assert.equal(filas[0].Valor, 100);
-  assert.equal(filas[1].Valor, 200);
+  assert.ok(Array.isArray(filas) && filas.length === 4, `esperaba 4 tramos PE, hay ${filas && filas.length}`);
+  assert.equal(filas[0].Valor, 55); // piso de 10 (Lalo 17-sep)
+  assert.equal(filas[1].Valor, 5.5);
+  assert.equal(filas[1].Hasta, 50);
   assert.equal(filas[2].Valor, 5);
-  assert.equal(filas[2].Hasta, 50);
+  assert.equal(filas[3].Valor, 4.5);
+  assert.equal(filas[3].Hasta, 500);
   assert.equal(r.diagnostico.moneda, "PEN");
   assert.equal(r.diagnostico.fallback, false);
 });

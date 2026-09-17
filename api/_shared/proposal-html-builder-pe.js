@@ -116,9 +116,21 @@ function buildProposalHtmlPE({
   cotizacionId,
   validezHasta,
   version,
+  // Descuento del plan (escalera chilena, Lalo 17-sep): % sobre las filas del
+  // PLAN (no sobre el arriendo del reloj) y meses de vigencia.
+  descuentos,
+  mesesDescuento,
 }) {
   cliente = cliente || {};
   const versionNum = Number(version) > 1 ? Number(version) : 1;
+  const pctPlan = Math.max(0, Math.min(100, Number(descuentos?.recurrentePct || 0)));
+  const mesesDcto = Number.isFinite(Number(mesesDescuento)) && Number(mesesDescuento) > 0 ? Number(mesesDescuento) : 6;
+  const esFilaPlan = (item) => {
+    const id = String(item?.id || "").toLowerCase();
+    if (id.startsWith("plan")) return true;
+    if (/reloj|equipo|hardware|arriendo/.test(id)) return false;
+    return item?.esRecurrente === true && String(item?.tipo || "").toLowerCase() === "plan";
+  };
 
   const empresa = escapeHtml(cliente.empresa || "EMPRESA");
   const contacto = escapeHtml(cliente.contacto || "");
@@ -132,8 +144,12 @@ function buildProposalHtmlPE({
     : formatFechaCorta(new Date(hoy.getTime() + VALIDEZ_DIAS_PE * 24 * 60 * 60 * 1000));
 
   // ── Filas (netos; el IGV vive en las cajas de totales) ──
+  let descuentoPlanNeto = 0;
   const filas = (Array.isArray(items) ? items : []).map((item) => {
-    const subtotal = Math.round(Number(item.subtotalPEN || 0) * 100) / 100;
+    const subtotalLista = Math.round(Number(item.subtotalPEN || 0) * 100) / 100;
+    const conDcto = pctPlan > 0 && item.esRecurrente === true && esFilaPlan(item);
+    const subtotal = conDcto ? Math.round(subtotalLista * (1 - pctPlan / 100) * 100) / 100 : subtotalLista;
+    if (conDcto) descuentoPlanNeto += subtotalLista - subtotal;
     const afectoIgv = item.afectoIgv !== false; // en PE todo es afecto salvo excepción explícita
     return {
       nombre: escapeHtml(item.nombre || ""),
@@ -142,6 +158,8 @@ function buildProposalHtmlPE({
       puPEN: Math.round(Number(item.precioUnitarioPEN || 0) * 100) / 100,
       cant: Number(item.cantidad || 1),
       subtotal,
+      subtotalLista,
+      conDcto,
       igv: afectoIgv ? Math.round(subtotal * IGV_PE * 100) / 100 : 0,
       recurrente: item.esRecurrente === true,
       esActivacion: esItemActivacion(item),
@@ -166,10 +184,10 @@ function buildProposalHtmlPE({
     `<tr>` +
     `<td class="c-nom">${f.nombre}</td>` +
     `<td class="c-modal">${f.modalidad}</td>` +
-    `<td class="c-desc">${f.desc}</td>` +
+    `<td class="c-desc">${f.desc}${f.conDcto ? ` Incluye ${pctPlan} % de descuento durante ${mesesDcto} meses (precio de lista ${formatPEN(f.subtotalLista)}/mes).` : ""}</td>` +
     `<td class="c-num">${formatPEN(f.puPEN)}</td>` +
     `<td class="c-num">${f.cant}</td>` +
-    `<td class="c-num c-tot">${formatPEN(f.subtotal)}</td>` +
+    `<td class="c-num c-tot">${f.conDcto ? `<s style="color:#888">${formatPEN(f.subtotalLista)}</s> ` : ""}${formatPEN(f.subtotal)}</td>` +
     `</tr>`;
   // La Activación no se tabula (diseño chileno) pero SÍ queda contada en
   // uniNeto: la caja "Pago inicial" la cobra igual.
@@ -191,12 +209,17 @@ function buildProposalHtmlPE({
     if (recIgv > 0) {
       totHtml += `<div class="tr"><span>IGV (18 %)</span><span>${formatPEN(recIgv)}</span></div>`;
     }
-    totHtml += `<div class="tr grand"><span>Total mensual</span><span>${formatPEN(recTot)}/mes</span></div>`;
+    totHtml += `<div class="tr grand"><span>Total mensual${pctPlan > 0 && descuentoPlanNeto > 0 ? ` (primeros ${mesesDcto} meses)` : ""}</span><span>${formatPEN(recTot)}/mes</span></div>`;
+    if (pctPlan > 0 && descuentoPlanNeto > 0) {
+      const recListaTot = (recNeto + descuentoPlanNeto) * (1 + IGV_PE);
+      totHtml += `<div class="tr"><span>Descuento ${pctPlan} % en el plan (${mesesDcto} meses)</span><span>−${formatPEN(descuentoPlanNeto)} neto</span></div>`;
+      totHtml += `<div class="tr"><span>Desde el mes ${mesesDcto + 1} (precio de lista)</span><span>${formatPEN(recListaTot)}/mes</span></div>`;
+    }
   }
   totHtml +=
     `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
     `El <b>Pago inicial</b> se cobra al aceptar y corresponde a los conceptos de pago &uacute;nico; ` +
-    `la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado. ` +
+    `la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado${pctPlan > 0 && descuentoPlanNeto > 0 ? " (ya con el descuento del plan)" : ""}. ` +
     `La <b>mensualidad</b> se factura desde el mes siguiente seg&uacute;n usuarios activos.` +
     `</div>`;
 

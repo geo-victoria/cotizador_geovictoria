@@ -424,7 +424,7 @@ export default async function handler(req, res) {
       ? pais === "co"
         ? computePaymentAmountsCO(items).oneShotClp
         : pais === "pe"
-        ? computePaymentAmountsPE(items).oneShotClp
+        ? computePaymentAmountsPE(items, descuentos).oneShotClp
         : computePaymentAmounts(items, descuentos, {
             includeIva: mpConfig.includeIva,
             includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
@@ -527,7 +527,7 @@ export default async function handler(req, res) {
         ...computeTotals(items, descuentos),
         ...(pais === "co" ? { co: computeTotalsCO(items) } : {}),
         ...(pais === "mx" ? { mx: computeTotalsMX(items) } : {}),
-        ...(pais === "pe" ? { pe: computeTotalsPE(items) } : {}),
+        ...(pais === "pe" ? { pe: { ...computeTotalsPE(items, descuentos), mesesDescuento } } : {}),
       },
     });
   } catch (error) {
