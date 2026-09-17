@@ -1137,6 +1137,25 @@ async function runNdvHandoff({
     }
   }
 
+  // MONEDA ≠ UF (17-sep, Perú): el ALTA por API con Moneda="PEN" la rechaza un
+  // workflow de Creator ("No form named Formulario found") — el mismo registro
+  // con Moneda="UF" entra, y con Pa_s_Facturaci_n="Perú" también. Las notas
+  // peruanas humanas nacen por la UI, donde ese camino no corre. Rodeo: nace en
+  // UF y la moneda real se escribe en el PATCH de reconciliación que sigue al
+  // alta (los bloques hijos leen ndvRecord.Moneda, que se restituye).
+  let monedaDiferida = "";
+  if (!createAttempt.ok && toText(ndvRecord.Moneda) && !/^uf$/i.test(toText(ndvRecord.Moneda))) {
+    const detalle = creatorErrorMessage(createAttempt.payload, "");
+    console.warn(
+      `[ndv-handoff] alta rechazada con Moneda="${ndvRecord.Moneda}" (${detalle}); se reintenta en UF y se corrige la moneda en el PATCH posterior.`
+    );
+    monedaDiferida = toText(ndvRecord.Moneda);
+    const enUf = { ...ndvRecord, Moneda: "UF" };
+    const reintento = await createNdvWithFormFallback({ creatorConfig, ndvRecord: enUf });
+    if (reintento.ok) createAttempt = reintento;
+    else monedaDiferida = "";
+  }
+
   const createResp = createAttempt.response;
   const createPayload = createAttempt.payload;
   if (!createAttempt.ok) {
@@ -1166,6 +1185,7 @@ async function runNdvHandoff({
     CRM_Deal: ndvRecord.CRM_Deal,
     Deals_Asociados: ndvRecord.Deals_Asociados,
     CRM_REFERENCE_ID: ndvRecord.CRM_REFERENCE_ID,
+    ...(monedaDiferida ? { Moneda: monedaDiferida } : {}),
   };
 
   const updatePath = buildCreatorUpdatePath(creatorConfig, ndvCreatorId);
@@ -1176,6 +1196,10 @@ async function runNdvHandoff({
   });
   const updatePayload = await readJsonSafe(updateResp);
   const reconciled = updateResp.ok && !isCreatorBusinessError(updatePayload);
+  if (monedaDiferida) {
+    if (reconciled) console.log(`[ndv-handoff] Moneda corregida a ${monedaDiferida} en el PATCH posterior al alta (id ${ndvCreatorId}).`);
+    else console.error(`[ndv-handoff] NO se pudo corregir Moneda a ${monedaDiferida} en ${ndvCreatorId}: ${creatorErrorMessage(updatePayload, "sin detalle")} — el maestro quedó en UF.`);
+  }
 
   return {
     ndvCreated: true,
