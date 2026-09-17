@@ -1143,10 +1143,13 @@ async function runNdvHandoff({
     const sinVendedor = { ...ndvRecord };
     delete sinVendedor.Vendedor;
     const reintento = await createNdvWithFormFallback({ creatorConfig, ndvRecord: sinVendedor });
-    if (reintento.ok) {
-      delete ndvRecord.Vendedor;
-      createAttempt = reintento;
-    }
+    // El campo se quita del registro AUNQUE el reintento también falle: el
+    // rechazo siguiente (p. ej. Moneda) se reintenta sobre la base ya limpia.
+    // Antes el reintento por Moneda volvía a mandar Vendedor y Creator volvía a
+    // rechazar por Vendedor — cascada tapada (17-sep, Perú).
+    delete ndvRecord.Vendedor;
+    if (reintento.ok) createAttempt = reintento;
+    else createAttempt = reintento;
   }
 
   // MONEDA ≠ UF (17-sep, Perú): el ALTA por API con Moneda="PEN" la rechaza un
