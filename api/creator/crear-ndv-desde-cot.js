@@ -176,6 +176,8 @@ module.exports = async function handler(req, res) {
         ...(toText(body.moneda) ? { moneda: toText(body.moneda) } : {}),
         ...(toText(body.pais) ? { pais: toText(body.pais) } : {}),
         ...(toText(body.escaleraPais) ? { escaleraPais: toText(body.escaleraPais) } : {}),
+        // Perú (17-sep): plan y hardware en notas separadas (PEN / USD).
+        ...(toText(body.filtroLineas) ? { filtroLineas: toText(body.filtroLineas) } : {}),
       },
     });
     const ndvId = toText(ndvResult?.ndvId);
@@ -208,7 +210,9 @@ module.exports = async function handler(req, res) {
     });
 
     stage = "referencias_crm";
-    await persistNdvReferences(config, quoteId, ndvId).catch(() => {});
+    // `sinReferencia: true` = nota SECUNDARIA (hardware en USD de Perú): la
+    // referencia de la cotización sigue apuntando a la del plan.
+    if (body.sinReferencia !== true) await persistNdvReferences(config, quoteId, ndvId).catch(() => {});
 
     stage = "readback";
     const despues = await leerNdv(creatorConfig, ndvId);
