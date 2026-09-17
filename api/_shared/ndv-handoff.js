@@ -119,7 +119,7 @@ function normalizeCreatorBusinessError(detailText) {
   return detail;
 }
 
-function prevalidateNdvRecord(ndvRecord) {
+function prevalidateNdvRecord(ndvRecord, opts = {}) {
   const missing = NDV_CANONICAL_REQUIRED_FIELDS.filter((field) => !toText(ndvRecord?.[field.key]));
   if (missing.length > 0) {
     throw new NdvBusinessError(
@@ -139,6 +139,9 @@ function prevalidateNdvRecord(ndvRecord) {
   }
 
   const table = safeArray(ndvRecord?.Tabla_de_Cobro);
+  // Nota SOLO de hardware (Perú, 17-sep): sin tabla de cobro por diseño
+  // (golden NDV-32020/32024); el dinero vive en el Formulario_de_Equipos.
+  if (table.length === 0 && opts.permitirSinTabla) return;
   if (table.length === 0) {
     throw new NdvBusinessError(
       "Falta completar la tabla de cobro para crear la cotización.",
@@ -873,6 +876,7 @@ async function buildNdvRecord({
     // cotización como INCOMPLETA.
     chargeTable = [];
     if (chargeTables.diagnostico) chargeTables.diagnostico.fallback = false;
+    chargeTables.soloHardware = true;
   }
   // Línea de negocio: las cotizaciones sanas del canal telemarketing —el que
   // atiende Vicky— van como "Telemarketing"; "Estándar" era un hardcode que no
@@ -1139,7 +1143,7 @@ async function runNdvHandoff({
     },
   });
 
-  prevalidateNdvRecord(ndvRecord);
+  prevalidateNdvRecord(ndvRecord, { permitirSinTabla: chargeTables?.soloHardware === true });
 
   if (!toText(ndvRecord.CRM_Account)) {
     throw new Error("No se pudo resolver Cuenta CRM (CRM_Account) para crear NDV.");
