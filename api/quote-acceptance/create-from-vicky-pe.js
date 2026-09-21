@@ -342,37 +342,19 @@ function esItemActivacion(item) {
 }
 
 /**
- * Garantiza la fila de "Activación" = PRIMER MES COMPLETO por adelantado
- * (plan + arriendos: TODOS los recurrentes — patrón del pago inicial CL/PE,
- * distinto de CO donde es solo el plan). afectoIgv=true (en Perú el IGV
- * aplica a todo). Si el agente ya la mandó (p. ej. con el 20 % de cierre
- * aplicado desde el motor), se respeta la suya.
+ * PATRÓN CHILE (Lalo 21-sep, "quita la activación, toma como ejemplo cómo se
+ * arma la aceptación online en Chile"): la cotización NO lleva fila de
+ * Activación. El primer mes adelantado lo calcula computeTotalsPE desde las
+ * filas recurrentes (con el descuento del plan), igual que computePaymentAmounts
+ * en CL con includeFirstMonth. Si un agente viejo todavía manda la fila, se
+ * descarta acá para que Zoho, el PDF y la aceptación no la muestren.
  */
-function ensureActivacionPE(items) {
-  if (items.some(esItemActivacion)) return items;
-  const primerMesPEN = items.reduce((acc, it) => {
-    if (it.esRecurrente === true) return acc + Number(it.subtotalPEN || 0);
-    return acc;
-  }, 0);
-  if (!(primerMesPEN > 0)) {
-    console.warn("[create-from-vicky-pe] cotización sin recurrentes: no se agrega fila de Activación.");
-    return items;
+function quitarActivacionPE(items) {
+  const sin = items.filter((it) => !esItemActivacion(it));
+  if (sin.length !== items.length) {
+    console.warn("[create-from-vicky-pe] fila de Activación descartada: el primer mes lo calcula el cotizador (patrón CL).");
   }
-  const monto = Math.round(primerMesPEN * 100) / 100;
-  return [
-    ...items,
-    {
-      tipo: "activacion",
-      id: "activacion",
-      nombre: "Activación",
-      modalidad: "Cobro único",
-      cantidad: 1,
-      precioUnitarioPEN: monto,
-      subtotalPEN: monto,
-      esRecurrente: false,
-      afectoIgv: true,
-    },
-  ];
+  return sin;
 }
 
 /** Subform Detalle_Items_Cotizacion — convención "unidad de pricing del país":
@@ -517,10 +499,11 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // Activación (primer mes completo adelantado) SIEMPRE presente: en Zoho,
-    // en el PDF y en la página de aceptación los números calzan.
-    const items = ensureActivacionPE(body.items);
-    // Total con IGV 18 % en las líneas afectas (en PE: todas).
+    // Sin fila de Activación (patrón CL): el primer mes adelantado lo
+    // calcula el cotizador desde los recurrentes en cada superficie.
+    const items = quitarActivacionPE(body.items);
+    // Total del pago inicial con IGV 18 %: únicos + primer mes (recurrentes).
+    // Es lo que va al Amount del deal (informativo).
     const totalPEN = items.reduce((acc, it) => {
       const subtotal = Number(it.subtotalPEN || 0);
       return acc + subtotal + (it.afectoIgv === true ? subtotal * IGV_PE : 0);
@@ -800,6 +783,8 @@ module.exports = async function handler(req, res) {
               contacto,
               empresa,
               pdfUrl,
+              // Sin esto el botón "Aceptar y pagar" caía al PDF (Lalo 21-sep).
+              acceptanceUrl,
               tieneReloj: false,
               ejecutivo: { nombre: "Mónica Mendoza", email: "mmendozav@geovictoria.com" },
             }),
@@ -878,5 +863,5 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports.buildSubformItemsPE = buildSubformItemsPE;
-module.exports.ensureActivacionPE = ensureActivacionPE;
+module.exports.quitarActivacionPE = quitarActivacionPE;
 module.exports.rucValido = rucValido;

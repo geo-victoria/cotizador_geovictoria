@@ -1094,6 +1094,8 @@ module.exports = async function handler(req, res) {
               contacto,
               empresa,
               pdfUrl,
+              // Sin esto el botón "Aceptar y pagar" caía al PDF (mismo bug que PE, 21-sep).
+              acceptanceUrl,
               tieneReloj: false,
               ejecutivo: { nombre: "Alejandro Gordillo", email: "agordillo@geovictoria.com" },
             }),

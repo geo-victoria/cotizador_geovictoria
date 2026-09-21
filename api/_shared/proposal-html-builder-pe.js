@@ -189,22 +189,35 @@ function buildProposalHtmlPE({
     `<td class="c-num">${f.cant}</td>` +
     `<td class="c-num c-tot">${f.conDcto ? `<s style="color:#888">${formatPEN(f.subtotalLista)}</s> ` : ""}${formatPEN(f.subtotal)}</td>` +
     `</tr>`;
-  // La Activación no se tabula (diseño chileno) pero SÍ queda contada en
-  // uniNeto: la caja "Pago inicial" la cobra igual.
+  // PATRÓN CHILE (21-sep): sin fila de Activación. El pago inicial = únicos +
+  // primer mes de los recurrentes (ya con el descuento del plan). Una fila
+  // "Activación" legada (cotizaciones anteriores) se trata como ese primer
+  // mes: no se tabula ni se suma dos veces.
   const filasVisibles = filas.filter((f) => !f.esActivacion);
   const rowsHtml = filasVisibles.map(rowItem).join("");
   const totalTabla = filasVisibles.reduce((acc, f) => acc + f.subtotal, 0);
+  const activLegada = filas.filter((f) => f.esActivacion);
+  const soloUnicosNeto = filasVisibles.filter((f) => !f.recurrente).reduce((a, f) => a + f.subtotal, 0);
+  const soloUnicosIgv = filasVisibles.filter((f) => !f.recurrente).reduce((a, f) => a + f.igv, 0);
+  const primerMesNeto = activLegada.length ? activLegada.reduce((a, f) => a + f.subtotal, 0) : recNeto;
+  const primerMesIgv = activLegada.length ? activLegada.reduce((a, f) => a + f.igv, 0) : recIgv;
+  const iniNeto = soloUnicosNeto + primerMesNeto;
+  const iniIgv = soloUnicosIgv + primerMesIgv;
+  const iniTot = iniNeto + iniIgv;
 
   // ── Cajas de totales (neto + IGV 18 % = total, en ambas) ──
   let totHtml = "";
-  totHtml += `<div class="tot-h">Pago inicial — al aceptar</div>`;
-  totHtml += `<div class="tr"><span>Conceptos de pago único (incluye Activación)</span><span>${formatPEN(uniNeto)}</span></div>`;
-  if (uniIgv > 0) {
-    totHtml += `<div class="tr"><span>IGV (18 %)</span><span>${formatPEN(uniIgv)}</span></div>`;
+  totHtml += `<div class="tot-h">Pago inicial — al aceptar (incluye 1er mes)</div>`;
+  if (soloUnicosNeto > 0) {
+    totHtml += `<div class="tr"><span>Conceptos de pago único (equipos, envío e instalación)</span><span>${formatPEN(soloUnicosNeto)}</span></div>`;
   }
-  totHtml += `<div class="tr grand"><span>Total a pagar ahora</span><span>${formatPEN(uniTot)}</span></div>`;
+  totHtml += `<div class="tr"><span>Primer mes del servicio (adelantado${pctPlan > 0 && descuentoPlanNeto > 0 ? ", con el descuento del plan" : ""})</span><span>${formatPEN(primerMesNeto)}</span></div>`;
+  if (iniIgv > 0) {
+    totHtml += `<div class="tr"><span>IGV (18 %)</span><span>${formatPEN(iniIgv)}</span></div>`;
+  }
+  totHtml += `<div class="tr grand"><span>Total a pagar ahora</span><span>${formatPEN(iniTot)}</span></div>`;
   if (recTot > 0) {
-    totHtml += `<div class="tot-h" style="margin-top:6px">Mensualidad — desde el mes siguiente</div>`;
+    totHtml += `<div class="tot-h" style="margin-top:6px">Mensualidad — desde el 2.º mes</div>`;
     totHtml += `<div class="tr"><span>Servicio${recNeto !== recIgv ? " y equipos" : ""}</span><span>${formatPEN(recNeto)}</span></div>`;
     if (recIgv > 0) {
       totHtml += `<div class="tr"><span>IGV (18 %)</span><span>${formatPEN(recIgv)}</span></div>`;
@@ -218,16 +231,15 @@ function buildProposalHtmlPE({
   }
   totHtml +=
     `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
-    `El <b>Pago inicial</b> se cobra al aceptar y corresponde a los conceptos de pago &uacute;nico; ` +
-    `la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado${pctPlan > 0 && descuentoPlanNeto > 0 ? " (ya con el descuento del plan)" : ""}. ` +
-    `La <b>mensualidad</b> se factura desde el mes siguiente seg&uacute;n usuarios activos.` +
+    `El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el primer mes del servicio, cobrado por adelantado${pctPlan > 0 && descuentoPlanNeto > 0 ? " (ya con el descuento del plan)" : ""}. ` +
+    `La <b>mensualidad</b> se factura desde el 2.&ordm; mes seg&uacute;n usuarios activos.` +
     `</div>`;
 
   const ctaHref = escapeHtml(acceptanceUrl || "#");
   const notaTexto = "Valores netos en soles (PEN). El IGV (18 %) se detalla en los totales.";
 
   const TYC_PE = [
-    "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único e incluye la Activación, equivalente al primer mes de servicio cobrado por adelantado. La mensualidad se factura desde el mes siguiente.",
+    "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único más el primer mes del servicio, cobrado por adelantado. La mensualidad se factura desde el 2.º mes.",
     "Valores netos en soles (PEN); a todos los conceptos se les aplica IGV (18 %).",
     "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
     "Envío del reloj sin costo en Lima Metropolitana; a provincia corre por cuenta del cliente (lo usual es la entrega en Lima). La instalación con visita técnica se coordina con nuestro servicio técnico y puede tener costo según el distrito (tarifario oficial por zonas, en dólares + IGV, facturado aparte por servicio técnico); la auto-instalación no tiene costo.",

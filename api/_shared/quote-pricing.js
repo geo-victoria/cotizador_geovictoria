@@ -284,11 +284,21 @@ function computePaymentAmountsCO(items) {
 // Totales PE — IGV 18% POR LÍNEA según Afecto_IVA (en Perú TODOS los
 // conceptos son afectos: el agente marca afectoIgv=true en todo; el flag por
 // línea queda por si negocio exime algo). Convención espejo de COLOMBIA.md:
-// el subform guarda PEN en los campos *_CLP/*_UF. La Activación (pago único)
-// ES el primer mes COMPLETO cobrado por adelantado (plan + arriendos, patrón
-// CL) → jamás se suma un "primer mes" extra. Redondeo a céntimos (2
-// decimales, como MX): el descuento de cierre 20% produce céntimos exactos.
+// el subform guarda PEN en los campos *_CLP/*_UF.
+// PATRÓN CHILE (Lalo 21-sep): la cotización NO lleva fila de Activación. El
+// pago inicial = pagos ÚNICOS (equipo en venta, etc.) + PRIMER MES de los
+// recurrentes (plan con su descuento + arriendos), como computePaymentAmounts
+// de CL con includeFirstMonth. Una cotización antigua que todavía traiga la
+// fila "Activación" se trata como legado: esa fila ES el primer mes y no se
+// suma otro. Redondeo a céntimos (2 decimales, como MX).
 const IGV_RATE_PE = 0.18;
+
+function esFilaActivacionPE(row) {
+  const t = String(row?.tipo || "").toLowerCase();
+  const id = String(row?.codigo || row?.id || "").toLowerCase();
+  const nombre = String(row?.nombre || "").toLowerCase();
+  return t === "activacion" || /activaci/.test(id) || /activaci/.test(nombre);
+}
 
 // ¿La fila es el PLAN (servicio recurrente de software) y no el arriendo de un
 // equipo? En PE el descuento aplica SOLO al plan (misma regla que Chile desde
@@ -303,10 +313,11 @@ function esFilaPlanPE(row) {
 
 /**
  * Totales PERÚ. `descuentos.recurrentePct` (Descuento_Recurrente_Pct de la
- * cotización, escalera chilena 10 → 20 %) rebaja SOLO las filas del plan; la
- * Activación llega ya calculada por el agente (primer mes con descuento) y no
- * se toca. Devuelve además la mensualidad de LISTA para que el front y el PDF
- * puedan decir "desde el mes N+1".
+ * cotización, escalera chilena 10 → 20 %) rebaja SOLO las filas del plan.
+ * Pago inicial = únicos + primer mes (recurrentes ya rebajados); devuelve los
+ * dos componentes por separado (`unicos*`, `primerMes*`) para que la página y
+ * el PDF los muestren como Chile ("Primer mes del servicio (adelantado)").
+ * Devuelve además la mensualidad de LISTA para decir "desde el mes N+1".
  */
 function computeTotalsPE(items, descuentos) {
   const rows = Array.isArray(items) ? items : [];
@@ -314,12 +325,17 @@ function computeTotalsPE(items, descuentos) {
   const pct = Number(d.recurrentePct || 0);
   const factorPlan = pct > 0 ? 1 - pct / 100 : 1;
   const r2 = (v) => Math.round(v * 100) / 100;
-  let pagoInicialNeto = 0;
-  let pagoInicialIgv = 0;
+  let unicosNeto = 0;
+  let unicosIgv = 0;
   let mensualidadNeta = 0;
   let mensualidadIgv = 0;
   let mensualidadListaNeta = 0;
   let descuentoPlanNeto = 0;
+  // Legado: cotizaciones emitidas antes del 21-sep traen una fila "Activación"
+  // que YA es el primer mes. Si existe, ella manda y no se calcula otro.
+  let activacionLegadaNeto = 0;
+  let activacionLegadaIgv = 0;
+  let conActivacionLegada = false;
 
   rows.forEach((row) => {
     const montoLista = toNumber(row?.subtotalClp);
@@ -330,16 +346,33 @@ function computeTotalsPE(items, descuentos) {
       descuentoPlanNeto += montoLista - monto;
       mensualidadNeta += monto;
       mensualidadIgv += afecto ? monto * IGV_RATE_PE : 0;
+    } else if (esFilaActivacionPE(row)) {
+      conActivacionLegada = true;
+      activacionLegadaNeto += montoLista;
+      activacionLegadaIgv += afecto ? montoLista * IGV_RATE_PE : 0;
     } else {
-      pagoInicialNeto += montoLista;
-      pagoInicialIgv += afecto ? montoLista * IGV_RATE_PE : 0;
+      unicosNeto += montoLista;
+      unicosIgv += afecto ? montoLista * IGV_RATE_PE : 0;
     }
   });
+
+  const primerMesNeto = conActivacionLegada ? activacionLegadaNeto : mensualidadNeta;
+  const primerMesIgv = conActivacionLegada ? activacionLegadaIgv : mensualidadIgv;
+  const pagoInicialNeto = unicosNeto + primerMesNeto;
+  const pagoInicialIgv = unicosIgv + primerMesIgv;
 
   return {
     pagoInicialNetoPen: r2(pagoInicialNeto),
     pagoInicialIgvPen: r2(pagoInicialIgv),
     pagoInicialPen: r2(pagoInicialNeto + pagoInicialIgv),
+    // Componentes del pago inicial (patrón CL): únicos y primer mes.
+    unicosNetoPen: r2(unicosNeto),
+    unicosIgvPen: r2(unicosIgv),
+    unicosPen: r2(unicosNeto + unicosIgv),
+    primerMesNetoPen: r2(primerMesNeto),
+    primerMesIgvPen: r2(primerMesIgv),
+    primerMesPen: r2(primerMesNeto + primerMesIgv),
+    conActivacionLegada,
     mensualidadNetaPen: r2(mensualidadNeta),
     mensualidadIgvPen: r2(mensualidadIgv),
     mensualidadPen: r2(mensualidadNeta + mensualidadIgv),
@@ -354,24 +387,27 @@ function computeTotalsPE(items, descuentos) {
 /**
  * Montos a cobrar de una cotización PERÚ, en el MISMO shape que
  * computePaymentAmounts (los campos *Clp llevan PEN, misma convención del
- * subform). Pago único = no recurrentes (la Activación ya es el primer mes
- * completo adelantado) + IGV 18% por línea afecta; firstMonthClp = 0 siempre.
+ * subform). Patrón CL: oneShotItems = pagos únicos, firstMonth = primer mes
+ * de los recurrentes, oneShot = la suma; todo con IGV 18 % por línea afecta.
+ * El checkout de MP arma las mismas dos líneas que en Chile.
  */
 function computePaymentAmountsPE(items, descuentos) {
   const totals = computeTotalsPE(items, descuentos);
   const d = normalizeDescuentos(descuentos);
   return {
     oneShotClp: totals.pagoInicialPen,
-    oneShotItemsClp: totals.pagoInicialPen,
-    firstMonthClp: 0,
+    oneShotItemsClp: totals.unicosPen,
+    firstMonthClp: totals.primerMesPen,
     recurringClp: totals.mensualidadPen,
     includeIva: true,
-    includeFirstMonth: false,
+    includeFirstMonth: true,
     descuentoPct: d.recurrentePct,
     descuentos: d,
     breakdown: {
-      oneShotNetClp: totals.pagoInicialNetoPen,
-      oneShotIvaClp: totals.pagoInicialIgvPen,
+      oneShotNetClp: totals.unicosNetoPen,
+      oneShotIvaClp: totals.unicosIgvPen,
+      firstMonthNetClp: totals.primerMesNetoPen,
+      firstMonthIvaClp: totals.primerMesIgvPen,
       recurringNetClp: totals.mensualidadNetaPen,
       recurringIvaClp: totals.mensualidadIgvPen,
     },

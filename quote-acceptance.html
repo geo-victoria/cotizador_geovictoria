@@ -2530,7 +2530,7 @@
         var summary = document.querySelector("#sectionTerms .terms-summary");
         if (summary) {
           summary.innerHTML = [
-            "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único e incluye la Activación, equivalente al primer mes de servicio cobrado por adelantado. La mensualidad se factura desde el mes siguiente.",
+            "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único más el primer mes del servicio, cobrado por adelantado. La mensualidad se factura desde el 2º mes.",
             "Valores netos en soles (PEN); a todos los conceptos se les aplica IGV (18 %).",
             "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
             "Envío del reloj sin costo en Lima Metropolitana; a provincia corre por cuenta del cliente (lo usual es la entrega en Lima). La instalación con visita técnica se coordina con nuestro servicio técnico y puede tener costo según el distrito (tarifario oficial por zonas, en dólares + IGV, facturado aparte); la auto-instalación no tiene costo.",
@@ -3172,7 +3172,13 @@
 
           // Filas OCULTAS (anualidad 01-sep): siguen en los totales (vienen
           // en $0) pero no se pintan — regla "solo se ve la fila anual".
-          const rowsVisibles = rows.filter(function (r) { return !(r && r.oculto === true); });
+          const rowsVisibles = rows.filter(function (r) {
+            if (!r || r.oculto === true) return false;
+            // PE (21-sep, patrón CL): la fila "Activación" de cotizaciones
+            // antiguas no se pinta — el total la cuenta como primer mes.
+            if (esPE && /activaci/i.test(String(r.nombre || "") + " " + String(r.codigo || r.id || ""))) return false;
+            return true;
+          });
           ES_ANUAL = rows.some(esFilaPlanAnual);
           const itemRowsHtml = rowsVisibles.length
             ? rowsVisibles.map(itemRowHtml).join("")
@@ -3227,12 +3233,22 @@
               "</td></tr>";
           } else if (esPE) {
             // Perú: totales del bloque `pe` del servidor (computeTotalsPE,
-            // IGV 18 % por línea afecta — en PE: todas). La Activación ya es
-            // el primer mes COMPLETO cobrado por adelantado.
+            // IGV 18 % por línea afecta — en PE: todas). PATRÓN CHILE
+            // (21-sep): pago inicial = pagos únicos + primer mes del servicio,
+            // sin fila de Activación.
             const pe = totals.pe || {};
-            totalsRowsHtml =
-              '<tr class="cost-row-sub"><td colspan="5">Pago único (incluye Activación)</td><td>' +
-              fmtPEN(pe.pagoInicialNetoPen) + "</td></tr>";
+            totalsRowsHtml = "";
+            if (Number(pe.unicosNetoPen || 0) > 0) {
+              totalsRowsHtml +=
+                '<tr class="cost-row-sub"><td colspan="5">Pago único (equipos, envío e instalación)</td><td>' +
+                fmtPEN(pe.unicosNetoPen) + "</td></tr>";
+            }
+            if (Number(pe.primerMesNetoPen || 0) > 0) {
+              totalsRowsHtml +=
+                '<tr class="cost-row-sub"><td colspan="5">Primer mes del servicio (adelantado' +
+                (Number(pe.descuentoPct || 0) > 0 ? ", ya con el descuento del plan" : "") + ')</td><td>' +
+                fmtPEN(pe.primerMesNetoPen) + "</td></tr>";
+            }
             if (Number(pe.pagoInicialIgvPen || 0) > 0) {
               totalsRowsHtml +=
                 '<tr class="cost-row-sub"><td colspan="5">IGV (18 %)</td><td>' +
@@ -3272,9 +3288,8 @@
             }
             totalsRowsHtml +=
               '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
-              "El <b>Pago inicial</b> se cobra al aceptar; la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado" +
-              (Number(pe.descuentoPct || 0) > 0 ? " (ya con el descuento del plan)" : "") + ". " +
-              "La <b>mensualidad</b> se factura desde el mes siguiente; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
+              "El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el <b>primer mes</b> del servicio, cobrado por adelantado. " +
+              "La <b>mensualidad</b> se factura desde el 2&ordm; mes; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
               "</td></tr>";
           } else if (esCO) {
             // Colombia: totales del bloque `co` del servidor (computeTotalsCO
@@ -3395,11 +3410,11 @@
               // como la tabla: monto con IGV 18 %, en soles.
               const peH = totals.pe || {};
               chHtml =
-                '<div class="ch-item"><span>Pago inicial — al aceptar (incluye la Activación, tu primer mes)</span><strong>' +
+                '<div class="ch-item"><span>Pago inicial — a pagar ahora (incluye 1er mes)</span><strong>' +
                 fmtPEN(peH.pagoInicialPen) + "</strong></div>";
               if (Number(peH.mensualidadPen || 0) > 0) {
                 chHtml +=
-                  '<div class="ch-item"><span>Mensualidad — desde el mes siguiente (con IGV)</span><strong>' +
+                  '<div class="ch-item"><span>Mensualidad — desde el 2&ordm; mes (con IGV)</span><strong>' +
                   fmtPEN(peH.mensualidadPen) + "/mes</strong></div>";
               }
             } else if (esCO) {
