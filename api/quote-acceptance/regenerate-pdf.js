@@ -29,6 +29,7 @@ const { tramoModuloCL } = require("../_shared/tramos-cl");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
+const { paisDeCotizacion, paisConPerfil, renderHtmlPais, subformAItemsPais, clienteDesdeQuote } = require("../_shared/pais-cotizacion");
 const { leerMesesDescuento } = require("../_shared/descuento-meses");
 const { ejecutivoPorOwner, resolverEjecutivoCL } = require("../_shared/ejecutivo-cl");
 const { getUFActualSafe } = require("../_shared/uf-actual");
@@ -210,12 +211,39 @@ module.exports = async function handler(req, res) {
     // Guard de país: este endpoint renderiza con el builder CHILENO (UF).
     // Una cotización CO/MX regenerada acá saldría con montos y textos de
     // Chile — mejor fallar claro que sobreescribir el PDF con basura.
-    const paisQuote = paisEnToken(toText(quote?.[config.quoteAcceptanceUrlField]));
-    if (paisQuote === "co" || paisQuote === "mx") {
+    const paisQuote = paisDeCotizacion(quote, config);
+    if (paisQuote === "mx") {
       return sendJson(res, 422, {
         ok: false,
-        error: `COTIZACION_${paisQuote.toUpperCase()}: regenerate-pdf solo soporta Chile por ahora; la regeneración CO/MX es fase 2.`,
+        error: "COTIZACION_MX: regenerate-pdf no soporta México todavía (fuera del núcleo).",
       });
+    }
+    if (paisConPerfil(paisQuote)) {
+      // PE/CO: PDF del país desde el subform (sin UF), misma versión+1 y
+      // mismo puntero. Chile sigue abajo con su camino de siempre.
+      stage = `render_pdf_${paisQuote}`;
+      const clientePais = clienteDesdeQuote(quote, config);
+      const versionNuevaPais = Math.max(1, Number(quote?.[config.quoteVersionPdfField] || 1)) + 1;
+      const htmlPais = renderHtmlPais(paisQuote, {
+        cliente: clientePais,
+        items: subformAItemsPais(paisQuote, quote, config),
+        acceptanceUrl: toText(quote?.[config.quoteAcceptanceUrlField]),
+        cotizacionId: numeroParaPdf(quote && quote.Numero_Cotizacion, quoteId),
+        validezHasta: new Date(Date.now() + config.validityDays * 24 * 60 * 60 * 1000).toISOString(),
+        version: versionNuevaPais,
+        descuentos: { recurrentePct: Number(quote?.[config.quoteDiscountPctField] || 0) },
+        mesesDescuento: (await leerMesesDescuento(quoteId, quote)) || undefined,
+      });
+      stage = "upload_pdf";
+      const pdfBufferPais = await htmlToPdfBuffer(htmlPais, { format: "Letter", margin: "0" });
+      const { pdfUrl: pdfUrlPais } = await uploadPdfToSupabase({ pdfBuffer: pdfBufferPais, quoteId, empresa: clientePais.empresa });
+      stage = "update_quote";
+      await updateRecord(config.quoteModule, quoteId, {
+        [config.quoteVersionPdfField]: versionNuevaPais,
+        [config.quotePdfUrlField]: pdfUrlPais,
+      }, true);
+      await actualizarPunteroPdf(quoteId, pdfUrlPais);
+      return sendJson(res, 200, { ok: true, version: versionNuevaPais, link_pdf: pdfUrlPais, pais: paisQuote });
     }
 
     // Descuentos COMITEADOS actuales (no se tocan; solo se reflejan en el PDF).

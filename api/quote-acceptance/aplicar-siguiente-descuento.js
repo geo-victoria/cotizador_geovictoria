@@ -43,6 +43,7 @@ const { tramoModuloCL } = require("../_shared/tramos-cl");
 const {
   DISCOUNT_LADDER,
   mesesDescuentoNormalizados,
+  MESES_DESCUENTO_PLAN: MESES_DESCUENTO_PLAN_DEFAULT,
 } = require("../_shared/proposal-constants");
 const {
   normalizarIndiceGuardado,
@@ -55,6 +56,19 @@ const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
 const { leerMesesDescuento } = require("../_shared/descuento-meses");
+// País (Lalo 21-sep, tools chilenas = únicas): PE usa la MISMA escalera 10 → 20
+// en el plan (decisión 17-sep "descuentos igualémoslos a Chile") sobre la misma
+// cotización, con su PDF en soles; CO/MX no tienen escalera y responden claro.
+const {
+  paisDeCotizacion,
+  paisConPerfil,
+  descuentoDisponible,
+  errorDescuentoNoDisponible,
+  subformAItemsPais,
+  renderHtmlPais,
+  clienteDesdeQuote,
+} = require("../_shared/pais-cotizacion");
+const { ESCALERA_ASISTENCIA_PE } = require("../_shared/escaleras-pais");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -308,6 +322,13 @@ module.exports = async function handler(req, res) {
     }
 
     // 1. Decidir hasta qué escalón comitear (todo el nivel negociado).
+    stage = "pais";
+    const pais = paisDeCotizacion(quote, config);
+    if (!descuentoDisponible(pais)) {
+      return sendJson(res, 422, errorDescuentoNoDisponible(pais));
+    }
+    const conPerfil = paisConPerfil(pais);
+
     stage = "elegir_escalon";
     const eleccion = elegirNivelACommitear(quote, config, pctOfrecido);
     if (!eleccion) {
@@ -360,12 +381,12 @@ module.exports = async function handler(req, res) {
 
     // 4. Regenerar el PDF.
     stage = "render_pdf";
-    const cliente = await buildClienteParaHtml(quote, config);
+    const cliente = conPerfil ? clienteDesdeQuote(quote, config) : await buildClienteParaHtml(quote, config);
     // UF de la cotización primero (campo UF_Valor / derivada del subform);
-    // UF del día solo como último recurso (pedido Lalo 06-ago).
-    const ufQuote = ufDeCotizacion(quote, config.quoteItemsSubformField);
-    const ufActual = ufQuote.uf > 0 ? ufQuote.uf : await getUFActualSafe();
-    const items = subformACotizacionItems(quote, config);
+    // UF del día solo como último recurso (pedido Lalo 06-ago). PE/CO: sin UF.
+    const ufQuote = conPerfil ? { uf: 0 } : ufDeCotizacion(quote, config.quoteItemsSubformField);
+    const ufActual = conPerfil ? 0 : ufQuote.uf > 0 ? ufQuote.uf : await getUFActualSafe();
+    const items = conPerfil ? subformAItemsPais(pais, quote, config) : subformACotizacionItems(quote, config);
 
     // acceptanceUrl: regeneramos el token con la misma data, expiración fresca
     // según validityDays. La página de aceptación trabaja contra el mismo
@@ -377,6 +398,8 @@ module.exports = async function handler(req, res) {
     const acceptanceToken = signAcceptancePayload({
       quoteId,
       dealId,
+      // El país viaja en el token: session/payment eligen motor y pasarela por él.
+      ...(conPerfil ? { pais } : {}),
       iat: Date.now(),
       exp: expMs,
       nonce: crypto.randomBytes(8).toString("hex"),
@@ -384,7 +407,16 @@ module.exports = async function handler(req, res) {
     });
     const acceptanceUrl = `${config.baseUrl}/quote-acceptance.html?token=${encodeURIComponent(acceptanceToken)}`;
 
-    const html = buildProposalHtml({
+    const html = conPerfil ? renderHtmlPais(pais, {
+      cliente,
+      items,
+      acceptanceUrl,
+      cotizacionId: numeroParaPdf(quote && quote.Numero_Cotizacion, quoteId),
+      validezHasta: new Date(expMs).toISOString(),
+      version: versionNueva,
+      descuentos: { recurrentePct: descRecNuevo },
+      mesesDescuento: mesesPlanQuote || MESES_DESCUENTO_PLAN_DEFAULT,
+    }) : buildProposalHtml({
       cliente,
       cotizacion: { items, ufActual },
       acceptanceUrl,
@@ -443,6 +475,21 @@ module.exports = async function handler(req, res) {
         dealId,
         motivo: "descuento",
         forzarNueva: true,
+        // Perú: espejo del PLAN en soles (misma forma que create-from-vicky-pe;
+        // la nota de hardware en USD no cambia con un descuento del plan).
+        ...(pais === "pe"
+          ? {
+              escalerasPrecio: {
+                plan_asistencia: ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t })),
+                asistencia: ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t })),
+              },
+              creatorOverrides: {
+                moneda: "PEN",
+                pais: "Perú",
+                ...(items.some((it) => String(it?.tipo || "") === "hardware") ? { filtroLineas: "sin_hardware" } : {}),
+              },
+            }
+          : {}),
       })
     );
 

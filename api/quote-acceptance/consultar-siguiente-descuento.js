@@ -40,6 +40,15 @@ const {
   previewAmounts,
   buildMensajeNegociacion,
 } = require("../_shared/discount-engine");
+const {
+  paisDeCotizacion,
+  paisConPerfil,
+  descuentoDisponible,
+  errorDescuentoNoDisponible,
+  previewAmountsPais,
+  buildMensajeNegociacionPais,
+} = require("../_shared/pais-cotizacion");
+const { leerMesesDescuento } = require("../_shared/descuento-meses");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -108,6 +117,13 @@ module.exports = async function handler(req, res) {
     // El puntero de negociación nunca retrocede por debajo de lo comiteado.
     // Los índices guardados con la escalera vieja (pre jul-2026, largo 4) se
     // re-derivan del % recurrente ya comiteado.
+    stage = "pais";
+    const pais = paisDeCotizacion(quote, config);
+    if (!descuentoDisponible(pais)) {
+      return sendJson(res, 422, errorDescuentoNoDisponible(pais));
+    }
+    const conPerfil = paisConPerfil(pais);
+
     stage = "elegir_escalon";
     const recComiteado = Number(quote?.[config.quoteDiscountPctField] || 0);
     const commitIdx = normalizarIndiceGuardado(quote?.[config.quoteEscalonField], recComiteado);
@@ -145,7 +161,7 @@ module.exports = async function handler(req, res) {
     // Preview de precio con el descuento ACUMULADO hasta este escalón.
     stage = "preview";
     const { descuentos } = descuentosHasta(quote, config, i);
-    const amounts = previewAmounts(quote, config, descuentos);
+    const amounts = conPerfil ? previewAmountsPais(pais, quote, config, descuentos) : previewAmounts(quote, config, descuentos);
 
     // ¿Hubo oferta previa? (no repetir el detalle largo) y ¿primer descuento del
     // plan? (la condición de 6 meses se dice una vez).
@@ -170,12 +186,19 @@ module.exports = async function handler(req, res) {
         descuentos,
       },
       tope_alcanzado: !hayEscalonDespues(quote, config, i),
-      mensaje_para_prospecto: buildMensajeNegociacion(
-        escalon,
-        amounts,
-        !hayEscalonDespues(quote, config, i),
-        { conciso: huboOfertaPrevia, esPrimerDescuentoPlan },
-      ),
+      pais,
+      mensaje_para_prospecto: conPerfil
+        ? buildMensajeNegociacionPais(pais, escalon, amounts, !hayEscalonDespues(quote, config, i), {
+            conciso: huboOfertaPrevia,
+            esPrimerDescuentoPlan,
+            mesesPlan: await leerMesesDescuento(quoteId, quote),
+          })
+        : buildMensajeNegociacion(
+            escalon,
+            amounts,
+            !hayEscalonDespues(quote, config, i),
+            { conciso: huboOfertaPrevia, esPrimerDescuentoPlan },
+          ),
     });
   } catch (error) {
     console.error(`[consultar-siguiente-descuento] ERROR en stage=${stage}:`, error);

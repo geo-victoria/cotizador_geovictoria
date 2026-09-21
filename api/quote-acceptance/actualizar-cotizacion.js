@@ -61,20 +61,110 @@ try {
   waitUntil = (p) => { p.catch(() => {}); };
 }
 
-// País firmado en el token de la URL de aceptación (espejo de backfill-pdf):
-// create-from-vicky-co firma pais:"co" y create-from-vicky-mx pais:"mx"; sin
-// campo pais, la cotización es chilena. Solo se decodifica (no se verifica
-// firma): se usa únicamente para NO tocar cotizaciones CO/MX con lógica CL.
-function paisEnToken(acceptanceUrl) {
-  try {
-    const m = String(acceptanceUrl || "").match(/[?&]token=([^&]+)/);
-    if (!m) return "";
-    const body = decodeURIComponent(m[1]).split(".")[0];
-    const json = Buffer.from(body.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
-    return String(JSON.parse(json)?.pais || "").toLowerCase();
-  } catch {
-    return "";
+// País de la cotización (token de aceptación) y perfil por país. Chile sigue
+// su camino nativo (UF); PE/CO editan EN SITIO la misma cotización con su
+// motor (Lalo 21-sep: las tools chilenas son las únicas, parametrizadas por
+// país — antes PE re-emitía una cotización nueva por cada cambio).
+const {
+  paisDeCotizacion,
+  paisConPerfil,
+  validarItemsPais,
+  buildSubformItemsPais,
+  renderHtmlPais,
+  copiasCorreoPais,
+  ejecutivoCorreoPais,
+  clienteDesdeQuote,
+} = require("../_shared/pais-cotizacion");
+const { MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
+
+/**
+ * Rama PE/CO de la actualización: mismo contrato que Chile (subform
+ * reemplazado en un update, link intacto, PDF v+1 y correo en segundo plano)
+ * con los ítems en la moneda del país y el PDF del país. Sin UF.
+ */
+async function actualizarEnSitioPais({ pais, config, quote, quoteId, items, body, resumenCambio, sinCorreoCliente, res }) {
+  const invalido = validarItemsPais(pais, items);
+  if (invalido) return sendJson(res, 400, { ok: false, error: invalido });
+
+  const filasViejas = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
+  const filasNuevas = buildSubformItemsPais(pais, items);
+  const subformSwap = [
+    ...filasNuevas,
+    ...filasViejas.map((r) => toText(r?.id)).filter(Boolean).map((id) => ({ id, _delete: null })),
+  ];
+  const versionActual = Math.max(1, Number(quote?.[config.quoteVersionPdfField] || 1));
+  const versionNueva = body.regenerarPdf === false ? versionActual : versionActual + 1;
+  await updateRecord(config.quoteModule, quoteId, {
+    [config.quoteItemsSubformField]: subformSwap,
+    ...(body.regenerarPdf === false ? {} : { [config.quoteVersionPdfField]: versionNueva }),
+  }, true);
+
+  const acceptanceUrl = toText(quote?.[config.quoteAcceptanceUrlField]);
+  if (!acceptanceUrl) {
+    return sendJson(res, 500, { ok: false, error: "La cotización no tiene link de aceptación: no se puede actualizar en sitio." });
   }
+  const mensajeBase =
+    `Listo! Tu cotización ya quedó actualizada${resumenCambio ? ` (${resumenCambio})` : ""} 🙌\n` +
+    `En el mismo link de siempre ya aparece la información al día — ahí la revisas, aceptas y pagas: ${acceptanceUrl}`;
+  if (body.regenerarPdf === false) {
+    await marcarPdfPendiente(quoteId);
+    return sendJson(res, 200, { ok: true, version: versionNueva, acceptance_url: acceptanceUrl, pdf_pendiente: true, mensaje_para_prospecto: mensajeBase });
+  }
+
+  const cliente = clienteDesdeQuote(quote, config);
+  const expMs = Date.now() + config.validityDays * 24 * 60 * 60 * 1000;
+  const descuentos = {
+    recurrentePct: Number(quote?.[config.quoteDiscountPctField] || 0),
+    mesesPlan: await leerMesesDescuento(quoteId, quote),
+  };
+  waitUntil(
+    (async () => {
+      const html = renderHtmlPais(pais, {
+        cliente,
+        items: pais === "pe" ? items.filter((it) => !/activaci/i.test(String(it?.tipo || it?.id || ""))) : items,
+        acceptanceUrl,
+        cotizacionId: numeroParaPdf(toText(quote?.Numero_Cotizacion), quoteId),
+        validezHasta: new Date(expMs).toISOString(),
+        version: versionNueva,
+        descuentos,
+        mesesDescuento: descuentos.mesesPlan || MESES_DESCUENTO_PLAN,
+      });
+      const pdfBuffer = await htmlToPdfBuffer(html, { format: "Letter", margin: "0" });
+      const { pdfUrl } = await uploadPdfToSupabase({ pdfBuffer, quoteId, empresa: cliente.empresa });
+      await updateRecord(config.quoteModule, quoteId, { [config.quotePdfUrlField]: pdfUrl }, true);
+      await actualizarPunteroPdf(quoteId, pdfUrl);
+      if (cliente.contactoEmail && !sinCorreoCliente) {
+        const cc = copiasCorreoPais(pais);
+        await sendQuoteEmailViaZoho({
+          quoteModule: config.quoteModule,
+          quoteId,
+          fromEmail: VICKY_FROM_EMAIL,
+          replyToEmail: cc[0],
+          ccEmails: cc,
+          toEmail: cliente.contactoEmail,
+          toName: cliente.contacto,
+          subject: `Tu cotización GeoVictoria actualizada (v${versionNueva}) — ${cliente.empresa}`,
+          htmlBody: buildEmailHtml({
+            contacto: cliente.contacto,
+            empresa: cliente.empresa,
+            pdfUrl,
+            acceptanceUrl,
+            tieneReloj: false,
+            ejecutivo: ejecutivoCorreoPais(pais),
+          }),
+        });
+      }
+      console.log(`[actualizar-cotizacion] pais=${pais} quote=${quoteId} v${versionNueva} PDF+correo listos${resumenCambio ? ` (cambio: ${resumenCambio.slice(0, 120)})` : ""}`);
+    })().catch((bgErr) => console.error(`[actualizar-cotizacion] pais=${pais} PDF/correo en segundo plano falló:`, bgErr?.message || bgErr)),
+  );
+
+  return sendJson(res, 200, {
+    ok: true,
+    version: versionNueva,
+    acceptance_url: acceptanceUrl,
+    pais,
+    mensaje_para_prospecto: `${mensajeBase}\nEl PDF actualizado también va en camino a tu correo.`,
+  });
 }
 
 function sendJson(res, status, payload) {
@@ -133,7 +223,6 @@ module.exports = async function handler(req, res) {
     const resumenCambio = toText(body.resumenCambio).slice(0, 500);
     if (!quoteId) return sendJson(res, 400, { ok: false, error: "Falta quoteId." });
     if (!items.length) return sendJson(res, 400, { ok: false, error: "cotizacion.items requerido (configuración COMPLETA nueva, no solo el delta)." });
-    if (!(ufActual > 0)) return sendJson(res, 400, { ok: false, error: "cotizacion.ufActual requerido." });
 
     stage = "fetch_quote";
     const quote = await getRecord(config.quoteModule, quoteId);
@@ -149,17 +238,20 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // ── Guard de país (mismo criterio que backfill-pdf): este endpoint asume
-    // Chile de punta a punta (items en UF, buildProposalHtml chileno). Una
-    // cotización CO/MX regenerada acá saldría con montos UF y textos de
-    // Chile — mejor fallar claro que emitir un PDF basura.
-    const paisQuote = paisEnToken(toText(quote?.[config.quoteAcceptanceUrlField]));
-    if (paisQuote === "co" || paisQuote === "mx") {
+    // ── País: PE/CO editan en sitio con su perfil; MX sigue fuera (no está
+    // sobre el núcleo); Chile continúa abajo con el motor UF de siempre.
+    const paisQuote = paisDeCotizacion(quote, config);
+    if (paisQuote === "mx") {
       return sendJson(res, 422, {
         ok: false,
-        error: `COTIZACION_${paisQuote.toUpperCase()}: actualizar-cotizacion solo soporta Chile por ahora; la actualización CO/MX es fase 2.`,
+        error: "COTIZACION_MX: actualizar-cotizacion no soporta México todavía (fuera del núcleo).",
       });
     }
+    if (paisConPerfil(paisQuote)) {
+      stage = `actualizar_${paisQuote}`;
+      return actualizarEnSitioPais({ pais: paisQuote, config, quote, quoteId, items, body, resumenCambio, sinCorreoCliente, res });
+    }
+    if (!(ufActual > 0)) return sendJson(res, 400, { ok: false, error: "cotizacion.ufActual requerido." });
 
     // ── Reemplazo del subform: insertar nuevas + borrar viejas (1 update) ──
     stage = "swap_subform";
