@@ -71,16 +71,43 @@ test("validarItemsPais: nombra el campo que falta en la moneda del país", () =>
   assert.match(validarItemsPais("pe", []), /items requerido/);
 });
 
-test("descuento: CL y PE tienen escalera; CO y MX responden claro sin afirmar rebajas", () => {
+test("descuento: CL, PE y CO tienen escalera (Lalo 21-sep); MX responde claro sin afirmar rebajas", () => {
   assert.equal(descuentoDisponible("cl"), true);
   assert.equal(descuentoDisponible("pe"), true);
-  assert.equal(descuentoDisponible("co"), false);
+  assert.equal(descuentoDisponible("co"), true);
   assert.equal(descuentoDisponible("mx"), false);
-  const e = errorDescuentoNoDisponible("co");
+  const e = errorDescuentoNoDisponible("mx");
   assert.equal(e.ok, false);
-  assert.equal(e.error, "DESCUENTO_NO_DISPONIBLE_CO");
+  assert.equal(e.error, "DESCUENTO_NO_DISPONIBLE_MX");
   assert.equal(e.tope_alcanzado, true);
-  assert.match(e.detail, /Colombia/);
+  assert.match(e.detail, /M[eé]xico/);
+});
+
+test("Colombia: el descuento rebaja el plan y la Activación, el alquiler va a lista; mensaje en precios finales", () => {
+  const { computeTotalsCO, computePaymentAmountsCO } = require("../api/_shared/quote-pricing");
+  // 14 personas: plan 191.800 · Activación 191.800 · alquiler 86.000 (+IVA 19 %).
+  const items = [
+    { nombre: "Control de Asistencia", cantidad: 14, precioUnitarioClp: 13700, subtotalClp: 191800, modalidad: "Por usuario", afectoIva: false, codigo: "plan_asistencia" },
+    { nombre: "Alquiler de equipo biométrico", cantidad: 1, precioUnitarioClp: 86000, subtotalClp: 86000, modalidad: "Arriendo mensual", afectoIva: true, codigo: "reloj_arriendo" },
+    { nombre: "Activación", cantidad: 1, precioUnitarioClp: 191800, subtotalClp: 191800, modalidad: "Venta", afectoIva: false, codigo: "activacion" },
+  ];
+  const sin = computeTotalsCO(items);
+  assert.equal(sin.pagoInicialCop, 191800);
+  assert.equal(sin.mensualidadCop, 191800 + 86000 + Math.round(86000 * 0.19));
+  assert.equal(sin.descuentoPct, 0);
+  const con = computeTotalsCO(items, { recurrentePct: 10 });
+  assert.equal(con.pagoInicialCop, 172620); // Activación con el 10 %
+  assert.equal(con.mensualidadCop, 172620 + 86000 + Math.round(86000 * 0.19)); // el alquiler no baja
+  assert.equal(con.descuentoPlanNetoCop, 19180);
+  assert.equal(con.mensualidadListaCop, sin.mensualidadCop);
+  const amounts = computePaymentAmountsCO(items, { recurrentePct: 10 });
+  assert.equal(amounts.oneShotClp, 172620);
+  assert.equal(amounts.descuentoPct, 10);
+  const msg = buildMensajeNegociacionPais("co", { pct: 10, condicionDiscursiva: null }, amounts, false, { esPrimerDescuentoPlan: true, mesesPlan: 6 });
+  assert.match(msg, /10% de descuento sobre el plan mensual/);
+  assert.doesNotMatch(msg, /\+ IVA|\+ IGV/);
+  assert.match(msg, /\$172\.620/);
+  assert.match(msg, /primeros 6 meses; desde el mes 7/);
 });
 
 test("mensaje de negociación PE: NETO + IGV, jamás 'IVA incluido' ni aritmética del impuesto", () => {

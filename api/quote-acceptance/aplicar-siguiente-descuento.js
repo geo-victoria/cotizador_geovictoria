@@ -468,7 +468,9 @@ module.exports = async function handler(req, res) {
     // Precio nuevo → cotización NUEVA en Creator. No se actualiza la anterior:
     // queda como la versión superada, igual que las versiones del PDF. En
     // segundo plano, porque el agente está esperando esta respuesta.
-    waitUntil(
+    // COLOMBIA no tiene espejo Creator (su emisión no lo crea): no se fabrica
+    // uno acá con un descuento.
+    if (pais !== "co") waitUntil(
       emitirCotizacionEnCreator({
         config,
         quoteId,

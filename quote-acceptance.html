@@ -3309,8 +3309,14 @@
             // Activación ya ES el primer mes cobrado por adelantado. La
             // mensualidad se factura desde el mes siguiente.
             const co = totals.co || {};
+            // Descuento del plan (escalera chilena, Lalo 21-sep): rebaja el
+            // plan y la Activación; la mensualidad se muestra con la lista
+            // tachada y el resumen de descuentos + vigencia, como Chile.
+            const coPct = Number(co.descuentoPct || 0);
+            const coMensual = Number(co.mensualidadCop || 0);
+            const coMensualLista = Number(co.mensualidadListaCop || coMensual);
             totalsRowsHtml =
-              '<tr class="cost-row-sub"><td colspan="5">Pago único (incluye Activación)</td><td>' +
+              '<tr class="cost-row-sub"><td colspan="5">Pago único (incluye Activación' + (coPct > 0 ? ", con el descuento del plan" : "") + ')</td><td>' +
               fmtCOP(co.pagoInicialNetoCop) + "</td></tr>";
             if (Number(co.pagoInicialIvaCop || 0) > 0) {
               totalsRowsHtml +=
@@ -3328,9 +3334,23 @@
                   '<tr class="cost-row-sub"><td colspan="5">IVA equipos (19 %)</td><td>' +
                   fmtCOP(co.mensualidadIvaCop) + "</td></tr>";
               }
+              const mensualCopCell =
+                coPct > 0 && coMensualLista > coMensual
+                  ? '<span style="text-decoration:line-through;color:#9ca3af">' +
+                    fmtCOP(coMensualLista) + "</span> " + fmtCOP(coMensual) + "/mes"
+                  : fmtCOP(coMensual) + "/mes";
               totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="5">Mensualidad — desde el mes siguiente</td><td>' +
-                fmtCOP(co.mensualidadCop) + "/mes</td></tr>";
+                '<tr class="cost-row-sub"><td colspan="5">Mensualidad — desde el mes siguiente' + (coPct > 0 ? " (" + Math.round(coPct) + "% dcto.)" : "") + '</td><td>' +
+                mensualCopCell + "</td></tr>";
+            }
+            if (coPct > 0) {
+              totalsRowsHtml +=
+                '<tr><td colspan="6" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
+                "Descuentos aplicados: " + Math.round(coPct) + "% en el plan mensual (" + vigenciaDescuentoCorto() + ")" +
+                "</td></tr>" +
+                '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:4px;line-height:1.5">' +
+                escapeHtml(vigenciaDescuentoTexto()) +
+                "</td></tr>";
             }
             totalsRowsHtml +=
               '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +

@@ -174,13 +174,15 @@ function renderHtmlPais(pais, { cliente, items, acceptanceUrl, cotizacionId, val
   return buildProposalHtmlCO({
     cliente: { empresa: cliente.empresa, contacto: cliente.contacto, nit: cliente.documento },
     items, acceptanceUrl, cotizacionId, validezHasta, version,
+    descuentos: descuentos || { recurrentePct: 0 },
+    mesesDescuento,
   });
 }
 
 // ── Negociación: montos y mensaje ────────────────────────────────────────
-/** Escalera de descuento de cara al cliente por país. CO y MX: PROHIBIDO (decisión pendiente de Lalo). */
+/** Escalera de descuento de cara al cliente por país (CL, PE y CO — Lalo 21-sep "permitamos descuento en Colombia igual que en Chile"). MX: fuera del núcleo todavía. */
 function descuentoDisponible(pais) {
-  return pais === "cl" || pais === "pe";
+  return pais === "cl" || pais === "pe" || pais === "co";
 }
 
 function errorDescuentoNoDisponible(pais) {
@@ -196,7 +198,7 @@ function errorDescuentoNoDisponible(pais) {
 function previewAmountsPais(pais, quote, config, descuentos) {
   const items = sanitizeItems(quote?.[config.quoteItemsSubformField]);
   if (pais === "pe") return computePaymentAmountsPE(items, descuentos);
-  return computePaymentAmountsCO(items);
+  return computePaymentAmountsCO(items, descuentos);
 }
 
 function fmtMonto(pais, n) {
@@ -222,11 +224,17 @@ function buildMensajeNegociacionPais(pais, escalon, amounts, esUltimo, opts = {}
   // Pago inicial NETO = únicos + primer mes (el breakdown trae los dos por
   // separado: oneShotNetClp son SOLO los únicos — sin sumar el primer mes
   // salía "pago inicial S/0" en un plan solo-software).
-  const pagoInicialNeto = amounts?.pe?.pagoInicialNetoPen ?? Number(neto.oneShotNetClp || 0) + Number(neto.firstMonthNetClp || 0);
-  const mensualNeto = neto.recurringNetClp ?? amounts.recurringClp;
+  // COLOMBIA habla en precios FINALES (decisión 10-jul: el IVA solo existe en
+  // el hardware y ya viene sumado en los totales), así que el mensaje usa los
+  // totales con IVA y no dice "+ IVA".
+  const esCO = pais === "co";
+  const pagoInicialNeto = esCO
+    ? Number(amounts?.co?.pagoInicialCop ?? amounts?.oneShotClp ?? 0)
+    : amounts?.pe?.pagoInicialNetoPen ?? Number(neto.oneShotNetClp || 0) + Number(neto.firstMonthNetClp || 0);
+  const mensualNeto = esCO ? Number(amounts?.co?.mensualidadCop ?? amounts?.recurringClp ?? 0) : neto.recurringNetClp ?? amounts.recurringClp;
   const pagoInicial = fmtMonto(pais, pagoInicialNeto);
   const mensual = fmtMonto(pais, mensualNeto);
-  const impuesto = pais === "pe" ? " + IGV" : " + IVA";
+  const impuesto = pais === "pe" ? " + IGV" : esCO ? "" : " + IVA";
   const hayCargoInicial = Math.round(Number(pagoInicialNeto) * 100) !== Math.round(Number(mensualNeto) * 100);
   const partes = [`Puedo ofrecerte un ${escalon.pct}% de descuento sobre el plan mensual.`];
   if (!hayCargoInicial) partes.push(`Con eso queda en ${mensual}${impuesto} al mes.`);

@@ -254,9 +254,9 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
   const descuentoPct = clampDescuentoPct(quote?.[acceptanceConfig.quoteDiscountPctField]);
   const amounts =
     pais === "co"
-      ? computePaymentAmountsCO(items)
+      ? computePaymentAmountsCO(items, descuentoPct)
       : pais === "pe"
-        ? computePaymentAmountsPE(items)
+        ? computePaymentAmountsPE(items, descuentoPct)
         : computePaymentAmounts(items, descuentoPct, {
             includeIva: mpConfig.includeIva,
             // FIX Gescor/COT395 (13-ago): el checkout cobra el PRIMER MES en el

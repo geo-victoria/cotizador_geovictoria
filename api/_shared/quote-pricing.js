@@ -213,22 +213,62 @@ function computePaymentAmounts(items, descuentos = 0, options = {}) {
 // inicial" son SOLO los pagos únicos (la Activación ya ES el primer mes cobrado
 // por adelantado); la "Mensualidad" son los recurrentes, facturada desde el mes
 // siguiente. Sin descuentos en CO v1.
-function computeTotalsCO(items) {
+// ¿La fila es la ACTIVACIÓN colombiana (= primer mes del plan cobrado por
+// adelantado)? Lleva el mismo descuento que el plan: es un mes del plan.
+function esFilaActivacionCO(row) {
+  const id = String(row?.codigo || "").toLowerCase();
+  const nombre = String(row?.nombre || "").toLowerCase();
+  return /activaci/.test(id) || /activaci/.test(nombre);
+}
+
+// ¿La fila es el PLAN (software recurrente) y no el alquiler del equipo? El
+// descuento colombiano aplica SOLO al plan (misma regla que Chile y Perú).
+function esFilaPlanCO(row) {
+  const codigo = String(row?.codigo || "").toLowerCase();
+  if (codigo.startsWith("plan")) return true;
+  if (/reloj|equipo|hardware|arriendo|envio|instalacion/.test(codigo)) return false;
+  return (
+    isRecurrentModalidad(row?.modalidad) &&
+    row?.afectoIva !== true &&
+    /asistencia|plan/.test(String(row?.nombre || "").toLowerCase())
+  );
+}
+
+/**
+ * Totales COLOMBIA. `descuentos.recurrentePct` (Descuento_Recurrente_Pct de la
+ * cotización, escalera chilena 10 → 20 %, decisión Lalo 21-sep "permitamos
+ * descuento en Colombia igual que en Chile") rebaja SOLO el plan: la fila del
+ * plan mensual y la Activación (que ES el primer mes del plan). El alquiler
+ * del equipo, el envío y la instalación van a lista. Sin descuento la salida
+ * es idéntica a la de siempre.
+ */
+function computeTotalsCO(items, descuentos) {
   const rows = Array.isArray(items) ? items : [];
+  const d = normalizeDescuentos(descuentos);
+  const pct = Number(d.recurrentePct || 0);
+  const factorPlan = pct > 0 ? 1 - pct / 100 : 1;
   let pagoInicialNeto = 0;
   let pagoInicialIva = 0;
+  let pagoInicialListaNeto = 0;
   let mensualidadNeta = 0;
   let mensualidadIva = 0;
+  let mensualidadListaNeta = 0;
+  let descuentoPlanNeto = 0;
 
   rows.forEach((row) => {
-    const montoCop = toNumber(row?.subtotalClp);
-    const ivaCop = row?.afectoIva === true ? montoCop * IVA_RATE : 0;
+    const montoLista = toNumber(row?.subtotalClp);
+    const afecto = row?.afectoIva === true;
     if (isRecurrentModalidad(row?.modalidad)) {
-      mensualidadNeta += montoCop;
-      mensualidadIva += ivaCop;
+      const monto = esFilaPlanCO(row) ? montoLista * factorPlan : montoLista;
+      mensualidadListaNeta += montoLista;
+      descuentoPlanNeto += montoLista - monto;
+      mensualidadNeta += monto;
+      mensualidadIva += afecto ? monto * IVA_RATE : 0;
     } else {
-      pagoInicialNeto += montoCop;
-      pagoInicialIva += ivaCop;
+      const monto = esFilaActivacionCO(row) ? montoLista * factorPlan : montoLista;
+      pagoInicialListaNeto += montoLista;
+      pagoInicialNeto += monto;
+      pagoInicialIva += afecto ? monto * IVA_RATE : 0;
     }
   });
 
@@ -239,26 +279,18 @@ function computeTotalsCO(items) {
     mensualidadNetaCop: Math.round(mensualidadNeta),
     mensualidadIvaCop: Math.round(mensualidadIva),
     mensualidadCop: Math.round(mensualidadNeta + mensualidadIva),
+    // Descuento del plan (escalera chilena): 0 cuando no hay.
+    descuentoPct: pct,
+    descuentoPlanNetoCop: Math.round(descuentoPlanNeto),
+    mensualidadListaNetaCop: Math.round(mensualidadListaNeta),
+    mensualidadListaCop: Math.round(mensualidadListaNeta + mensualidadIva),
+    pagoInicialListaCop: Math.round(pagoInicialListaNeto + pagoInicialIva),
   };
 }
 
-/**
- * Montos a cobrar de una cotización COLOMBIA, en el MISMO shape que
- * computePaymentAmounts para que el resto del flujo de pago (preferencia,
- * status, finalize, pago.html) lea los montos sin ramas por país.
- *
- * POR QUÉ difiere de Chile:
- *  - El pago único CO = solo ítems NO recurrentes. IVA 19% SOLO en las líneas
- *    con Afecto_IVA=true (hardware: reloj arriendo/venta); el resto son
- *    precios finales. El flag global chileno MP_CHARGE_INCLUDE_IVA no aplica.
- *  - La fila de Activación (pago único) YA equivale al primer mes cobrado por
- *    adelantado → NUNCA se agrega un "primer mes" adicional (firstMonthClp = 0
- *    siempre, ignora MP_ONESHOT_INCLUDE_FIRST_MONTH).
- *  - Sin descuentos en CO v1.
- * Los campos *Clp del resultado llevan COP (misma convención del subform).
- */
-function computePaymentAmountsCO(items) {
-  const totals = computeTotalsCO(items);
+function computePaymentAmountsCO(items, descuentos) {
+  const totals = computeTotalsCO(items, descuentos);
+  const d = normalizeDescuentos(descuentos);
   return {
     oneShotClp: totals.pagoInicialCop,
     oneShotItemsClp: totals.pagoInicialCop,
@@ -268,8 +300,8 @@ function computePaymentAmountsCO(items) {
     // hardware sumado (nada se agrega después); el breakdown lo desglosa.
     includeIva: true,
     includeFirstMonth: false,
-    descuentoPct: 0,
-    descuentos: { recurrentePct: 0, instalacionRMPct: 0, instalacionRegionPct: 0 },
+    descuentoPct: d.recurrentePct,
+    descuentos: d,
     breakdown: {
       oneShotNetClp: totals.pagoInicialNetoCop,
       oneShotIvaClp: totals.pagoInicialIvaCop,
@@ -279,19 +311,6 @@ function computePaymentAmountsCO(items) {
     co: totals,
   };
 }
-
-// ── PERÚ ────────────────────────────────────────────────────────────────────
-// Totales PE — IGV 18% POR LÍNEA según Afecto_IVA (en Perú TODOS los
-// conceptos son afectos: el agente marca afectoIgv=true en todo; el flag por
-// línea queda por si negocio exime algo). Convención espejo de COLOMBIA.md:
-// el subform guarda PEN en los campos *_CLP/*_UF.
-// PATRÓN CHILE (Lalo 21-sep): la cotización NO lleva fila de Activación. El
-// pago inicial = pagos ÚNICOS (equipo en venta, etc.) + PRIMER MES de los
-// recurrentes (plan con su descuento + arriendos), como computePaymentAmounts
-// de CL con includeFirstMonth. Una cotización antigua que todavía traiga la
-// fila "Activación" se trata como legado: esa fila ES el primer mes y no se
-// suma otro. Redondeo a céntimos (2 decimales, como MX).
-const IGV_RATE_PE = 0.18;
 
 function esFilaActivacionPE(row) {
   const t = String(row?.tipo || "").toLowerCase();
@@ -467,6 +486,8 @@ function computeTotalsMX(items) {
 }
 
 module.exports = {
+  esFilaPlanCO,
+  esFilaActivacionCO,
   IVA_RATE,
   IVA_RATE_MX,
   DEFAULT_FIELD_MAP,

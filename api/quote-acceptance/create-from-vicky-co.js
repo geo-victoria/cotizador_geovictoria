@@ -4,7 +4,11 @@
  * Espejo SIMPLIFICADO de create-from-vicky.js (Chile). Diferencias v1:
  *   - SIN conversión de leads (los leads CO los crea derivar_a_ejecutivo;
  *     enlazar por leadId es fase 2).
- *   - SIN descuentos (escalera CO pendiente de confirmación de negocio).
+ *   - DESCUENTO = CHILE (Lalo 21-sep): el agente manda `escalonDescuento`
+ *     (1 = 10 %, 2 = 20 %, sobre el plan, 6 meses) y los ítems a LISTA; acá
+ *     se estampa en la cotización (Descuento_Recurrente_Pct + Escalon_Descuento)
+ *     y sesión, PDF, aceptación y checkout lo aplican SOLO al plan (y a la
+ *     Activación, que es el primer mes del plan).
  *   - SIN correos (v1: el agente entrega el link/PDF por WhatsApp).
  *   - Los items vienen YA calculados por el motor de precios CO del agente
  *     (lib/paises/co/cotizar.ts) — misma confianza que Chile.
@@ -311,6 +315,7 @@ async function recoverConvertedIdsCO(leadId) {
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtmlCO } = require("../_shared/proposal-html-builder-co");
+const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
 
 // waitUntil: corre trabajo en segundo plano DESPUÉS de responder (mismo patrón
 // que el endpoint chileno): el PDF (Chromium headless, lo pesado) no bloquea la
@@ -656,6 +661,11 @@ module.exports = async function handler(req, res) {
     const nit = toText(body.nit);
     const contactoTelefono = toText(body.contactoTelefono);
     const userCount = Number(body.userCount) > 0 ? Number(body.userCount) : undefined;
+    // DESCUENTO = CHILE (Lalo 21-sep "permitamos descuento en Colombia igual
+    // que en Chile"): mismo contrato que create-from-vicky-pe.
+    const escalonDescuento = Math.max(0, Math.min(DISCOUNT_LADDER.length, Math.floor(Number(body.escalonDescuento) || 0)));
+    const descuentoPlanPct = escalonDescuento > 0 ? Number(DISCOUNT_LADDER[escalonDescuento - 1].pct) : 0;
+    const descuentos = { recurrentePct: descuentoPlanPct, instalacionRMPct: 0, instalacionRegionPct: 0 };
 
     // Validaciones del contrato
     // contactoEmail OPCIONAL (mismo contrato que CL, Lalo 03-ago / 21-sep).
@@ -1000,9 +1010,23 @@ module.exports = async function handler(req, res) {
       [config.companyRutField]: nit,
       [config.quoteItemsSubformField]: subformItems,
       [config.quoteVersionPdfField]: 1,
+      // Descuento del plan, misma forma que create-from-vicky (CL) y PE.
+      ...(escalonDescuento > 0
+        ? {
+            [config.quoteEscalonField]: escalonDescuento,
+            [config.quoteEscalonNegociacionField]: escalonDescuento,
+            [config.quoteDiscountUnlockedField]: true,
+            [config.quoteDiscountPctField]: descuentoPlanPct,
+            [config.quoteDiscountInstRMPctField]: 0,
+            [config.quoteDiscountInstRegionPctField]: 0,
+          }
+        : {}),
     }, true);
     const quoteId = toText(quoteResult?.id);
     if (!quoteId) throw new Error("No se obtuvo quoteId");
+    if (escalonDescuento > 0) {
+      console.log(`[create-from-vicky-co] cotización ${quoteId} con ${descuentoPlanPct} % en el plan (escalón ${escalonDescuento}, ${MESES_DESCUENTO_PLAN} meses).`);
+    }
     // Marcador de idempotencia APENAS existen los registros: si el resto del
     // flujo muere, el reintento devuelve estos ids en vez de duplicar.
     await setIdempotente(idemClave, { quoteId, dealId, accountId, contactId });
@@ -1062,6 +1086,8 @@ module.exports = async function handler(req, res) {
           acceptanceUrl,
           cotizacionId: numeroParaPdf(numeroCotizacion, quoteId),
           validezHasta: new Date(expMs).toISOString(),
+          descuentos,
+          mesesDescuento: MESES_DESCUENTO_PLAN,
         });
         const pdfBuffer = await htmlToPdfBuffer(html, { format: "Letter", margin: "0" });
         const { pdfUrl } = await uploadPdfToSupabase({

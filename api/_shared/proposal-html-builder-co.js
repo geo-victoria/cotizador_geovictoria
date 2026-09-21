@@ -163,9 +163,22 @@ function buildProposalHtmlCO({
   cotizacionId,
   validezHasta,
   version,
+  // Descuento del plan (escalera chilena, Lalo 21-sep): % sobre el PLAN y
+  // sobre la Activación (que es el primer mes del plan); el alquiler del
+  // equipo, el envío y la instalación van a lista.
+  descuentos,
+  mesesDescuento,
 }) {
   cliente = cliente || {};
   const versionNum = Number(version) > 1 ? Number(version) : 1;
+  const pctPlan = Math.max(0, Math.min(100, Number(descuentos?.recurrentePct || 0)));
+  const mesesDcto = Number.isFinite(Number(mesesDescuento)) && Number(mesesDescuento) > 0 ? Number(mesesDescuento) : 6;
+  const esFilaPlan = (item) => {
+    const id = String(item?.id || "").toLowerCase();
+    if (id.startsWith("plan")) return true;
+    if (/reloj|equipo|hardware|arriendo|envio|instalacion/.test(id)) return false;
+    return item?.esRecurrente === true && String(item?.tipo || "").toLowerCase() === "plan";
+  };
 
   const empresa = escapeHtml(cliente.empresa || "EMPRESA");
   const contacto = escapeHtml(cliente.contacto || "");
@@ -182,21 +195,29 @@ function buildProposalHtmlCO({
   // IVA (decisión 10-jul refinada): SOLO el hardware (afectoIva=true) lleva
   // IVA 19% — su fila lo marca "+ IVA" y los totales lo desglosan. El resto
   // son precios finales, sin mención de impuestos.
+  let descuentoPlanNeto = 0;
   const filas = (Array.isArray(items) ? items : []).map((item) => {
-    const subtotal = Math.round(Number(item.subtotalCOP || 0));
+    const subtotalLista = Math.round(Number(item.subtotalCOP || 0));
+    const esActivacion = esItemActivacion(item);
+    // El plan y la Activación (= primer mes del plan) llevan el descuento.
+    const conDcto = pctPlan > 0 && (esActivacion || (item.esRecurrente === true && esFilaPlan(item)));
+    const subtotal = conDcto ? Math.round(subtotalLista * (1 - pctPlan / 100)) : subtotalLista;
+    if (conDcto && item.esRecurrente === true) descuentoPlanNeto += subtotalLista - subtotal;
     const afectoIva = item.afectoIva === true;
     return {
       nombre: escapeHtml(item.nombre || ""),
       modalidad: item.esRecurrente === true ? "Pago mensual" : "Pago único",
-      desc: escapeHtml(descripcionItemCO(item)),
+      desc: escapeHtml(descripcionItemCO(item)) + (conDcto && item.esRecurrente === true ? ` Incluye ${pctPlan} % de descuento durante ${mesesDcto} meses (precio de lista ${formatCOP(subtotalLista)}/mes).` : ""),
       puCOP: Math.round(Number(item.precioUnitarioCOP || 0)),
       cant: Number(item.cantidad || 1),
       subtotal,
+      subtotalLista,
+      conDcto,
       iva: afectoIva ? Math.round(subtotal * IVA_CO) : 0,
       afectoIva,
       recurrente: item.esRecurrente === true,
       descLineaPct: 0,
-      esActivacion: esItemActivacion(item),
+      esActivacion,
     };
   });
 
@@ -242,6 +263,8 @@ function buildProposalHtmlCO({
         `<span class="line-disc">−${f.descLineaPct}%</span>`;
     } else if (f.afectoIva) {
       totalCellInner = `${formatCOP(f.subtotal)} + IVA`;
+    } else if (f.conDcto) {
+      totalCellInner = `<span class="line-old">${formatCOP(f.subtotalLista)}</span> ${formatCOP(f.subtotal)}`;
     } else {
       totalCellInner = formatCOP(f.subtotal);
     }
@@ -268,7 +291,7 @@ function buildProposalHtmlCO({
   // El IVA aparece SOLO si hay hardware (única familia afecta).
   let totHtml = "";
   totHtml += `<div class="tot-h">Pago inicial — al aceptar</div>`;
-  totHtml += `<div class="tr"><span>Conceptos de pago único (incluye Activación)</span><span>${formatCOP(uniNeto)}</span></div>`;
+  totHtml += `<div class="tr"><span>Conceptos de pago único (incluye Activación${pctPlan > 0 && descuentoPlanNeto > 0 ? ", con el descuento del plan" : ""})</span><span>${formatCOP(uniNeto)}</span></div>`;
   if (uniIva > 0) {
     totHtml += `<div class="tr"><span>IVA equipos (19 %)</span><span>${formatCOP(uniIva)}</span></div>`;
   }
@@ -279,7 +302,11 @@ function buildProposalHtmlCO({
       totHtml += `<div class="tr"><span>Servicio y equipos</span><span>${formatCOP(recNeto)}</span></div>`;
       totHtml += `<div class="tr"><span>IVA equipos (19 %)</span><span>${formatCOP(recIva)}</span></div>`;
     }
-    totHtml += `<div class="tr grand"><span>Total mensual</span><span>${formatCOP(recTot)}/mes</span></div>`;
+    totHtml += `<div class="tr grand"><span>Total mensual${pctPlan > 0 && descuentoPlanNeto > 0 ? ` (primeros ${mesesDcto} meses)` : ""}</span><span>${formatCOP(recTot)}/mes</span></div>`;
+    if (pctPlan > 0 && descuentoPlanNeto > 0) {
+      totHtml += `<div class="tr"><span>Descuento ${pctPlan} % en el plan (${mesesDcto} meses)</span><span>−${formatCOP(descuentoPlanNeto)}</span></div>`;
+      totHtml += `<div class="tr"><span>Desde el mes ${mesesDcto + 1} (precio de lista)</span><span>${formatCOP(recTot + descuentoPlanNeto)}/mes</span></div>`;
+    }
   }
   totHtml +=
     `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +

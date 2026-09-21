@@ -67,7 +67,8 @@ module.exports = async function handler(req, res) {
 
     let amounts;
     if (pais === "co") {
-      amounts = computePaymentAmountsCO(items);
+      // Colombia tiene la escalera chilena del plan desde el 21-sep.
+      amounts = computePaymentAmountsCO(items, descuentoPct);
     } else if (pais === "pe") {
       // Perú tiene la escalera chilena del plan (10 → 20 %, 17-sep): sin el
       // descuento el comprobante de un cliente con 10 % salía "insuficiente".

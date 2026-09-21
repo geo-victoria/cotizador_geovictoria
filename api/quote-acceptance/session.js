@@ -422,7 +422,7 @@ export default async function handler(req, res) {
     // precios finales; la Activación ya es el 1er mes).
     const pagoInicialClp = needsPayment
       ? pais === "co"
-        ? computePaymentAmountsCO(items).oneShotClp
+        ? computePaymentAmountsCO(items, descuentos).oneShotClp
         : pais === "pe"
         ? computePaymentAmountsPE(items, descuentos).oneShotClp
         : computePaymentAmounts(items, descuentos, {
@@ -525,7 +525,7 @@ export default async function handler(req, res) {
       })(),
       totals: {
         ...computeTotals(items, descuentos),
-        ...(pais === "co" ? { co: computeTotalsCO(items) } : {}),
+        ...(pais === "co" ? { co: { ...computeTotalsCO(items, descuentos), mesesDescuento } } : {}),
         ...(pais === "mx" ? { mx: computeTotalsMX(items) } : {}),
         ...(pais === "pe" ? { pe: { ...computeTotalsPE(items, descuentos), mesesDescuento } } : {}),
       },

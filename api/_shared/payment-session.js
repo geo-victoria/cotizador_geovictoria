@@ -107,8 +107,8 @@ async function resolvePaymentSession(req, token) {
     pais === "co"
       ? // CO: pago único = ítems no recurrentes (+IVA 19% solo en los de
         // hardware); la Activación ya es el primer mes → sin "primer mes"
-        // adicional. Sin descuentos v1.
-        computePaymentAmountsCO(items)
+        // adicional. Descuento del plan = Chile (21-sep): rebaja plan y Activación.
+        computePaymentAmountsCO(items, descuentos)
       : pais === "pe"
       ? // PE: pago único = no recurrentes (Activación = primer mes completo
         // adelantado) + IGV 18% por línea afecta (en PE: todas).
