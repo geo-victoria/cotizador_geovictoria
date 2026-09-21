@@ -41,6 +41,11 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function redondeoPais(pais, v) {
+  const n = Number(v) || 0;
+  return pais === "pe" ? Math.round(n * 100) / 100 : Math.round(n);
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") return sendJson(res, 405, { ok: false, error: "Method not allowed" });
   if (!secretoValido(req)) return sendJson(res, 401, { ok: false, error: "Unauthorized" });
@@ -64,7 +69,9 @@ module.exports = async function handler(req, res) {
     if (pais === "co") {
       amounts = computePaymentAmountsCO(items);
     } else if (pais === "pe") {
-      amounts = computePaymentAmountsPE(items);
+      // Perú tiene la escalera chilena del plan (10 → 20 %, 17-sep): sin el
+      // descuento el comprobante de un cliente con 10 % salía "insuficiente".
+      amounts = computePaymentAmountsPE(items, descuentoPct);
     } else {
       const mpConfig = getMercadoPagoConfig(req);
       amounts = computePaymentAmounts(items, descuentoPct, {
@@ -78,9 +85,10 @@ module.exports = async function handler(req, res) {
       quoteId,
       numero: toText(quote?.Numero_Cotizacion),
       estado: toText(quote?.Estado_Cotizacion),
-      oneShotClp: Math.round(Number(amounts?.oneShotClp) || 0),
-      firstMonthClp: Math.round(Number(amounts?.firstMonthClp) || 0),
-      recurringClp: Math.round(Number(amounts?.recurringClp) || 0),
+      // Soles llevan centavos (S/70.09); CLP/COP son enteros.
+      oneShotClp: redondeoPais(pais, amounts?.oneShotClp),
+      firstMonthClp: redondeoPais(pais, amounts?.firstMonthClp),
+      recurringClp: redondeoPais(pais, amounts?.recurringClp),
     });
   } catch (error) {
     return sendJson(res, 500, { ok: false, error: toText(error?.message || error) });
