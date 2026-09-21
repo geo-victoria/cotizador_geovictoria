@@ -27,7 +27,7 @@ const HARDWARE_A_ARTICULO = {
   // como se viene manejando de siempre") ──
   // El reloj de Vicky PE es el MISMO Senseface 2A, pero en Perú el artículo es
   // el [PER] 304 y se FACTURA EN DÓLARES, en una nota de venta aparte de la
-  // del plan (golden NDV-32020 de Mónica: Valor 90 / Valor_Mensual 24 USD).
+  // del plan (golden NDV-32020 de Mónica traía Valor_Mensual 24; Lalo 21-sep fijó el arriendo en US$20, la opción más barata de la tabla de Mónica).
   // Books: rate 90, SKU PER-BIO-SF2A-ZKT-LW-HTF, id 1758661000080530243.
   // `moneda` marca que los valores de acá van en USD: ndv-charge-table los usa
   // en vez del subtotal en soles del subform cuando la nota es en USD.
@@ -35,7 +35,7 @@ const HARDWARE_A_ARTICULO = {
     item: "304 - [PER] Reloj Gama Estándar FACIAL LAN WIFI",
     modelo: "Senseface 2A",
     valorListaUF: 90,
-    valorMensual: 24,
+    valorMensual: 20,
     moneda: "USD",
   },
   senseface_2a: {
