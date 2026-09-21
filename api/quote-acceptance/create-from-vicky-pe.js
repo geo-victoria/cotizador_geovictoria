@@ -26,7 +26,7 @@
  * {
  *   "empresa":          string  (requerido)
  *   "contacto":         string  (requerido)
- *   "contactoEmail":    string  (requerido)
+ *   "contactoEmail":    string  (OPCIONAL, como en CL — Lalo 21-sep)
  *   "ruc":              string  (requerido) — 11 dígitos, se valida checksum
  *   "contactoTelefono": string  (opcional)
  *   "userCount":        number  (opcional)
@@ -460,10 +460,13 @@ module.exports = async function handler(req, res) {
     const tipoCambio = Number(body.tipoCambio) > 0 ? Number(body.tipoCambio) : undefined;
     const tipoCambioFuente = toText(body.tipoCambioFuente);
 
-    if (!empresa || !contacto || !contactoEmail || !ruc) {
+    // contactoEmail es OPCIONAL (mismo contrato que create-from-vicky CL, Lalo
+    // 03-ago / 21-sep): sin correo no sale el correo con el PDF y el formulario
+    // de facturación lo pide al aceptar; el link viaja por el chat.
+    if (!empresa || !contacto || !ruc) {
       return sendJson(res, 400, {
         ok: false,
-        error: "Faltan campos: empresa, contacto, contactoEmail, ruc",
+        error: "Faltan campos: empresa, contacto, ruc",
       });
     }
     if (!rucValido(ruc)) {
@@ -619,7 +622,7 @@ module.exports = async function handler(req, res) {
           const contactResult = await createRecord("Contacts", {
             First_Name: firstName,
             Last_Name: lastName,
-            Email: contactoEmail,
+            Email: contactoEmail || undefined,
             Phone: contactoTelefono || undefined,
             ...(accountId ? { Account_Name: { id: accountId } } : {}),
             Lead_Source: VICKY_PE_LEAD_SOURCE,
@@ -694,7 +697,7 @@ module.exports = async function handler(req, res) {
       CRM_Incompleto: crmIncompleto,
       [config.quoteDateField]: new Date().toISOString().slice(0, 10),
       [config.quoteStatusField]: "Borrador",
-      [config.contactEmailField]: contactoEmail,
+      [config.contactEmailField]: contactoEmail || undefined,
       [config.contactPhoneField]: contactoTelefono || undefined,
       [config.companyRutField]: rucParaGuardar(ruc),
       [config.quoteItemsSubformField]: subformItems,

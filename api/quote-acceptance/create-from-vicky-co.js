@@ -17,7 +17,7 @@
  * {
  *   "empresa":          string  (requerido) — razón social / nombre de la empresa
  *   "contacto":         string  (requerido) — nombre completo del contacto
- *   "contactoEmail":    string  (requerido)
+ *   "contactoEmail":    string  (OPCIONAL, como en CL — Lalo 21-sep)
  *   "nit":              string  (requerido) — NIT con o sin puntos/DV, ej "901.367.959-1"
  *   "contactoTelefono": string  (opcional)
  *   "userCount":        number  (opcional) — usuarios que marcan (para el Deal)
@@ -658,10 +658,11 @@ module.exports = async function handler(req, res) {
     const userCount = Number(body.userCount) > 0 ? Number(body.userCount) : undefined;
 
     // Validaciones del contrato
-    if (!empresa || !contacto || !contactoEmail || !nit) {
+    // contactoEmail OPCIONAL (mismo contrato que CL, Lalo 03-ago / 21-sep).
+    if (!empresa || !contacto || !nit) {
       return sendJson(res, 400, {
         ok: false,
-        error: "Faltan campos: empresa, contacto, contactoEmail, nit",
+        error: "Faltan campos: empresa, contacto, nit",
       });
     }
     if (!Array.isArray(body.items) || body.items.length === 0) {
@@ -808,7 +809,7 @@ module.exports = async function handler(req, res) {
               ...(conv.accountReusada ? {} : { Owner: OWNER_CO }),
             }, true).catch(() => {});
             await updateRecord("Contacts", contactId, {
-              Email: contactoEmail,
+              Email: contactoEmail || undefined,
               Phone: contactoTelefono || undefined,
               ...(conv.contactReusado ? {} : { Owner: OWNER_CO }),
             }, true).catch(() => {});
@@ -907,7 +908,7 @@ module.exports = async function handler(req, res) {
       const contactResult = await createRecord("Contacts", {
         First_Name: firstName,
         Last_Name: lastName,
-        Email: contactoEmail,
+        Email: contactoEmail || undefined,
         Phone: contactoTelefono || undefined,
         ...(accountId ? { Account_Name: { id: accountId } } : {}),
         Lead_Source: VICKY_CO_LEAD_SOURCE,
@@ -994,7 +995,7 @@ module.exports = async function handler(req, res) {
       CRM_Incompleto: crmIncompleto,
       [config.quoteDateField]: new Date().toISOString().slice(0, 10),
       [config.quoteStatusField]: "Borrador",
-      [config.contactEmailField]: contactoEmail,
+      [config.contactEmailField]: contactoEmail || undefined,
       [config.contactPhoneField]: contactoTelefono || undefined,
       [config.companyRutField]: nit,
       [config.quoteItemsSubformField]: subformItems,

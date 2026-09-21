@@ -3388,6 +3388,20 @@
                   '<div class="ch-item"><span>Mensualidad del servicio</span><strong>' +
                   fmtMXN(mx.mensualidadMxn) + " MXN/mes</strong></div>";
               }
+            } else if (esPE) {
+              // Perú (21-sep, Lalo "¿estos precios están bien?"): las tarjetas
+              // caían al bloque de Chile y mostraban "$209 / $105" (IVA 19 % y
+              // la Activación sumada al plan). Van del bloque `pe` del servidor,
+              // como la tabla: monto con IGV 18 %, en soles.
+              const peH = totals.pe || {};
+              chHtml =
+                '<div class="ch-item"><span>Pago inicial — al aceptar (incluye la Activación, tu primer mes)</span><strong>' +
+                fmtPEN(peH.pagoInicialPen) + "</strong></div>";
+              if (Number(peH.mensualidadPen || 0) > 0) {
+                chHtml +=
+                  '<div class="ch-item"><span>Mensualidad — desde el mes siguiente (con IGV)</span><strong>' +
+                  fmtPEN(peH.mensualidadPen) + "/mes</strong></div>";
+              }
             } else if (esCO) {
               // Colombia: pago inicial y mensualidad ya vienen con el IVA del
               // hardware incluido desde computeTotalsCO.
@@ -3441,7 +3455,9 @@
               ? "* Valores en pesos mexicanos (MXN). Los montos no incluyen IVA (16 %), que se agrega donde se indica."
               : esCO
                 ? "* Valores en pesos colombianos (COP)."
-                : formatCLPReferenceNote(q, data.totals || {});
+                : esPE
+                  ? "* Valores en soles (PEN). Los montos netos no incluyen IGV (18 %), que se agrega donde se indica."
+                  : formatCLPReferenceNote(q, data.totals || {});
           }
 
           renderAsistenciaPricingTable();
