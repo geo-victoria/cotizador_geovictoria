@@ -84,10 +84,14 @@ test("descuento: CL y PE tienen escalera; CO y MX responden claro sin afirmar re
 });
 
 test("mensaje de negociación PE: NETO + IGV, jamás 'IVA incluido' ni aritmética del impuesto", () => {
+  // Forma REAL de computePaymentAmountsPE: oneShotNetClp = solo únicos (0 en
+  // solo-software) y firstMonthNetClp = el primer mes; el pago inicial neto
+  // vive en pe.pagoInicialNetoPen. Sin sumar salía "pago inicial S/0".
   const amounts = {
     oneShotClp: 176.41, recurringClp: 176.41,
     descuentos: { recurrentePct: 10 },
-    breakdown: { oneShotNetClp: 149.5, recurringNetClp: 149.5 },
+    breakdown: { oneShotNetClp: 0, firstMonthNetClp: 149.5, recurringNetClp: 149.5 },
+    pe: { pagoInicialNetoPen: 149.5 },
   };
   const msg = buildMensajeNegociacionPais("pe", { pct: 10, condicionDiscursiva: null }, amounts, false, { esPrimerDescuentoPlan: true, mesesPlan: 6 });
   assert.match(msg, /10% de descuento sobre el plan mensual/);
@@ -96,7 +100,7 @@ test("mensaje de negociación PE: NETO + IGV, jamás 'IVA incluido' ni aritméti
   assert.match(msg, /primeros 6 meses; desde el mes 7/);
   assert.match(msg, /¿Lo cerramos\?$/);
   // Con pago inicial distinto (reloj en venta): dice ambos, en neto.
-  const conUnico = { ...amounts, breakdown: { oneShotNetClp: 452.5, recurringNetClp: 149.5 } };
+  const conUnico = { ...amounts, breakdown: { oneShotNetClp: 303, firstMonthNetClp: 149.5, recurringNetClp: 149.5 }, pe: { pagoInicialNetoPen: 452.5 } };
   const msg2 = buildMensajeNegociacionPais("pe", { pct: 20, condicionDiscursiva: "Aplica hoy." }, conUnico, true, { conciso: true, esPrimerDescuentoPlan: false });
   assert.match(msg2, /S\/149\.50 \+ IGV al mes \(pago inicial S\/452\.50 \+ IGV\)/);
   assert.match(msg2, /Aplica hoy\. De verdad es el mejor precio/);

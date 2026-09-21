@@ -219,10 +219,15 @@ function buildMensajeNegociacionPais(pais, escalon, amounts, esUltimo, opts = {}
   const esPrimerDescuentoPlan = opts.esPrimerDescuentoPlan !== false;
   const meses = Number(opts.mesesPlan) > 0 ? Number(opts.mesesPlan) : 6;
   const neto = amounts?.breakdown || {};
-  const pagoInicial = fmtMonto(pais, neto.oneShotNetClp ?? amounts.oneShotClp);
-  const mensual = fmtMonto(pais, neto.recurringNetClp ?? amounts.recurringClp);
+  // Pago inicial NETO = únicos + primer mes (el breakdown trae los dos por
+  // separado: oneShotNetClp son SOLO los únicos — sin sumar el primer mes
+  // salía "pago inicial S/0" en un plan solo-software).
+  const pagoInicialNeto = amounts?.pe?.pagoInicialNetoPen ?? Number(neto.oneShotNetClp || 0) + Number(neto.firstMonthNetClp || 0);
+  const mensualNeto = neto.recurringNetClp ?? amounts.recurringClp;
+  const pagoInicial = fmtMonto(pais, pagoInicialNeto);
+  const mensual = fmtMonto(pais, mensualNeto);
   const impuesto = pais === "pe" ? " + IGV" : " + IVA";
-  const hayCargoInicial = Math.round(Number(neto.oneShotNetClp ?? amounts.oneShotClp)) !== Math.round(Number(neto.recurringNetClp ?? amounts.recurringClp));
+  const hayCargoInicial = Math.round(Number(pagoInicialNeto) * 100) !== Math.round(Number(mensualNeto) * 100);
   const partes = [`Puedo ofrecerte un ${escalon.pct}% de descuento sobre el plan mensual.`];
   if (!hayCargoInicial) partes.push(`Con eso queda en ${mensual}${impuesto} al mes.`);
   else if (conciso) partes.push(`Con eso queda en ${mensual}${impuesto} al mes (pago inicial ${pagoInicial}${impuesto}).`);
