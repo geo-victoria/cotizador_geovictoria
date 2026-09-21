@@ -156,7 +156,11 @@ function buildSubformItemsPais(pais, items) {
     return buildSubformItemsPE(quitarActivacionPE(items));
   }
   const { buildSubformItemsCO, ensureActivacion } = require("../quote-acceptance/create-from-vicky-co.js");
-  return buildSubformItemsCO(ensureActivacion(items));
+  // Anualidad (Lalo 21-sep): el plan anual YA incluye el primer mes, así que
+  // no se vuelve a fabricar la fila de Activación (el plan mensual viene en
+  // 0 y oculto, y la Activación saldría en 0 de todos modos).
+  const esAnual = items.some((it) => String(it?.id || "").toLowerCase() === "plan_anual");
+  return buildSubformItemsCO(esAnual ? items : ensureActivacion(items));
 }
 
 // ── PDF del país ─────────────────────────────────────────────────────────

@@ -3274,8 +3274,9 @@
               fmtPEN(pe.pagoInicialNetoPen) + "</td></tr>" +
               '<tr class="cost-row-sub"><td colspan="6">IGV (18%)</td><td>' +
               fmtPEN(pe.pagoInicialIgvPen) + "</td></tr>" +
-              '<tr class="cost-row-total"><td colspan="6">Pago inicial — a pagar ahora (incluye 1er mes)</td><td>' +
-              fmtPEN(pe.pagoInicialPen) + "</td></tr>";
+              '<tr class="cost-row-total"><td colspan="6">' +
+              (ES_ANUAL ? "Pago anual — a pagar ahora (12 meses anticipados)" : "Pago inicial — a pagar ahora (incluye 1er mes)") +
+              "</td><td>" + fmtPEN(pe.pagoInicialPen) + "</td></tr>";
             if (peMensual > 0) {
               const mensualPenCell =
                 pePct > 0 && peMensualLista > peMensual
@@ -3293,7 +3294,7 @@
             if (pePct > 0) {
               totalsRowsHtml +=
                 '<tr><td colspan="7" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
-                "Descuentos aplicados: " + Math.round(pePct) + "% en el plan mensual (" + vigenciaDescuentoCorto() + ")" +
+                "Descuentos aplicados: " + Math.round(pePct) + (ES_ANUAL ? "% en la anualidad (" : "% en el plan mensual (") + vigenciaDescuentoCorto() + ")" +
                 "</td></tr>" +
                 '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:4px;line-height:1.5">' +
                 escapeHtml(vigenciaDescuentoTexto()) +
@@ -3321,16 +3322,18 @@
             const coMensual = Number(co.mensualidadCop || 0);
             const coMensualLista = Number(co.mensualidadListaCop || coMensual);
             totalsRowsHtml =
-              '<tr class="cost-row-sub"><td colspan="5">Pago único (incluye Activación' + (coPct > 0 ? ", con el descuento del plan" : "") + ')</td><td>' +
-              fmtCOP(co.pagoInicialNetoCop) + "</td></tr>";
+              '<tr class="cost-row-sub"><td colspan="5">' +
+              (ES_ANUAL ? "Plan anual y pagos únicos (12 meses anticipados)" : "Pago único (incluye Activación" + (coPct > 0 ? ", con el descuento del plan" : "") + ")") +
+              "</td><td>" + fmtCOP(co.pagoInicialNetoCop) + "</td></tr>";
             if (Number(co.pagoInicialIvaCop || 0) > 0) {
               totalsRowsHtml +=
                 '<tr class="cost-row-sub"><td colspan="5">IVA equipos (19 %)</td><td>' +
                 fmtCOP(co.pagoInicialIvaCop) + "</td></tr>";
             }
             totalsRowsHtml +=
-              '<tr class="cost-row-total"><td colspan="5">Pago inicial — al aceptar</td><td>' +
-              fmtCOP(co.pagoInicialCop) + "</td></tr>";
+              '<tr class="cost-row-total"><td colspan="5">' +
+              (ES_ANUAL ? "Pago anual — al aceptar (12 meses anticipados)" : "Pago inicial — al aceptar") +
+              "</td><td>" + fmtCOP(co.pagoInicialCop) + "</td></tr>";
             if (Number(co.mensualidadCop || 0) > 0) {
               if (Number(co.mensualidadIvaCop || 0) > 0) {
                 totalsRowsHtml +=
@@ -3351,14 +3354,17 @@
             if (coPct > 0) {
               totalsRowsHtml +=
                 '<tr><td colspan="6" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
-                "Descuentos aplicados: " + Math.round(coPct) + "% en el plan mensual (" + vigenciaDescuentoCorto() + ")" +
+                "Descuentos aplicados: " + Math.round(coPct) + (ES_ANUAL ? "% en la anualidad (" : "% en el plan mensual (") + vigenciaDescuentoCorto() + ")" +
                 "</td></tr>" +
                 '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:4px;line-height:1.5">' +
                 escapeHtml(vigenciaDescuentoTexto()) +
                 "</td></tr>";
             }
-            totalsRowsHtml +=
-              '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
+            totalsRowsHtml += ES_ANUAL
+              ? '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
+                "El <b>Pago anual</b> se cobra al aceptar y cubre los 12 meses del servicio por adelantado; no hay mensualidades del plan durante el a&ntilde;o." +
+                "</td></tr>"
+              : '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
               "El <b>Pago inicial</b> se cobra al aceptar; la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado. " +
               "La <b>mensualidad</b> se factura desde el mes siguiente; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
               "</td></tr>";
@@ -3451,7 +3457,7 @@
               } else {
                 chHtml =
                   '<div class="ch-item"><span>' +
-                  (Number(peH.mensualidadPen || 0) > 0 ? "Pago inicial — a pagar ahora (incluye 1er mes)" : "Pago total — a pagar ahora (sin mensualidad)") +
+                  (Number(peH.mensualidadPen || 0) > 0 ? "Pago inicial — a pagar ahora (incluye 1er mes)" : (ES_ANUAL ? "Pago anual — a pagar ahora (12 meses anticipados)" : "Pago total — a pagar ahora (sin mensualidad)")) +
                   "</span><strong>" + fmtPEN(peH.pagoInicialPen) + "</strong></div>";
                 if (Number(peH.mensualidadPen || 0) > 0) {
                   chHtml +=
@@ -3464,8 +3470,9 @@
               // hardware incluido desde computeTotalsCO.
               const co = totals.co || {};
               chHtml =
-                '<div class="ch-item"><span>Pago inicial — al aceptar (incluye la Activación)</span><strong>' +
-                fmtCOP(co.pagoInicialCop) + "</strong></div>";
+                '<div class="ch-item"><span>' +
+                (ES_ANUAL ? "Pago anual — al aceptar (12 meses anticipados)" : "Pago inicial — al aceptar (incluye la Activación)") +
+                "</span><strong>" + fmtCOP(co.pagoInicialCop) + "</strong></div>";
               if (Number(co.mensualidadCop || 0) > 0) {
                 chHtml +=
                   '<div class="ch-item"><span>Mensualidad — desde el mes siguiente</span><strong>' +

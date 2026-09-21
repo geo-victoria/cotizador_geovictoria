@@ -135,3 +135,42 @@ test("mensaje de negociación PE: NETO + IGV, jamás 'IVA incluido' ni aritméti
   assert.equal(fmtMonto("pe", 82.5), "S/82.50");
   assert.equal(fmtMonto("pe", 1234), "S/1,234");
 });
+
+test("anualidad PE/CO (Lalo 21-sep): el subform persiste oculto + Descuento_Pct y CO no fabrica Activación con plan_anual", () => {
+  const { buildSubformItemsPais } = require("../api/_shared/pais-cotizacion");
+  const itemsCO = [
+    { tipo: "servicio", id: "plan_anual", nombre: "Plan anual — 12 meses anticipados (14 personas)", modalidad: "Cobro único", cantidad: 1, precioUnitarioCOP: 2301600, subtotalCOP: 2301600, esRecurrente: false, afectoIva: false },
+    { tipo: "plan", id: "plan_asistencia", nombre: "Control de Asistencia", modalidad: "Por usuario", cantidad: 14, precioUnitarioCOP: 0, subtotalCOP: 0, esRecurrente: true, afectoIva: false, oculto: true },
+    { tipo: "servicio", id: "envio", nombre: "Envío", modalidad: "Cobro único", cantidad: 1, precioUnitarioCOP: 20000, subtotalCOP: 20000, esRecurrente: false, afectoIva: false, descuentoPct: 100 },
+  ];
+  const rowsCO = buildSubformItemsPais("co", itemsCO);
+  assert.equal(rowsCO.length, 3, "sin fila de Activación agregada");
+  assert.ok(!rowsCO.some((r) => /activaci/i.test(r.Nombre_Item)));
+  const anualCO = rowsCO.find((r) => r.Codigo_Item === "plan_anual");
+  assert.equal(anualCO.Modalidad, "Venta");
+  assert.equal(anualCO.Es_Recurrente, false);
+  assert.equal(anualCO.Metadata_Item_JSON, undefined);
+  const ocultaCO = rowsCO.find((r) => r.Codigo_Item === "plan_asistencia");
+  assert.equal(ocultaCO.Metadata_Item_JSON, JSON.stringify({ oculto: true }));
+  assert.equal(ocultaCO.Es_Recurrente, true);
+  assert.equal(ocultaCO.Subtotal_UF, 0);
+  assert.equal(rowsCO.find((r) => r.Codigo_Item === "envio").Descuento_Pct, 100);
+  // Sin plan_anual, CO sigue fabricando la Activación como siempre.
+  const rowsCOnormal = buildSubformItemsPais("co", [
+    { tipo: "plan", id: "plan_asistencia", nombre: "Control de Asistencia", modalidad: "Por usuario", cantidad: 14, precioUnitarioCOP: 13700, subtotalCOP: 191800, esRecurrente: true, afectoIva: false },
+  ]);
+  assert.ok(rowsCOnormal.some((r) => /activaci/i.test(r.Nombre_Item)));
+
+  const rowsPE = buildSubformItemsPais("pe", [
+    { tipo: "servicio", id: "plan_anual", nombre: "Plan anual — 12 meses anticipados", modalidad: "Cobro único", cantidad: 1, precioUnitarioPEN: 990, subtotalPEN: 990, esRecurrente: false, afectoIgv: true },
+    { tipo: "plan", id: "plan_asistencia", nombre: "Plan de asistencia (16 personas)", modalidad: "Por usuario", cantidad: 16, precioUnitarioPEN: 0, subtotalPEN: 0, esRecurrente: true, afectoIgv: true, oculto: true },
+    { tipo: "hardware", id: "reloj_pe", nombre: "Reloj (arriendo)", modalidad: "Arriendo mensual", cantidad: 1, precioUnitarioPEN: 0, subtotalPEN: 0, esRecurrente: true, afectoIgv: true, oculto: true },
+  ]);
+  assert.equal(rowsPE.length, 3);
+  assert.equal(rowsPE.filter((r) => r.Metadata_Item_JSON === JSON.stringify({ oculto: true })).length, 2);
+  assert.equal(rowsPE[0].Metadata_Item_JSON, undefined);
+  // Y el lector del país las deja fuera al re-editar (regla "solo se ve la fila anual").
+  const leidos = subformAItemsPais("pe", { Detalle_Items_Cotizacion: rowsPE }, config);
+  assert.equal(leidos.length, 1);
+  assert.equal(leidos[0].id, "plan_anual");
+});

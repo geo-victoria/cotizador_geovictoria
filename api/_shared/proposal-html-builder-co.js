@@ -196,7 +196,12 @@ function buildProposalHtmlCO({
   // IVA 19% — su fila lo marca "+ IVA" y los totales lo desglosan. El resto
   // son precios finales, sin mención de impuestos.
   let descuentoPlanNeto = 0;
-  const filas = (Array.isArray(items) ? items : []).map((item) => {
+  // Anualidad (Lalo 21-sep, "igualemos a Chile"): las filas recurrentes
+  // quedan en 0 y marcadas `oculto` — no se pintan; la fila plan_anual manda
+  // los rótulos ("Pago anual — al aceptar (12 meses anticipados)").
+  const itemsVisibles = (Array.isArray(items) ? items : []).filter((it) => it && it.oculto !== true);
+  const esAnual = itemsVisibles.some((it) => String(it.id || it.codigo || "").toLowerCase() === "plan_anual");
+  const filas = itemsVisibles.map((item) => {
     const subtotalLista = Math.round(Number(item.subtotalCOP || 0));
     const esActivacion = esItemActivacion(item);
     // El plan y la Activación (= primer mes del plan) llevan el descuento.
@@ -290,8 +295,8 @@ function buildProposalHtmlCO({
   // ── Caja de totales ──
   // El IVA aparece SOLO si hay hardware (única familia afecta).
   let totHtml = "";
-  totHtml += `<div class="tot-h">Pago inicial — al aceptar</div>`;
-  totHtml += `<div class="tr"><span>Conceptos de pago único (incluye Activación${pctPlan > 0 && descuentoPlanNeto > 0 ? ", con el descuento del plan" : ""})</span><span>${formatCOP(uniNeto)}</span></div>`;
+  totHtml += `<div class="tot-h">${esAnual ? "Pago anual — al aceptar (12 meses anticipados)" : "Pago inicial — al aceptar"}</div>`;
+  totHtml += `<div class="tr"><span>${esAnual ? "Plan anual y conceptos de pago único" : `Conceptos de pago único (incluye Activación${pctPlan > 0 && descuentoPlanNeto > 0 ? ", con el descuento del plan" : ""})`}</span><span>${formatCOP(uniNeto)}</span></div>`;
   if (uniIva > 0) {
     totHtml += `<div class="tr"><span>IVA equipos (19 %)</span><span>${formatCOP(uniIva)}</span></div>`;
   }
@@ -308,12 +313,15 @@ function buildProposalHtmlCO({
       totHtml += `<div class="tr"><span>Desde el mes ${mesesDcto + 1} (precio de lista)</span><span>${formatCOP(recTot + descuentoPlanNeto)}/mes</span></div>`;
     }
   }
-  totHtml +=
-    `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
-    `El <b>Pago inicial</b> se cobra al aceptar y corresponde a los conceptos de pago &uacute;nico; ` +
-    `la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado. ` +
-    `La <b>mensualidad</b> se factura desde el mes siguiente; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente.` +
-    `</div>`;
+  totHtml += esAnual
+    ? `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
+      `El <b>Pago anual</b> se cobra al aceptar y cubre los 12 meses del servicio por adelantado${pctPlan > 0 ? ` (incluye el ${pctPlan} % de descuento del plan aplicado a la anualidad)` : ""}; no hay mensualidades del plan durante el a&ntilde;o.` +
+      `</div>`
+    : `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
+      `El <b>Pago inicial</b> se cobra al aceptar y corresponde a los conceptos de pago &uacute;nico; ` +
+      `la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado. ` +
+      `La <b>mensualidad</b> se factura desde el mes siguiente; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente.` +
+      `</div>`;
 
   const ctaHref = escapeHtml(acceptanceUrl || "#");
   const notaTexto = "Valores en pesos colombianos (COP).";

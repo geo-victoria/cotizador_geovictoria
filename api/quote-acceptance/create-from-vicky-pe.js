@@ -366,7 +366,7 @@ function buildSubformItemsPE(items) {
     const r2 = (v) => Math.round(Number(v || 0) * 100) / 100;
     const precioUnitario = r2(item.precioUnitarioPEN);
     const subtotal = r2(item.subtotalPEN);
-    return {
+    const row = {
       Nombre_Item: String(item.nombre || ""),
       Descripcion_Item: String(item.descripcion || "").trim(),
       Codigo_Item: String(item.id || ""),
@@ -382,6 +382,18 @@ function buildSubformItemsPE(items) {
       Categoria_Item: mapCategoriaToZoho(item),
       Unidad: mapUnidadToZoho(modalidadZoho, tipo),
     };
+    // Bonificación por línea (mismo contrato que Chile): el PDF tacha la
+    // lista y las regeneraciones conservan la línea en 0.
+    if (Number(item.descuentoPct) > 0) {
+      row.Descuento_Pct = Math.min(100, Number(item.descuentoPct));
+    }
+    // Ítem OCULTO (anualidad, Lalo 21-sep "igualemos a Chile"): sigue en el
+    // subform (viene en 0) para conservar la configuración, pero PDF y
+    // aceptación no lo pintan.
+    if (item.oculto === true) {
+      row.Metadata_Item_JSON = JSON.stringify({ oculto: true });
+    }
+    return row;
   });
 }
 

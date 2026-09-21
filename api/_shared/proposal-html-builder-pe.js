@@ -145,7 +145,12 @@ function buildProposalHtmlPE({
 
   // ── Filas (netos; el IGV vive en las cajas de totales) ──
   let descuentoPlanNeto = 0;
-  const filas = (Array.isArray(items) ? items : []).map((item) => {
+  // Anualidad (Lalo 21-sep, "igualemos a Chile"): las filas recurrentes
+  // quedan en 0 y marcadas `oculto` — no se pintan; la fila plan_anual manda
+  // los rótulos ("Pago anual — al aceptar (12 meses anticipados)").
+  const itemsVisibles = (Array.isArray(items) ? items : []).filter((it) => it && it.oculto !== true);
+  const esAnual = itemsVisibles.some((it) => String(it.id || it.codigo || "").toLowerCase() === "plan_anual");
+  const filas = itemsVisibles.map((item) => {
     const subtotalLista = Math.round(Number(item.subtotalPEN || 0) * 100) / 100;
     const conDcto = pctPlan > 0 && item.esRecurrente === true && esFilaPlan(item);
     const subtotal = conDcto ? Math.round(subtotalLista * (1 - pctPlan / 100) * 100) / 100 : subtotalLista;
@@ -207,11 +212,13 @@ function buildProposalHtmlPE({
 
   // ── Cajas de totales (neto + IGV 18 % = total, en ambas) ──
   let totHtml = "";
-  totHtml += `<div class="tot-h">Pago inicial — al aceptar (incluye 1er mes)</div>`;
+  totHtml += `<div class="tot-h">${esAnual ? "Pago anual — al aceptar (12 meses anticipados)" : "Pago inicial — al aceptar (incluye 1er mes)"}</div>`;
   if (soloUnicosNeto > 0) {
-    totHtml += `<div class="tr"><span>Conceptos de pago único (equipos, envío e instalación)</span><span>${formatPEN(soloUnicosNeto)}</span></div>`;
+    totHtml += `<div class="tr"><span>${esAnual ? "Plan anual y conceptos de pago único" : "Conceptos de pago único (equipos, envío e instalación)"}</span><span>${formatPEN(soloUnicosNeto)}</span></div>`;
   }
-  totHtml += `<div class="tr"><span>Primer mes del servicio (adelantado${pctPlan > 0 && descuentoPlanNeto > 0 ? ", con el descuento del plan" : ""})</span><span>${formatPEN(primerMesNeto)}</span></div>`;
+  if (!esAnual) {
+    totHtml += `<div class="tr"><span>Primer mes del servicio (adelantado${pctPlan > 0 && descuentoPlanNeto > 0 ? ", con el descuento del plan" : ""})</span><span>${formatPEN(primerMesNeto)}</span></div>`;
+  }
   if (iniIgv > 0) {
     totHtml += `<div class="tr"><span>IGV (18 %)</span><span>${formatPEN(iniIgv)}</span></div>`;
   }
@@ -229,11 +236,14 @@ function buildProposalHtmlPE({
       totHtml += `<div class="tr"><span>Desde el mes ${mesesDcto + 1} (precio de lista)</span><span>${formatPEN(recListaTot)}/mes</span></div>`;
     }
   }
-  totHtml +=
-    `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
-    `El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el primer mes del servicio, cobrado por adelantado${pctPlan > 0 && descuentoPlanNeto > 0 ? " (ya con el descuento del plan)" : ""}. ` +
-    `La <b>mensualidad</b> se factura desde el 2.&ordm; mes seg&uacute;n usuarios activos.` +
-    `</div>`;
+  totHtml += esAnual
+    ? `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
+      `El <b>Pago anual</b> se cobra al aceptar y cubre los 12 meses del servicio por adelantado${pctPlan > 0 ? ` (incluye el ${pctPlan} % de descuento del plan aplicado a la anualidad)` : ""}; no hay mensualidades del plan durante el a&ntilde;o.` +
+      `</div>`
+    : `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
+      `El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el primer mes del servicio, cobrado por adelantado${pctPlan > 0 && descuentoPlanNeto > 0 ? " (ya con el descuento del plan)" : ""}. ` +
+      `La <b>mensualidad</b> se factura desde el 2.&ordm; mes seg&uacute;n usuarios activos.` +
+      `</div>`;
 
   const ctaHref = escapeHtml(acceptanceUrl || "#");
   const notaTexto = "Valores netos en soles (PEN). El IGV (18 %) se detalla en los totales.";
