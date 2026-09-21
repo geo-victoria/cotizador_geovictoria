@@ -31,6 +31,15 @@ const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
+const {
+  paisDeCotizacion,
+  paisConPerfil,
+  subformAItemsPais,
+  renderHtmlPais,
+  clienteDesdeQuote,
+  copiasCorreoPais,
+  ejecutivoCorreoPais,
+} = require("../_shared/pais-cotizacion");
 const { leerMesesDescuento } = require("../_shared/descuento-meses");
 const {
   subformACotizacionItems,
@@ -133,6 +142,50 @@ function esCotizacionMX(acceptanceUrl) {
 
 // Regenera el PDF de una cotización + reenvía el correo. Espejo del trabajo en
 // segundo plano de create-from-vicky, pero a partir del estado actual en Zoho.
+async function rescatarCotizacionPais(pais, quote, quoteId, config) {
+  const cliente = clienteDesdeQuote(quote, config);
+  const items = subformAItemsPais(pais, quote, config);
+  const acceptanceUrl = toText(quote[config.quoteAcceptanceUrlField]);
+  const version = Math.max(1, Number(quote[config.quoteVersionPdfField] || 1));
+  const mesesPlan = await leerMesesDescuento(quoteId, quote);
+  const html = renderHtmlPais(pais, {
+    cliente,
+    items,
+    acceptanceUrl,
+    cotizacionId: numeroParaPdf(quote.Numero_Cotizacion, quoteId),
+    validezHasta: new Date(Date.now() + config.validityDays * 24 * 60 * 60 * 1000).toISOString(),
+    version,
+    descuentos: { recurrentePct: Number(quote[config.quoteDiscountPctField] || 0) },
+    mesesDescuento: mesesPlan || undefined,
+  });
+  const pdfBuffer = await htmlToPdfBuffer(html, { format: "Letter", margin: "0" });
+  const { pdfUrl } = await uploadPdfToSupabase({ pdfBuffer, quoteId, empresa: cliente.empresa });
+  await updateRecord(config.quoteModule, quoteId, { [config.quotePdfUrlField]: pdfUrl }, true);
+  await actualizarPunteroPdf(quoteId, pdfUrl);
+  if (cliente.contactoEmail) {
+    const cc = copiasCorreoPais(pais);
+    await sendQuoteEmailViaZoho({
+      quoteModule: config.quoteModule,
+      quoteId,
+      fromEmail: VICKY_FROM_EMAIL,
+      replyToEmail: cc[0],
+      ccEmails: cc,
+      toEmail: cliente.contactoEmail,
+      toName: cliente.contacto,
+      subject: `Tu cotización GeoVictoria — ${cliente.empresa}`,
+      htmlBody: buildEmailHtml({
+        contacto: cliente.contacto,
+        empresa: cliente.empresa,
+        pdfUrl,
+        acceptanceUrl,
+        tieneReloj: false,
+        ejecutivo: ejecutivoCorreoPais(pais),
+      }),
+    });
+  }
+  return { pdfUrl, pais, correo: Boolean(cliente.contactoEmail) };
+}
+
 async function rescatarCotizacion(quoteId, config) {
   const quote = await getRecord(config.quoteModule, quoteId);
   if (!quote) throw new Error("cotización no encontrada");
@@ -142,13 +195,14 @@ async function rescatarCotizacion(quoteId, config) {
     return { skipped: "pdf_ya_presente" };
   }
 
-  // Cotización CO: este cron es chileno (PDF UF + correo en tuteo); saltarla.
-  if (esCotizacionCO(quote[config.quoteAcceptanceUrlField])) {
-    return { skipped: "cotizacion_co" };
-  }
-  // Cotización MX: mismo motivo (PDF en MXN/IVA 16% con builder propio).
-  if (esCotizacionMX(quote[config.quoteAcceptanceUrlField])) {
+  // País (21-sep, perfil único): PE/CO se rescatan con su PDF y su correo;
+  // MX sigue fuera (no está sobre el núcleo).
+  const paisQuote = paisDeCotizacion(quote, config);
+  if (paisQuote === "mx") {
     return { skipped: "cotizacion_mx" };
+  }
+  if (paisConPerfil(paisQuote)) {
+    return rescatarCotizacionPais(paisQuote, quote, quoteId, config);
   }
 
   const descuentos = {

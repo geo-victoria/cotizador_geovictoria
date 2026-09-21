@@ -50,6 +50,15 @@ const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
+const {
+  paisDeCotizacion,
+  paisConPerfil,
+  descuentoDisponible,
+  errorDescuentoNoDisponible,
+  subformAItemsPais,
+  renderHtmlPais,
+  clienteDesdeQuote,
+} = require("../_shared/pais-cotizacion");
 const { getUFActualSafe } = require("../_shared/uf-actual");
 const { ufDeCotizacion } = require("../_shared/uf-cotizacion");
 const { resolverEjecutivoCL } = require("../_shared/ejecutivo-cl");
@@ -226,13 +235,14 @@ module.exports = async function handler(req, res) {
     const quote = await getRecord(config.quoteModule, quoteId);
     if (!quote) return sendJson(res, 404, { ok: false, error: "Cotizacion no encontrada." });
 
-    const paisQuote = paisEnToken(toText(quote?.[config.quoteAcceptanceUrlField]));
-    if (paisQuote === "co" || paisQuote === "mx") {
-      return sendJson(res, 422, {
-        ok: false,
-        error: `COTIZACION_${paisQuote.toUpperCase()}: este canal solo soporta Chile por ahora.`,
-      });
+    // País (21-sep, perfil único): PE tiene la misma escalera del plan que
+    // Chile (el editor y el toque 4 de la campaña pueden repreciarla en
+    // soles); CO/MX no tienen descuento de cara al cliente.
+    const paisQuote = paisDeCotizacion(quote, config);
+    if (!descuentoDisponible(paisQuote)) {
+      return sendJson(res, 422, errorDescuentoNoDisponible(paisQuote));
     }
+    const conPerfil = paisConPerfil(paisQuote);
 
     // Cotización cerrada: los ajustes post-aceptación son territorio humano en
     // Zoho (misma regla que actualizar-cotizacion).
@@ -300,15 +310,16 @@ module.exports = async function handler(req, res) {
     }
 
     stage = "render_pdf";
-    const cliente = await buildClienteParaHtml(quote, config);
-    const ufQuote = ufDeCotizacion(quote, config.quoteItemsSubformField);
-    const ufActual = ufQuote.uf > 0 ? ufQuote.uf : await getUFActualSafe();
-    const items = subformACotizacionItems(quote, config);
+    const cliente = conPerfil ? clienteDesdeQuote(quote, config) : await buildClienteParaHtml(quote, config);
+    const ufQuote = conPerfil ? { uf: 0 } : ufDeCotizacion(quote, config.quoteItemsSubformField);
+    const ufActual = conPerfil ? 0 : ufQuote.uf > 0 ? ufQuote.uf : await getUFActualSafe();
+    const items = conPerfil ? subformAItemsPais(paisQuote, quote, config) : subformACotizacionItems(quote, config);
     const dealId = toText(quote?.[config.quoteDealLookupField]?.id || quote?.[config.quoteDealLookupField]);
     const expMs = Date.now() + config.validityDays * 24 * 60 * 60 * 1000;
     const acceptanceToken = signAcceptancePayload({
       quoteId,
       dealId,
+      ...(conPerfil ? { pais: paisQuote } : {}),
       iat: Date.now(),
       exp: expMs,
       nonce: crypto.randomBytes(8).toString("hex"),
@@ -316,7 +327,16 @@ module.exports = async function handler(req, res) {
     });
     const acceptanceUrl = `${config.baseUrl}/quote-acceptance.html?token=${encodeURIComponent(acceptanceToken)}`;
 
-    const html = buildProposalHtml({
+    const html = conPerfil ? renderHtmlPais(paisQuote, {
+      cliente,
+      items,
+      acceptanceUrl,
+      cotizacionId: numeroParaPdf(quote && quote.Numero_Cotizacion, quoteId),
+      validezHasta: new Date(expMs).toISOString(),
+      version: versionNueva,
+      descuentos: { recurrentePct: pctFinal },
+      mesesDescuento: mesesFinal === null ? 0 : mesesFinal || undefined,
+    }) : buildProposalHtml({
       cliente,
       cotizacion: { items, ufActual },
       acceptanceUrl,
