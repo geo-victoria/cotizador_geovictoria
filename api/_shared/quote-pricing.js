@@ -18,6 +18,9 @@
  */
 
 const IVA_RATE = 0.19;
+// IGV Perú (18 %). OJO 21-sep: se borró por accidente en 7e35c53 y la sesión
+// de aceptación PE respondió 500 ("IGV_RATE_PE is not defined") hasta el fix.
+const IGV_RATE_PE = 0.18;
 
 const DEFAULT_FIELD_MAP = {
   itemName: "Nombre_Item",

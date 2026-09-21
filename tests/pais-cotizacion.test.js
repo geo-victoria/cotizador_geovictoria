@@ -174,3 +174,24 @@ test("anualidad PE/CO (Lalo 21-sep): el subform persiste oculto + Descuento_Pct 
   assert.equal(leidos.length, 1);
   assert.equal(leidos[0].id, "plan_anual");
 });
+
+test("computeTotalsPE vive (IGV 18 %): la constante IGV_RATE_PE se borró una vez y la sesión PE respondía 500", () => {
+  const { computeTotalsPE, computePaymentAmountsPE } = require("../api/_shared/quote-pricing");
+  // Anualidad: plan_anual único (S/792) + plan mensual oculto en 0.
+  const items = [
+    { nombre: "Plan anual — 12 meses anticipados", cantidad: 1, precioUnitarioClp: 792, subtotalClp: 792, modalidad: "Venta", afectoIva: true, codigo: "plan_anual" },
+    { nombre: "Control de Asistencia", cantidad: 12, precioUnitarioClp: 0, subtotalClp: 0, modalidad: "Por usuario", afectoIva: true, codigo: "plan_asistencia", oculto: true },
+  ];
+  const t = computeTotalsPE(items, { recurrentePct: 0 });
+  assert.equal(t.pagoInicialNetoPen, 792);
+  assert.equal(t.pagoInicialIgvPen, 142.56);
+  assert.equal(t.pagoInicialPen, 934.56);
+  assert.equal(t.mensualidadPen, 0);
+  const a = computePaymentAmountsPE(items, {});
+  assert.equal(a.oneShotClp, 934.56);
+  assert.equal(a.firstMonthClp, 0);
+  // Mensual normal: 16 × 5,5 = 88 neto → 103,84 con IGV, inicial = primer mes.
+  const m = computeTotalsPE([{ nombre: "Plan de asistencia (16 personas)", cantidad: 16, precioUnitarioClp: 5.5, subtotalClp: 88, modalidad: "Por usuario", afectoIva: true, codigo: "plan_asistencia" }], {});
+  assert.equal(m.pagoInicialPen, 103.84);
+  assert.equal(m.mensualidadPen, 103.84);
+});
