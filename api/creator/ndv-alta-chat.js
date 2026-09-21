@@ -165,7 +165,7 @@ async function diagnosticoEspejo(cfg, cot, quote, config) {
 
 /** Espejo nuevo desde los ítems vigentes: mismo camino que crear-ndv-desde-cot
  * (self-request, así se reusa TODO el puente sin duplicar código). */
-async function regenerarEspejo(quoteId, timeoutMs) {
+async function regenerarEspejo(quoteId, timeoutMs, extra = {}) {
   const base = toText(process.env.COTIZADOR_SELF_BASE) || "https://cotizacion.geovictoria.com";
   const secreto = toText(process.env.VICKY_COTIZADORA_SECRET);
   const ctl = new AbortController();
@@ -174,7 +174,7 @@ async function regenerarEspejo(quoteId, timeoutMs) {
     const r = await fetch(`${base}/api/creator/crear-ndv-desde-cot`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-vicky-secret": secreto, "User-Agent": "Mozilla/5.0 vicky-ndv-alta" },
-      body: JSON.stringify({ quoteId, status: "BORRADOR", formulario: "Cotizacion" }),
+      body: JSON.stringify({ quoteId, status: "BORRADOR", formulario: "Cotizacion", ...extra }),
       signal: ctl.signal,
     });
     const j = await r.json().catch(() => ({}));
@@ -287,7 +287,7 @@ async function referenciaPorCreatorId(ndvId) {
  * prefiriendo las que aún no están convertidas. Alta por chat = una
  * cotización pagada por cuenta en la práctica.
  */
-async function espejoDeCotizacion(cfg, quote, quoteId) {
+async function espejoDeCotizacion(cfg, quote, quoteId, pais = "cl") {
   const idNum = quoteId.replace(/\D/g, "");
   // Por si algún día el id cabe / se guarda como texto: exacto primero.
   let filas = await filasCreator(cfg, `(CRM_REFERENCE_ID == "${idNum}")`);
@@ -297,7 +297,13 @@ async function espejoDeCotizacion(cfg, quote, quoteId) {
   const accountId = texto(quote?.Cuenta_Asociada?.id || quote?.Cuenta_Asociada);
   if (!accountId) return { cot: null, por: "sin_cuenta" };
   const porCuenta = (await filasCreator(cfg, `(CRM_Account == "${accountId}")`)).filter(
-    (f) => texto(f.Formulario) === "Cotización" && texto(f.STATUS) !== "ANULADA",
+    (f) =>
+      texto(f.Formulario) === "Cotización" &&
+      texto(f.STATUS) !== "ANULADA" &&
+      // PERÚ (21-sep): la emisión deja DOS espejos — plan en PEN y hardware en
+      // USD (nota aparte, como siempre en PE). El principal es el del plan; el
+      // de hardware se convierte después (convertirHardwarePE).
+      (pais !== "pe" || texto(f.Moneda) !== "USD"),
   );
   if (!porCuenta.length) return { cot: null, por: "sin_espejo" };
   const emitida = Date.parse(String(quote?.Fecha_Hora_Cotizacion || quote?.Created_Time || "")) || 0;
@@ -327,6 +333,57 @@ async function espejoDeCotizacion(cfg, quote, quoteId) {
   return { cot: porCuenta[0], por: "CRM_Account+fecha", candidatos: porCuenta.length };
 }
 
+/**
+ * PERÚ: la SEGUNDA nota — hardware en USD (artículo [PER] 304) — se convierte
+ * y confirma con la MISMA empresa de la plataforma. Idempotente: si ya tiene
+ * NDV viva, solo la confirma si falta. No enlaza referencia en la cotización
+ * (el lookup es uno y apunta al plan); queda en la respuesta para la nota.
+ */
+async function convertirHardwarePE(cfg, quote, companyId, empresaDropdown, queda) {
+  const accountId = texto(quote?.Cuenta_Asociada?.id || quote?.Cuenta_Asociada);
+  if (!accountId) return { estado: "sin_cuenta" };
+  const usd = (await filasCreator(cfg, `(CRM_Account == "${accountId}")`)).filter(
+    (f) => texto(f.Formulario) === "Cotización" && texto(f.STATUS) !== "ANULADA" && texto(f.Moneda) === "USD",
+  );
+  if (!usd.length) return { estado: "sin_espejo_hardware" };
+  usd.sort((a, b) => tsCreator(b.Added_Time) - tsCreator(a.Added_Time));
+  const cotId = texto(usd[0].ID);
+  let nota =
+    (await filasCreator(cfg, `(Cotizacion_Origen == ${cotId})`)).find(
+      (f) => texto(f.Formulario) === "Nota de Venta" && texto(f.STATUS) !== "ANULADA",
+    ) || null;
+  if (!nota) {
+    if (queda() < 20_000) return { cotId, estado: "pendiente", error: "sin presupuesto para convertir" };
+    const conv = await convertirYConfirmar(cotId, { confirmar: false, empresaDropdown }).catch((e) => ({ ok: false, error: e.message }));
+    if (!conv?.ok || !texto(conv.ndvId)) return { cotId, estado: "error", error: texto(conv?.error) || texto(conv?.paso) || "no se pudo convertir" };
+    nota = (await leerRegistro(cfg, conv.ndvId)) || { ID: conv.ndvId };
+  }
+  const ndvId = texto(nota.ID);
+  let estado = texto(nota.STATUS);
+  let idNdv = texto(nota.ID_NDV);
+  if (estado !== "CONFIRMADA" && !texto(nota.ID_Empresa_GeoVictoria)) {
+    await creatorApiFetch(`${reportPath(cfg)}/${encodeURIComponent(ndvId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { ID_Empresa_GeoVictoria: companyId, GeoCompanyIdCRM: companyId } }),
+    }).catch(() => null);
+  }
+  if (estado !== "CONFIRMADA") {
+    let conf = null;
+    for (let i = 0; i < 4; i++) {
+      conf = await confirmarNota(ndvId).catch((e) => ({ ok: false, error: e.message }));
+      if (conf?.confirmada) break;
+      if (!conf?.reintentable || queda() < 10_000) break;
+      await dormir(3000);
+    }
+    idNdv = texto(conf?.idNdv) || idNdv;
+    if (!conf?.confirmada) return { cotId, ndvId, idNdv, estado: conf?.reintentable ? "pendiente" : "error", error: texto(conf?.error) || undefined };
+    estado = "CONFIRMADA";
+  }
+  const final = (await leerRegistro(cfg, ndvId)) || nota;
+  return { cotId, ndvId, idNdv: texto(final.ID_NDV) || idNdv, estado, idSo: texto(final.ID_SO) || null };
+}
+
 module.exports = async function handler(req, res) {
   if (req.method === "OPTIONS") {
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -345,6 +402,9 @@ module.exports = async function handler(req, res) {
     const body = parseBody(req);
     const quoteId = toText(body.quoteId).replace(/\D/g, "");
     const companyId = toText(body.companyId).replace(/\D/g, "");
+    // PERÚ (21-sep): plan en PEN + hardware en USD (dos notas). El agente
+    // manda `pais` desde el prefijo del contacto.
+    const paisAlta = toText(body.pais).toLowerCase() === "pe" ? "pe" : "cl";
     if (!quoteId) return sendJson(res, 400, { ok: false, error: "Falta quoteId." });
     if (!companyId && body.soloEspejo !== true) {
       return sendJson(res, 400, { ok: false, error: "Falta companyId (id de la empresa en la plataforma)." });
@@ -358,8 +418,19 @@ module.exports = async function handler(req, res) {
     // 0. Ya enlazada: nada que hacer.
     const refActual = quote?.[QUOTE_NDV_REF_FIELD];
     const refActualId = texto(refActual?.id || refActual);
+    const cfg = getCreatorConfig();
+    if (cfg.missing.length > 0) {
+      return sendJson(res, 500, { ok: false, error: `Faltan variables de Zoho Creator: ${cfg.missing.join(", ")}` });
+    }
+    const empresaDropdownYa = empresaDropdownDe({
+      nombre: toText(body.empresaNombre) || texto(quote?.Cuenta_Asociada?.name),
+      rut: toText(body.rut) || texto(quote?.RUT_Cliente),
+      companyId,
+    });
     if (refActualId && /^\d{10,}$/.test(refActualId)) {
       const ref = await getRecord(REFERENCIAS_MODULE, refActualId).catch(() => null);
+      // PE: el plan ya está; la nota de hardware (USD) puede seguir pendiente.
+      const hardware = paisAlta === "pe" && companyId ? await convertirHardwarePE(cfg, quote, companyId, empresaDropdownYa, queda) : undefined;
       return sendJson(res, 200, {
         ok: true,
         listo: true,
@@ -368,12 +439,8 @@ module.exports = async function handler(req, res) {
         idNdv: texto(ref?.Name || refActual?.name),
         estadoReferencia: texto(ref?.ESTADO),
         ndvId: texto(ref?.ID_ZOHO),
+        ...(hardware ? { hardware } : {}),
       });
-    }
-
-    const cfg = getCreatorConfig();
-    if (cfg.missing.length > 0) {
-      return sendJson(res, 500, { ok: false, error: `Faltan variables de Zoho Creator: ${cfg.missing.join(", ")}` });
     }
 
     // 1. Espejo en Creator. `cotId` explícito (admin) fuerza uno: al REHACER
@@ -387,7 +454,7 @@ module.exports = async function handler(req, res) {
           por: "cotId",
           candidatos: 1,
         }
-      : await espejoDeCotizacion(cfg, quote, quoteId);
+      : await espejoDeCotizacion(cfg, quote, quoteId, paisAlta);
     if (!cot) {
       return sendJson(res, 200, {
         ok: false,
@@ -405,7 +472,7 @@ module.exports = async function handler(req, res) {
       const diag = await diagnosticoEspejo(cfg, cot, quote, config);
       if (diag.regenerar && !cotForzado) {
         const anulado = await anularEspejo(cfg, cotId);
-        const nuevo = await regenerarEspejo(quoteId, Math.max(15_000, queda() - 5_000));
+        const nuevo = await regenerarEspejo(quoteId, Math.max(15_000, queda() - 5_000), paisAlta === "pe" ? { moneda: "PEN", pais: "Perú", filtroLineas: "sin_hardware" } : {});
         return sendJson(res, 200, { ok: true, soloEspejo: true, cotId, diag, viejoAnulado: anulado, nuevo, pasos });
       }
       return sendJson(res, 200, { ok: true, soloEspejo: true, cotId, diag, pasos });
@@ -438,7 +505,8 @@ module.exports = async function handler(req, res) {
         // sobrante que se puede neutralizar), se parchea y se sigue con la
         // conversión en esta misma pasada, sin quemar un correlativo.
         paso = "arreglo_en_sitio";
-        const enSitio = await intentarArregloEnSitio(cfg, cotId, quote, config);
+        // PE: el arreglo en sitio recalcula tablas en UF — no aplica; se regenera.
+        const enSitio = paisAlta === "pe" ? null : await intentarArregloEnSitio(cfg, cotId, quote, config);
         if (enSitio) {
           // El maestro no se toca en este arreglo (los PATCH van a sus hijos),
           // así que `cot` sigue vigente y la conversión continúa en esta pasada.
@@ -446,7 +514,7 @@ module.exports = async function handler(req, res) {
         } else {
         paso = "regenerar_espejo";
         const anulado = await anularEspejo(cfg, cotId);
-        const nuevo = queda() > 20_000 ? await regenerarEspejo(quoteId, Math.max(15_000, queda() - 8_000)) : { ok: false, error: "sin presupuesto" };
+        const nuevo = queda() > 20_000 ? await regenerarEspejo(quoteId, Math.max(15_000, queda() - 8_000), paisAlta === "pe" ? { moneda: "PEN", pais: "Perú", filtroLineas: "sin_hardware" } : {}) : { ok: false, error: "sin presupuesto" };
         pasos.push({ regenerarEspejo: { motivos: diag.motivos, viejoAnulado: anulado, nuevo } });
         console.log(
           `[ndv-alta-chat] espejo ${cotId} regenerado (${diag.motivos.join("; ")}) → ${nuevo.ok ? nuevo.ndvId : `pendiente: ${nuevo.error}`}`,
@@ -569,9 +637,16 @@ module.exports = async function handler(req, res) {
     const vendido = mensualVendidoUF(quote, config);
     const descuadreUF =
       vendido !== null && totalNota > 0 ? Number((totalNota - vendido).toFixed(5)) : null;
+    // PE: la nota de HARDWARE (USD) se convierte y confirma detrás del plan.
+    // Best-effort: si queda pendiente, el agente vuelve a llamar (rama "ya
+    // enlazada") hasta que confirme.
+    paso = "hardware_pe";
+    const hardware = paisAlta === "pe" ? await convertirHardwarePE(cfg, quote, companyId, empresaDropdown, queda).catch((e) => ({ estado: "error", error: e?.message })) : undefined;
+    if (hardware) pasos.push({ hardware });
     return sendJson(res, 200, {
       ok: true,
       listo: true,
+      ...(hardware ? { hardware } : {}),
       cotId,
       ndvId,
       idNdv: ref.nombre || idNdv,
