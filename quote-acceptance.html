@@ -2523,9 +2523,12 @@
         if (pricingSection) pricingSection.style.display = "none";
         var costHead = document.querySelector("#sectionCosts .cost-table thead tr");
         if (costHead) {
+          // PATRÓN CHILE (Lalo 21-sep, "igualemos la brecha a Chile"): las
+          // mismas columnas de la página chilena, con la columna Dcto.; sin
+          // REF. CLP porque el sol es la moneda de cobro (no hay UF).
           costHead.innerHTML =
             "<th>Item</th><th>Tipo</th><th>Modalidad</th><th>Cant.</th>" +
-            "<th>Precio Unit.</th><th>Subtotal (PEN)</th>";
+            "<th>Precio Unit.</th><th>Dcto.</th><th>Subtotal (PEN)</th>";
         }
         var summary = document.querySelector("#sectionTerms .terms-summary");
         if (summary) {
@@ -3098,6 +3101,23 @@
               // "unidad de pricing del país"). IGV 18 % en TODOS los
               // conceptos: la tabla muestra netos y los totales desglosan.
               const montoPen = Number(row.subtotalClp || 0);
+              // Misma celda Dcto. que Chile: línea bonificada (−100 %,
+              // "Incluida") o descuento por línea con la lista tachada.
+              const dPct = descuentoLineaPct(row);
+              let dCell = "-";
+              let subPenCell = fmtPEN(montoPen);
+              if (esLineaBonificada(row)) {
+                const listaPen = Number(row.precioUnitarioClp || 0) * Number(row.cantidad || 0);
+                dCell = "&minus;100%";
+                subPenCell =
+                  '<span style="text-decoration:line-through;color:#9ca3af">' +
+                  fmtPEN(listaPen) + '</span> <b style="color:#0f9d58">Incluida</b>';
+              } else if (dPct > 0) {
+                dCell = "&minus;" + dPct + "%";
+                subPenCell =
+                  '<span style="text-decoration:line-through;color:#9ca3af">' +
+                  fmtPEN(montoPen) + "</span> " + fmtPEN(montoPen * (1 - dPct / 100));
+              }
               return (
                 "<tr>" +
                 "<td>" + (row.nombre || "-") + "</td>" +
@@ -3105,7 +3125,8 @@
                 "<td>" + normalizeModalidadLabel(row) + "</td>" +
                 "<td>" + Number(row.cantidad || 0) + "</td>" +
                 "<td>" + fmtPEN(row.precioUnitarioClp) + "</td>" +
-                "<td>" + fmtPEN(montoPen) + "</td>" +
+                "<td>" + dCell + "</td>" +
+                "<td>" + subPenCell + "</td>" +
                 "</tr>"
               );
             }
@@ -3182,7 +3203,7 @@
           ES_ANUAL = rows.some(esFilaPlanAnual);
           const itemRowsHtml = rowsVisibles.length
             ? rowsVisibles.map(itemRowHtml).join("")
-            : '<tr><td colspan="' + (esCO || esMX || esPE ? 6 : 8) + '">Sin datos.</td></tr>';
+            : '<tr><td colspan="' + (esPE ? 7 : esCO || esMX ? 6 : 8) + '">Sin datos.</td></tr>';
 
           // Valor mensual: el servidor ya entrega el recurrente NETO (con el
           // descuento aplicado). Mostramos el bruto tachado cuando hay descuento.
@@ -3232,65 +3253,54 @@
               "La <b>mensualidad</b> se factura desde la activaci&oacute;n del servicio; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
               "</td></tr>";
           } else if (esPE) {
-            // Perú: totales del bloque `pe` del servidor (computeTotalsPE,
-            // IGV 18 % por línea afecta — en PE: todas). PATRÓN CHILE
-            // (21-sep): pago inicial = pagos únicos + primer mes del servicio,
-            // sin fila de Activación.
+            // Perú (Lalo 21-sep, "igualemos la brecha a Chile"): la MISMA
+            // estructura de filas que la página chilena — Subtotal (sin IGV),
+            // IGV, Pago inicial destacado, valor mensual desde el 2º mes con
+            // la lista tachada si hay descuento, resumen de descuentos,
+            // vigencia y el pie. Los montos salen del bloque `pe` del
+            // servidor (computeTotalsPE: soles, IGV 18 %, pago inicial =
+            // únicos + primer mes, patrón CL).
             const pe = totals.pe || {};
-            totalsRowsHtml = "";
-            if (Number(pe.unicosNetoPen || 0) > 0) {
-              totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="5">Pago único (equipos, envío e instalación)</td><td>' +
-                fmtPEN(pe.unicosNetoPen) + "</td></tr>";
-            }
-            if (Number(pe.primerMesNetoPen || 0) > 0) {
-              totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="5">Primer mes del servicio (adelantado' +
-                (Number(pe.descuentoPct || 0) > 0 ? ", ya con el descuento del plan" : "") + ')</td><td>' +
-                fmtPEN(pe.primerMesNetoPen) + "</td></tr>";
-            }
-            if (Number(pe.pagoInicialIgvPen || 0) > 0) {
-              totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="5">IGV (18 %)</td><td>' +
-                fmtPEN(pe.pagoInicialIgvPen) + "</td></tr>";
-            }
-            totalsRowsHtml +=
-              '<tr class="cost-row-total"><td colspan="5">Pago inicial — al aceptar</td><td>' +
+            const pePct = Number(pe.descuentoPct || 0);
+            const peMensual = Number(pe.mensualidadPen || 0);
+            const peMensualLista = Number(pe.mensualidadListaPen || peMensual);
+            totalsRowsHtml =
+              '<tr class="cost-row-sub"><td colspan="6">Subtotal (sin IGV)</td><td>' +
+              fmtPEN(pe.pagoInicialNetoPen) + "</td></tr>" +
+              '<tr class="cost-row-sub"><td colspan="6">IGV (18%)</td><td>' +
+              fmtPEN(pe.pagoInicialIgvPen) + "</td></tr>" +
+              '<tr class="cost-row-total"><td colspan="6">Pago inicial — a pagar ahora (incluye 1er mes)</td><td>' +
               fmtPEN(pe.pagoInicialPen) + "</td></tr>";
-            if (Number(pe.mensualidadPen || 0) > 0) {
-              // Descuento del plan (escalera chilena, Lalo 17-sep): la fila de
-              // lista, la rebaja y la vigencia salen del servidor (computeTotalsPE).
-              if (Number(pe.descuentoPct || 0) > 0 && Number(pe.descuentoPlanNetoPen || 0) > 0) {
-                var mesesPE = Number(pe.mesesDescuento || 0);
-                totalsRowsHtml +=
-                  '<tr class="cost-row-sub"><td colspan="5">Mensualidad de lista (neto)</td><td>' +
-                  fmtPEN(pe.mensualidadListaNetaPen) + "</td></tr>" +
-                  '<tr class="cost-row-sub" style="color:#15803d"><td colspan="5">Descuento ' + Math.round(pe.descuentoPct) +
-                  " % en el plan" + (mesesPE > 0 ? " (primeros " + mesesPE + " meses)" : "") + "</td><td>−" +
-                  fmtPEN(pe.descuentoPlanNetoPen) + "</td></tr>";
-              }
+            if (peMensual > 0) {
+              const mensualPenCell =
+                pePct > 0 && peMensualLista > peMensual
+                  ? '<span style="text-decoration:line-through;color:#9ca3af">' +
+                    fmtPEN(peMensualLista) + "</span> " + fmtPEN(peMensual) + "/mes"
+                  : fmtPEN(peMensual) + "/mes";
+              const mensualLabelPE =
+                pePct > 0
+                  ? "Valor mensual del servicio — desde el 2&ordm; mes (referencial, " + Math.round(pePct) + "% dcto.)"
+                  : "Valor mensual del servicio — desde el 2&ordm; mes (referencial)";
               totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="5">Mensualidad del servicio (neto)</td><td>' +
-                fmtPEN(pe.mensualidadNetaPen) + "</td></tr>";
-              if (Number(pe.mensualidadIgvPen || 0) > 0) {
-                totalsRowsHtml +=
-                  '<tr class="cost-row-sub"><td colspan="5">IGV (18 %)</td><td>' +
-                  fmtPEN(pe.mensualidadIgvPen) + "</td></tr>";
-              }
-              totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="5">Mensualidad — desde el mes siguiente</td><td>' +
-                fmtPEN(pe.mensualidadPen) + "/mes</td></tr>";
-              if (Number(pe.descuentoPct || 0) > 0 && Number(pe.mesesDescuento || 0) > 0) {
-                totalsRowsHtml +=
-                  '<tr class="cost-row-sub" style="color:#6b7280"><td colspan="5">Desde el mes ' + (Number(pe.mesesDescuento) + 1) +
-                  " (precio de lista)</td><td>" + fmtPEN(pe.mensualidadListaPen) + "/mes</td></tr>";
-              }
+                '<tr class="cost-row-sub"><td colspan="6">' + mensualLabelPE + "</td><td>" +
+                mensualPenCell + "</td></tr>";
             }
-            totalsRowsHtml +=
-              '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
-              "El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el <b>primer mes</b> del servicio, cobrado por adelantado. " +
-              "La <b>mensualidad</b> se factura desde el 2&ordm; mes; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
-              "</td></tr>";
+            if (pePct > 0) {
+              totalsRowsHtml +=
+                '<tr><td colspan="7" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
+                "Descuentos aplicados: " + Math.round(pePct) + "% en el plan mensual (" + vigenciaDescuentoCorto() + ")" +
+                "</td></tr>" +
+                '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:4px;line-height:1.5">' +
+                escapeHtml(vigenciaDescuentoTexto()) +
+                "</td></tr>";
+            }
+            if (peMensual > 0) {
+              totalsRowsHtml +=
+                '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
+                "El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el primer mes de servicio. " +
+                "El <b>valor mensual</b> es referencial, seg&uacute;n los usuarios de esta cotizaci&oacute;n y sujeto a mantenerlos; se factura mensualmente desde el segundo mes y la variaci&oacute;n de usuarios activos lo ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
+                "</td></tr>";
+            }
           } else if (esCO) {
             // Colombia: totales del bloque `co` del servidor (computeTotalsCO
             // aplica IVA 19% SOLO a las líneas Afecto_IVA=true — hardware; el
@@ -3404,18 +3414,25 @@
                   fmtMXN(mx.mensualidadMxn) + " MXN/mes</strong></div>";
               }
             } else if (esPE) {
-              // Perú (21-sep, Lalo "¿estos precios están bien?"): las tarjetas
-              // caían al bloque de Chile y mostraban "$209 / $105" (IVA 19 % y
-              // la Activación sumada al plan). Van del bloque `pe` del servidor,
-              // como la tabla: monto con IGV 18 %, en soles.
+              // Perú = Chile (Lalo 21-sep): sin pagos únicos, una sola
+              // tarjeta "Plan mensual — a pagar ahora (incluye primer mes)";
+              // con pagos únicos, pago inicial + plan mensual desde el 2º mes.
               const peH = totals.pe || {};
-              chHtml =
-                '<div class="ch-item"><span>Pago inicial — a pagar ahora (incluye 1er mes)</span><strong>' +
-                fmtPEN(peH.pagoInicialPen) + "</strong></div>";
-              if (Number(peH.mensualidadPen || 0) > 0) {
-                chHtml +=
-                  '<div class="ch-item"><span>Mensualidad — desde el 2&ordm; mes (con IGV)</span><strong>' +
-                  fmtPEN(peH.mensualidadPen) + "/mes</strong></div>";
+              const peSoloRec = Number(peH.mensualidadPen || 0) > 0 && Number(peH.unicosNetoPen || 0) <= 0;
+              if (peSoloRec) {
+                chHtml =
+                  '<div class="ch-item"><span>Plan mensual — a pagar ahora (incluye primer mes)</span><strong>' +
+                  fmtPEN(peH.pagoInicialPen) + "/mes</strong></div>";
+              } else {
+                chHtml =
+                  '<div class="ch-item"><span>' +
+                  (Number(peH.mensualidadPen || 0) > 0 ? "Pago inicial — a pagar ahora (incluye 1er mes)" : "Pago total — a pagar ahora (sin mensualidad)") +
+                  "</span><strong>" + fmtPEN(peH.pagoInicialPen) + "</strong></div>";
+                if (Number(peH.mensualidadPen || 0) > 0) {
+                  chHtml +=
+                    '<div class="ch-item"><span>Plan mensual — desde el 2&ordm; mes (referencial)</span><strong>' +
+                    fmtPEN(peH.mensualidadPen) + "/mes</strong></div>";
+                }
               }
             } else if (esCO) {
               // Colombia: pago inicial y mensualidad ya vienen con el IVA del
@@ -3471,7 +3488,7 @@
               : esCO
                 ? "* Valores en pesos colombianos (COP)."
                 : esPE
-                  ? "* Valores en soles (PEN). Los montos netos no incluyen IGV (18 %), que se agrega donde se indica."
+                  ? "* Valores en soles (PEN). El cobro se realiza en soles; el IGV (18 %) se agrega donde se indica."
                   : formatCLPReferenceNote(q, data.totals || {});
           }
 
