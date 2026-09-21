@@ -1945,9 +1945,9 @@
           const conRecargo = paisPg !== "co" && paisPg !== "pe" && pct > 0 && oneShot > umbral;
           const recargoClp = conRecargo ? Math.round((oneShot * pct) / 100) : 0;
           const totalTarjeta = oneShot + recargoClp;
-          // PE con transferencia desde el 15-sep (cuenta BBVA de GEOVICTORIA
-          // PERU S.A.C., datos de Lalo); CO sigue solo con tarjeta.
-          const soloTarjeta = paisPg === "co";
+          // PE con transferencia desde el 15-sep (BBVA) y CO desde el 21-sep
+          // (Bancolombia, filas que manda el servidor en transfer.cuenta).
+          const soloTarjeta = false;
           const t = st.transfer || {};
           const cotRef = String(t.quoteNumber || (st.quote && st.quote.name) || "").trim();
           const waPhone = String(t.whatsappPhone || "").replace(/[^\d]/g, "");
@@ -1985,7 +1985,12 @@
           const transferHtml =
             '<h3 style="margin:0 0 8px;font-size:16px;color:#0f2b47">Datos para transferencia</h3>' +
             '<ul style="list-style:none;margin:0 0 10px;padding:0;font-size:13.5px">' +
-            (paisPg === "pe"
+            (Array.isArray(t.cuenta) && t.cuenta.length
+              ? t.cuenta.map(function (r) {
+                  return '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">' +
+                    String(r.label || "").replace(/</g, "&lt;") + "</span><strong>" + String(r.value || "").replace(/</g, "&lt;") + "</strong></li>";
+                }).join("")
+              : paisPg === "pe"
               ? '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Beneficiario</span><strong>GEOVICTORIA PERU S.A.C.</strong></li>' +
                 '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">RUC</span><strong>20605842055</strong></li>' +
                 '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef2f7"><span style="color:#6b7280">Banco</span><strong>BBVA</strong></li>' +

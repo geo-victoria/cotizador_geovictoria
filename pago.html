@@ -390,20 +390,18 @@
               "se calcula sobre los usuarios de la cotización y varía según los usuarios activos de cada período." +
               "</p>"
             : "";
-          // CO: SOLO tarjeta — no hay cuenta bancaria CO configurada todavía
-          // (pendiente de negocio, COLOMBIA.md). JAMÁS mostrar los datos de
+          // CO: transferencia habilitada el 21-sep (Bancolombia, filas desde el
+          // servidor: state.transfer.cuenta). JAMÁS mostrar los datos de
           // transferencia chilenos (Victoria S.A / Banco de Chile) a un cliente CO.
           // PE: SOLO tarjeta vía MP Perú — no hay cuenta bancaria PE
           // configurada para transferencias; JAMÁS mostrar los datos chilenos.
           // PE (15-sep, datos bancarios de Lalo): transferencia habilitada con la
           // cuenta BBVA de GEOVICTORIA PERU S.A.C. (transferPanelHtml la elige
           // por país). CO sigue solo con tarjeta.
-          var methodsHtml = esCO
-            ? '<div id="payMethods">' +
-              '<button class="btn" id="payCardBtn">Pagar con tarjeta ' + fmtMonto(a.oneShotClp) + "</button>" +
-              '<p class="pay-note">El pago con tarjeta es inmediato y seguro. Todo lo gestiona Mercado Pago.</p>' +
-              "</div>"
-            : (function () {
+          // CO con transferencia desde el 21-sep (Bancolombia, Lalo): mismo
+          // selector tarjeta/transferencia que CL y PE (el recargo del 3 % es
+          // solo CL: state.recargo trae pct 0 en CO/PE).
+          var methodsHtml = (function () {
                 // Recargo tarjeta sobre el umbral (Rodrigo 17-ago: $200.000;
                 // antes $100.000). La regla YA NO se espeja hardcodeada: viene
                 // del servidor en /api/payments/status (state.recargo, misma
@@ -511,7 +509,12 @@
           // (GEOVICTORIA PERU S.A.C. / BBVA, datos de Lalo 15-sep). JAMÁS los
           // chilenos a un cliente peruano.
           var esPEt = paisPago === "pe";
-          var filasCuenta = esPEt
+          var tCuenta = (state && state.transfer && state.transfer.cuenta) || [];
+          var filasCuenta = Array.isArray(tCuenta) && tCuenta.length
+            ? tCuenta.map(function (r) {
+                return "<li><span>" + String(r.label || "").replace(/</g, "&lt;") + "</span><strong>" + String(r.value || "").replace(/</g, "&lt;") + "</strong></li>";
+              }).join("")
+            : esPEt
             ? "<li><span>Beneficiario</span><strong>GEOVICTORIA PERU S.A.C.</strong></li>" +
               "<li><span>RUC</span><strong>20605842055</strong></li>" +
               "<li><span>Banco</span><strong>BBVA</strong></li>" +
@@ -527,7 +530,7 @@
             ? '<a class="btn" id="transferWaBtn" href="' + waLink +
               '" target="_blank" rel="noopener noreferrer" onclick="pfPing(&quot;transfer_wsp_click&quot;)">Enviar comprobante por WhatsApp</a>'
             : '<p class="transfer-help">Env&iacute;ale el comprobante a Vicky por WhatsApp ' +
-              (esPEt ? "(+51 922 067 167)" : "(+56 9 6730 8227)") + " para procesar tu pedido.</p>";
+              (esPEt ? "(+51 922 067 167)" : paisPago === "co" ? "(+57 318 107 0737)" : "(+56 9 6730 8227)") + " para procesar tu pedido.</p>";
           return (
             '<div id="transferPanel" class="transfer-panel hidden">' +
             '<div class="transfer-title">Datos para transferencia</div>' +

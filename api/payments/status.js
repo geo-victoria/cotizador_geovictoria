@@ -27,6 +27,25 @@ function normalizeWhatsappPhone(value) {
 // pero el usuario "Vicky GeoVictoria" no tiene teléfono, así que el botón de
 // WhatsApp jamás aparecía y el cliente quedaba con un texto vago.
 const VICKY_WHATSAPP_PHONE = toText(process.env.VICKY_WHATSAPP_PHONE || "56967308227");
+// Líneas de Vicky por país para el botón "Enviar comprobante por WhatsApp":
+// el comprobante peruano/colombiano va a SU línea, no a la chilena.
+const VICKY_WHATSAPP_PHONE_PE = toText(process.env.VICKY_WHATSAPP_PHONE_PE || "51922067167");
+const VICKY_WHATSAPP_PHONE_CO = toText(process.env.VICKY_WHATSAPP_PHONE_CO || "573181070737");
+
+// Datos bancarios de COLOMBIA para el modal de transferencia (Lalo 21-sep,
+// "permitamos transferencias en Colombia"; certificado Bancolombia 01-06-2026:
+// GEOVICTORIA COLOMBIA SAS, NIT 901367959, cuenta de ahorros 20200000237).
+// Env-driven para poder cambiar la cuenta sin deploy. CL y PE siguen con los
+// datos escritos en las páginas (se migran acá cuando toque tocarlos).
+function cuentaTransferenciaPorPais(pais) {
+  if (pais !== "co") return [];
+  return [
+    { label: "Titular", value: toText(process.env.TRANSFER_CO_TITULAR || "GEOVICTORIA COLOMBIA SAS") },
+    { label: "NIT", value: toText(process.env.TRANSFER_CO_NIT || "901.367.959-1") },
+    { label: "Banco", value: toText(process.env.TRANSFER_CO_BANCO || "Bancolombia") },
+    { label: toText(process.env.TRANSFER_CO_TIPO_CUENTA || "Cuenta de ahorros"), value: toText(process.env.TRANSFER_CO_CUENTA || "20200000237") },
+  ];
+}
 
 // Correo de la fila "Email" en los datos de transferencia (Lalo 18-ago, dos
 // vueltas): vicky@ confundía (el cliente creía que el comprobante iba por
@@ -95,10 +114,12 @@ async function telefonoUsuario(userId) {
 // banco) y el registro automático le manda el correo de PAGADA. Rollback sin
 // deploy: env TRANSFER_RECEIPT_TO_OWNER=1 vuelve a mandar el botón al dueño.
 const RECEIPT_TO_OWNER = /^(1|true|on)$/i.test(toText(process.env.TRANSFER_RECEIPT_TO_OWNER));
-async function buildTransferInfo(quote) {
+async function buildTransferInfo(quote, pais = "cl") {
   const dueno = await propietarioHumano(quote).catch(() => null);
   let executiveName = "Vicky";
-  let whatsappPhone = normalizeWhatsappPhone(VICKY_WHATSAPP_PHONE);
+  let whatsappPhone = normalizeWhatsappPhone(
+    pais === "pe" ? VICKY_WHATSAPP_PHONE_PE : pais === "co" ? VICKY_WHATSAPP_PHONE_CO : VICKY_WHATSAPP_PHONE,
+  );
   // Nombre del ejecutivo para el texto ("tu ejecutivo X recibe el aviso").
   const ejecutivoNombre = dueno ? toText(dueno.name).split(" ")[0] : "";
   if (RECEIPT_TO_OWNER && dueno && dueno.id) {
@@ -114,6 +135,9 @@ async function buildTransferInfo(quote) {
     ejecutivoNombre,
     transferEmail: RECEIPT_TO_OWNER && dueno && dueno.email ? dueno.email : TRANSFER_CONTACT_EMAIL,
     quoteNumber: toText(quote?.Numero_Cotizacion),
+    pais,
+    // Filas de la cuenta bancaria del país (hoy solo CO viene del servidor).
+    cuenta: cuentaTransferenciaPorPais(pais),
   };
 }
 
@@ -175,11 +199,11 @@ export default async function handler(req, res) {
     // Solo se necesita el bloque de transferencia cuando el cliente aun debe
     // pagar (es el estado en que pago.html muestra el selector de metodo). En
     // los demas estados se omite el fetch del ejecutivo para no recargar el poll.
-    // CO: sin transferencia (aún no hay cuenta bancaria CO; pago.html solo
-    // ofrece tarjeta) → se omite también el fetch del ejecutivo.
+    // CO con transferencia desde el 21-sep (Bancolombia, decisión Lalo): los
+    // tres países muestran el bloque.
     const transfer =
-      hasOneShot && !oneShotApproved && pais !== "co"
-        ? await buildTransferInfo(quote)
+      hasOneShot && !oneShotApproved
+        ? await buildTransferInfo(quote, pais)
         : { executiveName: "", whatsappPhone: "", quoteNumber: "" };
 
     let onboardingUrl = toText(quote?.[acceptanceConfig.quoteOnboardingUrlField]);
