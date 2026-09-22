@@ -49,6 +49,7 @@ const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono } = require("../_shared/idempotencia");
 const { sendQuoteEmailViaZoho, buildEmailHtml } = require("./create-from-vicky");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
+const { linkCortoDeCotizacion } = require("../_shared/codigo-corto");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
@@ -505,6 +506,7 @@ module.exports = async function handler(req, res) {
         quoteId: previoIdem.quoteId, dealId: previoIdem.dealId || "",
         accountId: previoIdem.accountId || "", contactId: previoIdem.contactId || "",
         acceptanceUrl: acceptanceUrlIdem,
+        linkCorto: linkCortoDeCotizacion(previoIdem.quoteId, config.baseUrl),
         pdfUrl: "", pdfPendiente: true,
         reuse: { retryIdempotente: true },
         expiresAt: new Date(expMsIdem).toISOString(),
@@ -750,6 +752,7 @@ module.exports = async function handler(req, res) {
       ok: true,
       quoteId, dealId, accountId, contactId,
       acceptanceUrl,
+      linkCorto: linkCortoDeCotizacion(quoteId, config.baseUrl),
       pdfUrl: "",
       pdfPendiente: true,
       accountReused,
