@@ -151,9 +151,16 @@ function buildProposalHtmlPE({
   const itemsVisibles = (Array.isArray(items) ? items : []).filter((it) => it && it.oculto !== true);
   const esAnual = itemsVisibles.some((it) => String(it.id || it.codigo || "").toLowerCase() === "plan_anual");
   const filas = itemsVisibles.map((item) => {
-    const subtotalLista = Math.round(Number(item.subtotalPEN || 0) * 100) / 100;
+    // LÍNEA BONIFICADA (22-sep, instalación en arriendo en Lima = regla chilena
+    // del arriendo en RM): la línea trae Descuento_Pct 100 y Subtotal 0 — se
+    // pinta la tarifa de lista TACHADA e "Incluida", como en Chile.
+    const pctLinea = Math.max(0, Math.min(100, Number(item.descuentoPct || 0)));
+    const bonificada = pctLinea >= 100;
+    const subtotalLista = bonificada
+      ? Math.round(Number(item.precioUnitarioPEN || 0) * Number(item.cantidad || 1) * 100) / 100
+      : Math.round(Number(item.subtotalPEN || 0) * 100) / 100;
     const conDcto = pctPlan > 0 && item.esRecurrente === true && esFilaPlan(item);
-    const subtotal = conDcto ? Math.round(subtotalLista * (1 - pctPlan / 100) * 100) / 100 : subtotalLista;
+    const subtotal = bonificada ? 0 : conDcto ? Math.round(subtotalLista * (1 - pctPlan / 100) * 100) / 100 : subtotalLista;
     if (conDcto) descuentoPlanNeto += subtotalLista - subtotal;
     const afectoIgv = item.afectoIgv !== false; // en PE todo es afecto salvo excepción explícita
     return {
@@ -165,6 +172,7 @@ function buildProposalHtmlPE({
       subtotal,
       subtotalLista,
       conDcto,
+      bonificada,
       igv: afectoIgv ? Math.round(subtotal * IGV_PE * 100) / 100 : 0,
       recurrente: item.esRecurrente === true,
       esActivacion: esItemActivacion(item),
@@ -192,7 +200,7 @@ function buildProposalHtmlPE({
     `<td class="c-desc">${f.desc}${f.conDcto ? ` Incluye ${pctPlan} % de descuento durante ${mesesDcto} meses (precio de lista ${formatPEN(f.subtotalLista)}/mes).` : ""}</td>` +
     `<td class="c-num">${formatPEN(f.puPEN)}</td>` +
     `<td class="c-num">${f.cant}</td>` +
-    `<td class="c-num c-tot">${f.conDcto ? `<s style="color:#888">${formatPEN(f.subtotalLista)}</s> ` : ""}${formatPEN(f.subtotal)}</td>` +
+    `<td class="c-num c-tot">${f.bonificada ? `<s style="color:#888">${formatPEN(f.subtotalLista)}</s> <b style="color:#0f9d58">Incluida</b>` : `${f.conDcto ? `<s style="color:#888">${formatPEN(f.subtotalLista)}</s> ` : ""}${formatPEN(f.subtotal)}`}</td>` +
     `</tr>`;
   // PATRÓN CHILE (21-sep): sin fila de Activación. El pago inicial = únicos +
   // primer mes de los recurrentes (ya con el descuento del plan). Una fila

@@ -112,12 +112,16 @@ function subformAItemsPais(pais, quote, config) {
         cantidad: Number(row?.Cantidad || 0),
         esRecurrente: row?.Es_Recurrente === true,
       };
+      // Descuento por línea (bonificada = 100): el PDF regenerado lo necesita
+      // para tachar la lista en vez de mostrar un S/0 pelado.
+      const descuentoPct = Number(row?.Descuento_Pct || 0);
       if (pais === "pe") {
         return {
           ...base,
           precioUnitarioPEN: r2(row?.Precio_Unitario_UF),
           subtotalPEN: r2(row?.Subtotal_UF),
           afectoIgv: row?.Afecto_IVA === true,
+          ...(descuentoPct > 0 ? { descuentoPct } : {}),
         };
       }
       return {
