@@ -44,9 +44,42 @@ const NOTIFY_CC_PAGADA_CL = (process.env.QUOTE_NOTIFY_CC_PAGADA || "aaraque@geov
 // robot pero SÍ cuentan — son el chat real del vendedor (título "(espejo").
 const USUARIOS_ROBOT_NOTAS = new Set(["3525045000484500876", "3525045000000200013"]);
 
-/** ¿El ejecutivo HIZO algo en el deal? (Lalo 24-ago) — alguna nota humana o
- * la nota-espejo de su WhatsApp. MISMO criterio que usa el agente para
- * decidir si el deal vuelve al dueño de ventas autónomas en el post-pago. */
+/** ROSTER DE TELEMARKETING (Lalo 10-sep, "asistida = actividad del equipo de
+ * telemarketing; Aleydis y Aracelli son SDR y hacen postventa"): los únicos
+ * cuya actividad hace ASISTIDA una venta. Misma lista que lib/gestion-venta.ts
+ * del agente (ids verificados en Zoho el 10-sep); override sin deploy con env
+ * QUOTE_NOTIFY_TLMK_ROSTER en formato "email:zohoId:Nombre,...". La sesión de
+ * espejo es la parte local del correo (emujica, alopez, …). */
+const ROSTER_TLMK_DEFAULT = [
+  "emujica@geovictoria.com:3525045000000211283:Eddyluz Mujica",
+  "adiazg@geovictoria.com:3525045000426432190:Anderson Díaz",
+  "tmartinezq@geovictoria.com:3525045000223766001:Tamara Martínez",
+  "alopez@geovictoria.com:3525045000126464001:Ana Paula López",
+  "pdiaz@geovictoria.com:3525045000000211651:Paola Díaz",
+  "dgalvez@geovictoria.com:3525045000124240013:Daniela Gálvez",
+  "gmelendez@geovictoria.com:3525045000146108001:Grey Meléndez",
+].join(",");
+function rosterTlmk() {
+  return (process.env.QUOTE_NOTIFY_TLMK_ROSTER || ROSTER_TLMK_DEFAULT)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      const [email, id, ...nombre] = s.split(":");
+      return { email: toText(email).toLowerCase(), id: toText(id), nombre: nombre.join(":").trim(), sesion: toText(email).toLowerCase().split("@")[0] };
+    })
+    .filter((r) => r.email && r.id);
+}
+function sinTildes(s) {
+  return toText(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/** ¿El ejecutivo de TELEMARKETING hizo algo en el deal? (Lalo 24-ago; criterio
+ * angostado el 22-sep al MISMO del dash, caso Eq cells COT1596: el correo
+ * salió "ASISTIDA" por un "Holaaa / En qué le puedo ayudar?" de una SDR en el
+ * espejo mientras la venta la cerró Vicky entera). Cuenta: nota escrita por
+ * alguien del roster, o nota-espejo cuyo título nombra a alguien del roster
+ * (sesión o nombre). SDR, implementadores, marketing y el robot NO cuentan. */
 async function hayGestionEjecutivoEnDeal(dealId) {
   try {
     if (!dealId) return false;
@@ -55,10 +88,16 @@ async function hayGestionEjecutivoEnDeal(dealId) {
     );
     if (!r.ok || r.status === 204) return false;
     const notas = ((await r.json().catch(() => ({})))?.data) || [];
+    const roster = rosterTlmk();
+    const ids = new Set(roster.map((x) => x.id));
     return notas.some((n) => {
-      if (/\(espejo/i.test(toText(n?.Note_Title))) return true;
+      const titulo = toText(n?.Note_Title);
+      if (/\(espejo/i.test(titulo)) {
+        const t = sinTildes(titulo);
+        return roster.some((x) => t.includes(x.sesion) || (x.nombre && t.includes(sinTildes(x.nombre))));
+      }
       const autor = toText(n?.Created_By?.id);
-      return Boolean(autor) && !USUARIOS_ROBOT_NOTAS.has(autor);
+      return Boolean(autor) && ids.has(autor) && !USUARIOS_ROBOT_NOTAS.has(autor);
     });
   } catch (_e) {
     return false;
