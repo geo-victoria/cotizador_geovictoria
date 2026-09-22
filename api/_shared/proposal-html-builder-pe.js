@@ -260,7 +260,7 @@ function buildProposalHtmlPE({
     "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único más el primer mes del servicio, cobrado por adelantado. La mensualidad se factura desde el 2.º mes.",
     "Valores netos en soles (PEN); a todos los conceptos se les aplica IGV (18 %).",
     "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
-    "Envío del reloj sin costo en Lima Metropolitana; a provincia corre por cuenta del cliente (lo usual es la entrega en Lima). La instalación con visita técnica se coordina con nuestro servicio técnico y puede tener costo según el distrito (tarifario oficial por zonas, en dólares + IGV, facturado aparte por servicio técnico); la auto-instalación no tiene costo.",
+    "Envío del reloj: incluido en arriendo; en venta es sin costo en Lima Metropolitana y tiene un valor fijo por equipo a provincia, indicado en esta cotización. Instalación: la auto-instalación no tiene costo; la visita técnica es opcional, se cotiza como pago único según la zona (Lima Metropolitana / ciudades intermedias / resto del país) y va incluida sin costo en arriendo dentro de Lima Metropolitana.",
     "Para los equipos en modalidad arriendo: el servicio incluye mantención y reposición por falla técnica; los equipos son propiedad de GeoVictoria y deben devolverse al término del servicio.",
     "Sin cláusula de permanencia: usted puede terminar el servicio avisando con 30 días de anticipación.",
     "Los equipos en modalidad venta incluyen garantía de fábrica de 1 año bajo uso normal.",

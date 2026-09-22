@@ -340,6 +340,7 @@ function buildProposalHtmlCO({
     "Valores en pesos colombianos (COP).",
     "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
     "Para los equipos en modalidad arriendo: el servicio incluye mantención y reposición por falla técnica; los equipos son propiedad de GeoVictoria y deben devolverse al término del servicio.",
+    "Envío del equipo: incluido en alquiler; en venta se cobra por equipo según la zona (Bogotá y municipios aledaños / resto del país), indicado en esta cotización. Instalación: la auto-instalación no tiene costo; la visita técnica es opcional, se cotiza como pago único según la zona y va incluida sin costo en alquiler dentro de Bogotá y sus municipios aledaños.",
     "Sin cláusula de permanencia: usted puede terminar el servicio avisando con 30 días de anticipación.",
     "Los equipos en modalidad venta incluyen garantía de fábrica de 1 año bajo uso normal.",
     "Incluye sin costo: soporte de lunes a viernes de 8:30 a 18:30, capacitación inicial, actualizaciones, app móvil y portal del colaborador.",
