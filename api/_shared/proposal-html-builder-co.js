@@ -202,7 +202,12 @@ function buildProposalHtmlCO({
   const itemsVisibles = (Array.isArray(items) ? items : []).filter((it) => it && it.oculto !== true);
   const esAnual = itemsVisibles.some((it) => String(it.id || it.codigo || "").toLowerCase() === "plan_anual");
   const filas = itemsVisibles.map((item) => {
-    const subtotalLista = Math.round(Number(item.subtotalCOP || 0));
+    // LÍNEA BONIFICADA (22-sep, instalación técnica en alquiler en Bogotá =
+    // regla chilena del arriendo en RM): Descuento_Pct 100 y subtotal 0 → se
+    // pinta la lista TACHADA con el badge −100 %, como la capacitación.
+    const pctLinea = Math.max(0, Math.min(100, Number(item.descuentoPct || 0)));
+    const brutoLinea = pctLinea > 0 ? Math.round(Number(item.precioUnitarioCOP || 0) * Number(item.cantidad || 1)) : 0;
+    const subtotalLista = pctLinea >= 100 ? 0 : Math.round(Number(item.subtotalCOP || 0));
     const esActivacion = esItemActivacion(item);
     // El plan y la Activación (= primer mes del plan) llevan el descuento.
     const conDcto = pctPlan > 0 && (esActivacion || (item.esRecurrente === true && esFilaPlan(item)));
@@ -221,7 +226,8 @@ function buildProposalHtmlCO({
       iva: afectoIva ? Math.round(subtotal * IVA_CO) : 0,
       afectoIva,
       recurrente: item.esRecurrente === true,
-      descLineaPct: 0,
+      descLineaPct: pctLinea,
+      subtotalBruto: brutoLinea,
       esActivacion,
     };
   });

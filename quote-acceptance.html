@@ -3143,6 +3143,15 @@
               // finales. Sin descuentos en v1.
               const montoCop = Number(row.subtotalClp || 0);
               const marcaIva = row.afectoIva === true ? " + IVA" : "";
+              // Línea bonificada (22-sep: instalación técnica en alquiler en
+              // Bogotá): Descuento_Pct 100 y subtotal 0 → lista tachada + "Incluida".
+              let subCopCell = fmtCOP(montoCop) + marcaIva;
+              if (esLineaBonificada(row)) {
+                const listaCop = Number(row.precioUnitarioClp || 0) * Number(row.cantidad || 0);
+                subCopCell =
+                  '<span style="text-decoration:line-through;color:#9ca3af">' +
+                  fmtCOP(listaCop) + '</span> <b style="color:#0f9d58">Incluida</b>';
+              }
               return (
                 "<tr>" +
                 "<td>" + (row.nombre || "-") + "</td>" +
@@ -3150,7 +3159,7 @@
                 "<td>" + normalizeModalidadLabel(row) + "</td>" +
                 "<td>" + Number(row.cantidad || 0) + "</td>" +
                 "<td>" + fmtCOP(row.precioUnitarioClp) + "</td>" +
-                "<td>" + fmtCOP(montoCop) + marcaIva + "</td>" +
+                "<td>" + subCopCell + "</td>" +
                 "</tr>"
               );
             }

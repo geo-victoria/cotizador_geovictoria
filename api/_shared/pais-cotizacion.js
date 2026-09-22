@@ -129,6 +129,7 @@ function subformAItemsPais(pais, quote, config) {
         precioUnitarioCOP: Math.round(Number(row?.Precio_Unitario_UF || 0)),
         subtotalCOP: Math.round(Number(row?.Subtotal_UF || 0)),
         afectoIva: row?.Afecto_IVA === true,
+        ...(descuentoPct > 0 ? { descuentoPct } : {}),
       };
     });
 }
