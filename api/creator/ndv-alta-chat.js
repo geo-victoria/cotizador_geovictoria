@@ -147,6 +147,26 @@ async function diagnosticoEspejo(cfg, cot, quote, config) {
   if (emitida && nacido && nacido < emitida - 3 * 60 * 1000) motivos.push("espejo anterior a la última emisión");
   const bloques = await bloquesHardwareDe(cfg, texto(cot.ID));
   const items = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
+  // (c) LOS ÍTEMS CAMBIARON DESPUÉS DE NACER EL ESPEJO (Chester Beer / COT1539,
+  //     22-sep): la formal salió con reloj, el cliente pidió "solo app" 27 s
+  //     después y `actualizar_cotizacion` reescribió el subform — dentro de la
+  //     tolerancia de 3 min de (a), así que la NDV-32092 nació con el arriendo.
+  //     La fecha que manda es la de la ÚLTIMA edición de los ítems, no la de
+  //     la aceptación.
+  const ultimaEdicionItems = items.reduce((acc, x) => Math.max(acc, Date.parse(String(x?.Modified_Time || "")) || 0), 0);
+  if (nacido && ultimaEdicionItems && ultimaEdicionItems > nacido + 60 * 1000) {
+    motivos.push("los ítems de la cotización se editaron después de nacer el espejo");
+  }
+  // (d) EQUIPOS QUE NO CALZAN: el espejo trae un bloque con filas de equipo y
+  //     la cotización pagada no tiene hardware (o al revés). Es la comparación
+  //     de fondo; (c) es solo la señal barata.
+  const esHardwareItem = (x) =>
+    /equipo|hardware|accesorio/i.test(texto(x?.Categoria_Item)) ||
+    /senseface|reloj|kit_qr|impresora|tarjeta/i.test(texto(x?.Codigo_Item));
+  const quoteTieneEquipo = items.some(esHardwareItem);
+  const espejoTieneEquipo = bloques.some((b) => Array.isArray(b.Equipos) && b.Equipos.length > 0);
+  if (espejoTieneEquipo && !quoteTieneEquipo) motivos.push("el espejo trae equipo y la cotización pagada no");
+  if (!espejoTieneEquipo && quoteTieneEquipo) motivos.push("la cotización pagada trae equipo y el espejo no");
   const envioBonificado = items.some(
     (x) => /envio/i.test(texto(x?.Codigo_Item)) && Number(x?.Descuento_Pct) >= 100,
   );
