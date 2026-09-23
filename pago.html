@@ -371,18 +371,18 @@
             "Pago inicial total",
             "<strong>" + fmtMonto(a.oneShotClp) + "</strong>"
           );
-          // CO: textos en usted; el pago inicial ES la Activación (equivale al
-          // primer mes cobrado por adelantado, sin línea de "primer mes" extra).
+          // CO (usted) y PE (tú) = Chile (23-sep): el pago inicial incluye los
+          // servicios iniciales y el primer mes de servicio por adelantado.
           var lead = esPE
             ? "Realiza el pago inicial, que incluye los servicios iniciales y tu primer mes de servicio por adelantado. Serás redirigido a Mercado Pago para completarlo de forma segura."
             : esCO
-            ? "Realice el pago inicial de su cotización. La Activación equivale a su primer mes de servicio, cobrado por adelantado. Será redirigido a Mercado Pago para completarlo de forma segura."
+            ? "Realice el pago inicial, que incluye los servicios iniciales y su primer mes de servicio por adelantado. Será redirigido a Mercado Pago para completarlo de forma segura."
             : hasFirstMonth
             ? "Realiza el pago inicial, que incluye los servicios iniciales y el primer mes de servicio. Seras redirigido a Mercado Pago para completarlo de forma segura."
             : "Realiza el pago unico de los servicios iniciales. Seras redirigido a Mercado Pago para completarlo de forma segura.";
           var monthlyNote = esCO || esPE
             ? '<p style="font-size:12px;color:var(--suave);margin:-4px 0 14px">' +
-              "La mensualidad del servicio se factura por separado desde el mes siguiente y varía según sus usuarios activos de cada período." +
+              "El valor mensual del servicio se factura por separado a partir del 2&ordm; mes y es referencial: se calcula sobre los usuarios de la cotización y varía según los usuarios activos de cada período." +
               "</p>"
             : hasFirstMonth
             ? '<p style="font-size:12px;color:var(--suave);margin:-4px 0 14px">' +

@@ -290,25 +290,42 @@ function buildProposalHtmlCO({
       `</tr>`
     );
   };
-  // La Activación no se tabula (ver esItemActivacion) pero SÍ queda contada
-  // en uniNeto: la caja "Pago inicial" la cobra igual, como en Chile.
+  // PATRÓN CHILE (23-sep, igual que PE el 21-sep): sin fila de Activación.
+  // El pago inicial = únicos + primer mes de los recurrentes (ya con el
+  // descuento del plan). Una fila "Activación" legada (cotizaciones
+  // anteriores) se trata como ese primer mes: no se tabula ni se suma dos veces.
   const filasVisibles = filas.filter((f) => !f.esActivacion);
   const rowsHtml = filasVisibles.map(rowItem).join("");
   // La fila "Subtotal" de la tabla suma los netos visibles; el IVA del
   // hardware se desglosa en la caja de totales.
   const totalTabla = filasVisibles.reduce((acc, f) => acc + f.subtotal, 0);
+  const activLegada = filas.filter((f) => f.esActivacion);
+  const soloUnicosNeto = filasVisibles.filter((f) => !f.recurrente).reduce((a, f) => a + f.subtotal, 0);
+  const soloUnicosIva = filasVisibles.filter((f) => !f.recurrente).reduce((a, f) => a + f.iva, 0);
+  const primerMesNeto = esAnual ? 0 : activLegada.length ? activLegada.reduce((a, f) => a + f.subtotal, 0) : recNeto;
+  const primerMesIva = esAnual ? 0 : activLegada.length ? activLegada.reduce((a, f) => a + f.iva, 0) : recIva;
+  const iniNeto = soloUnicosNeto + primerMesNeto;
+  const iniIva = soloUnicosIva + primerMesIva;
+  const iniTot = iniNeto + iniIva;
 
   // ── Caja de totales ──
   // El IVA aparece SOLO si hay hardware (única familia afecta).
   let totHtml = "";
-  totHtml += `<div class="tot-h">${esAnual ? "Pago anual — al aceptar (12 meses anticipados)" : "Pago inicial — al aceptar"}</div>`;
-  totHtml += `<div class="tr"><span>${esAnual ? "Plan anual y conceptos de pago único" : `Conceptos de pago único (incluye Activación${pctPlan > 0 && descuentoPlanNeto > 0 ? ", con el descuento del plan" : ""})`}</span><span>${formatCOP(uniNeto)}</span></div>`;
-  if (uniIva > 0) {
-    totHtml += `<div class="tr"><span>IVA equipos (19 %)</span><span>${formatCOP(uniIva)}</span></div>`;
+  totHtml += `<div class="tot-h">${esAnual ? "Pago anual — al aceptar (12 meses anticipados)" : "Pago inicial — al aceptar (incluye 1er mes)"}</div>`;
+  if (esAnual) {
+    totHtml += `<div class="tr"><span>Plan anual y conceptos de pago único</span><span>${formatCOP(soloUnicosNeto)}</span></div>`;
+  } else {
+    if (soloUnicosNeto > 0) {
+      totHtml += `<div class="tr"><span>Conceptos de pago único (equipos, envío e instalación)</span><span>${formatCOP(soloUnicosNeto)}</span></div>`;
+    }
+    totHtml += `<div class="tr"><span>Primer mes del servicio (adelantado${pctPlan > 0 && descuentoPlanNeto > 0 ? ", con el descuento del plan" : ""})</span><span>${formatCOP(primerMesNeto)}</span></div>`;
   }
-  totHtml += `<div class="tr grand"><span>Total a pagar ahora</span><span>${formatCOP(uniTot)}</span></div>`;
+  if (iniIva > 0) {
+    totHtml += `<div class="tr"><span>IVA equipos (19 %)</span><span>${formatCOP(iniIva)}</span></div>`;
+  }
+  totHtml += `<div class="tr grand"><span>Total a pagar ahora</span><span>${formatCOP(iniTot)}</span></div>`;
   if (recTot > 0) {
-    totHtml += `<div class="tot-h" style="margin-top:6px">Mensualidad — desde el mes siguiente</div>`;
+    totHtml += `<div class="tot-h" style="margin-top:6px">Mensualidad — desde el 2.º mes</div>`;
     if (recIva > 0) {
       totHtml += `<div class="tr"><span>Servicio y equipos</span><span>${formatCOP(recNeto)}</span></div>`;
       totHtml += `<div class="tr"><span>IVA equipos (19 %)</span><span>${formatCOP(recIva)}</span></div>`;
@@ -324,9 +341,8 @@ function buildProposalHtmlCO({
       `El <b>Pago anual</b> se cobra al aceptar y cubre los 12 meses del servicio por adelantado${pctPlan > 0 ? ` (incluye el ${pctPlan} % de descuento del plan aplicado a la anualidad)` : ""}; no hay mensualidades del plan durante el a&ntilde;o.` +
       `</div>`
     : `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
-      `El <b>Pago inicial</b> se cobra al aceptar y corresponde a los conceptos de pago &uacute;nico; ` +
-      `la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado. ` +
-      `La <b>mensualidad</b> se factura desde el mes siguiente; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente.` +
+      `El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el primer mes del servicio, cobrado por adelantado${pctPlan > 0 && descuentoPlanNeto > 0 ? " (ya con el descuento del plan)" : ""}. ` +
+      `La <b>mensualidad</b> se factura desde el 2.&ordm; mes; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente.` +
       `</div>`;
 
   const ctaHref = escapeHtml(acceptanceUrl || "#");
@@ -336,7 +352,7 @@ function buildProposalHtmlCO({
   // Precios finales (10-jul): el bullet tributario se reemplazó por la moneda
   // a secas — cero menciones a IVA en el texto al cliente.
   const TYC_CO = [
-    "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único e incluye la Activación, equivalente al primer mes de servicio cobrado por adelantado. La mensualidad se factura desde el mes siguiente.",
+    "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único más el primer mes del servicio, cobrado por adelantado. La mensualidad se factura desde el 2.º mes.",
     "Valores en pesos colombianos (COP).",
     "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
     "Para los equipos en modalidad arriendo: el servicio incluye mantención y reposición por falla técnica; los equipos son propiedad de GeoVictoria y deben devolverse al término del servicio.",

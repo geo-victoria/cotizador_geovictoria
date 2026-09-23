@@ -238,81 +238,190 @@ function esFilaPlanCO(row) {
 }
 
 /**
- * Totales COLOMBIA. `descuentos.recurrentePct` (Descuento_Recurrente_Pct de la
- * cotización, escalera chilena 10 → 20 %, decisión Lalo 21-sep "permitamos
- * descuento en Colombia igual que en Chile") rebaja SOLO el plan: la fila del
- * plan mensual y la Activación (que ES el primer mes del plan). El alquiler
- * del equipo, el envío y la instalación van a lista. Sin descuento la salida
- * es idéntica a la de siempre.
+ * ¿La fila (forma AGENTE: {tipo,id,nombre}) es la "Activación"? Compartido por
+ * los endpoints de emisión y buildSubformItemsPais de todos los países.
  */
-function computeTotalsCO(items, descuentos) {
+function esItemActivacion(item) {
+  const tipo = String(item?.tipo || "").toLowerCase();
+  const id = String(item?.id || item?.codigo || "").toLowerCase();
+  const nombre = String(item?.nombre || "").toLowerCase();
+  return tipo === "activacion" || /activaci/.test(id) || /activaci/.test(nombre);
+}
+
+/**
+ * PATRÓN CHILE (Lalo 21-sep PE, 23-sep CO: "quita la activación, toma como
+ * ejemplo cómo se arma la aceptación online en Chile"): NINGUNA cotización
+ * lleva fila de Activación. El primer mes adelantado lo calcula
+ * computeTotalsPais desde las filas recurrentes (con el descuento del plan),
+ * igual que computePaymentAmounts en CL con includeFirstMonth. Si un agente
+ * viejo todavía manda la fila, se descarta acá para que Zoho, el PDF y la
+ * aceptación no la muestren como "Equipo / Venta" (caso Rodrigo 23-sep).
+ */
+function quitarFilaActivacion(items, etiqueta) {
+  const lista = Array.isArray(items) ? items : [];
+  const sin = lista.filter((it) => !esItemActivacion(it));
+  if (sin.length !== lista.length) {
+    console.warn(`[${etiqueta || "quote-pricing"}] fila de Activación descartada: el primer mes lo calcula el cotizador (patrón CL).`);
+  }
+  return sin;
+}
+
+/**
+ * TOTALES POR PAÍS — UNA sola función para PE y CO (Lalo 23-sep: "en la
+ * cotizadora también hay que eliminar las brechas por país"). Chile sigue en
+ * computePaymentAmounts (UF/CLP con conversión); acá la unidad de pricing es
+ * la moneda del país y el subform la guarda en los campos *_CLP.
+ *
+ *   · `descuentos.recurrentePct` (Descuento_Recurrente_Pct, escalera 10 → 20 %)
+ *     rebaja SOLO las filas del plan (`cfg.esFilaPlan`); arriendos, envío e
+ *     instalación van a lista.
+ *   · Pago inicial = pagos ÚNICOS + PRIMER MES de los recurrentes (patrón CL,
+ *     includeFirstMonth). Se devuelven los dos componentes (`unicos*`,
+ *     `primerMes*`) para que página, PDF y checkout de MP armen las mismas
+ *     dos líneas que Chile.
+ *   · LEGADO: una cotización emitida ANTES del cambio trae una fila
+ *     "Activación" que YA es el primer mes. Si existe, ella manda y no se
+ *     calcula otro (`conActivacionLegada`). En CO esa fila nació a LISTA y
+ *     recibe el descuento del plan (`activacionLegadaConDescuento`); en PE
+ *     llegaba ya rebajada por el agente.
+ *   · Impuesto POR LÍNEA según `afectoIva` (CO: solo el hardware; PE: todo).
+ *
+ * Devuelve claves NEUTRAS; los wrappers por país las sufijan (Cop/Iva, Pen/Igv)
+ * para no romper a sus consumidores.
+ */
+function computeTotalsPais(items, descuentos, cfg) {
   const rows = Array.isArray(items) ? items : [];
   const d = normalizeDescuentos(descuentos);
   const pct = Number(d.recurrentePct || 0);
   const factorPlan = pct > 0 ? 1 - pct / 100 : 1;
-  let pagoInicialNeto = 0;
-  let pagoInicialIva = 0;
-  let pagoInicialListaNeto = 0;
-  let mensualidadNeta = 0;
-  let mensualidadIva = 0;
-  let mensualidadListaNeta = 0;
+  const tasa = Number(cfg.tasa);
+  const round = cfg.round;
+  const esFilaPlan = cfg.esFilaPlan;
+  const esFilaActivacion = cfg.esFilaActivacion;
+  const legadaConDcto = cfg.activacionLegadaConDescuento === true;
+
+  let unicosNeto = 0, unicosImp = 0, unicosListaNeto = 0;
+  let mensualidadNeta = 0, mensualidadImp = 0, mensualidadListaNeta = 0, mensualidadListaImp = 0;
   let descuentoPlanNeto = 0;
+  let activacionLegadaNeto = 0, activacionLegadaImp = 0, activacionLegadaListaNeto = 0;
+  let conActivacionLegada = false;
 
   rows.forEach((row) => {
     const montoLista = toNumber(row?.subtotalClp);
     const afecto = row?.afectoIva === true;
     if (isRecurrentModalidad(row?.modalidad)) {
-      const monto = esFilaPlanCO(row) ? montoLista * factorPlan : montoLista;
+      const monto = esFilaPlan(row) ? montoLista * factorPlan : montoLista;
       mensualidadListaNeta += montoLista;
+      mensualidadListaImp += afecto ? montoLista * tasa : 0;
       descuentoPlanNeto += montoLista - monto;
       mensualidadNeta += monto;
-      mensualidadIva += afecto ? monto * IVA_RATE : 0;
+      mensualidadImp += afecto ? monto * tasa : 0;
+    } else if (esFilaActivacion(row)) {
+      conActivacionLegada = true;
+      const monto = legadaConDcto ? montoLista * factorPlan : montoLista;
+      activacionLegadaListaNeto += montoLista;
+      activacionLegadaNeto += monto;
+      activacionLegadaImp += afecto ? monto * tasa : 0;
     } else {
-      const monto = esFilaActivacionCO(row) ? montoLista * factorPlan : montoLista;
-      pagoInicialListaNeto += montoLista;
-      pagoInicialNeto += monto;
-      pagoInicialIva += afecto ? monto * IVA_RATE : 0;
+      unicosListaNeto += montoLista;
+      unicosNeto += montoLista;
+      unicosImp += afecto ? montoLista * tasa : 0;
     }
   });
 
+  const primerMesNeto = conActivacionLegada ? activacionLegadaNeto : mensualidadNeta;
+  const primerMesImp = conActivacionLegada ? activacionLegadaImp : mensualidadImp;
+  const primerMesListaNeto = conActivacionLegada ? activacionLegadaListaNeto : mensualidadListaNeta;
+  const pagoInicialNeto = unicosNeto + primerMesNeto;
+  const pagoInicialImp = unicosImp + primerMesImp;
+
   return {
-    pagoInicialNetoCop: Math.round(pagoInicialNeto),
-    pagoInicialIvaCop: Math.round(pagoInicialIva),
-    pagoInicialCop: Math.round(pagoInicialNeto + pagoInicialIva),
-    mensualidadNetaCop: Math.round(mensualidadNeta),
-    mensualidadIvaCop: Math.round(mensualidadIva),
-    mensualidadCop: Math.round(mensualidadNeta + mensualidadIva),
-    // Descuento del plan (escalera chilena): 0 cuando no hay.
+    pagoInicialNeto: round(pagoInicialNeto),
+    pagoInicialImp: round(pagoInicialImp),
+    pagoInicial: round(pagoInicialNeto + pagoInicialImp),
+    unicosNeto: round(unicosNeto),
+    unicosImp: round(unicosImp),
+    unicos: round(unicosNeto + unicosImp),
+    primerMesNeto: round(primerMesNeto),
+    primerMesImp: round(primerMesImp),
+    primerMes: round(primerMesNeto + primerMesImp),
+    conActivacionLegada,
+    mensualidadNeta: round(mensualidadNeta),
+    mensualidadImp: round(mensualidadImp),
+    mensualidad: round(mensualidadNeta + mensualidadImp),
     descuentoPct: pct,
-    descuentoPlanNetoCop: Math.round(descuentoPlanNeto),
-    mensualidadListaNetaCop: Math.round(mensualidadListaNeta),
-    mensualidadListaCop: Math.round(mensualidadListaNeta + mensualidadIva),
-    pagoInicialListaCop: Math.round(pagoInicialListaNeto + pagoInicialIva),
+    descuentoPlanNeto: round(descuentoPlanNeto),
+    mensualidadListaNeta: round(mensualidadListaNeta),
+    mensualidadLista: round(mensualidadListaNeta + mensualidadListaImp),
+    pagoInicialLista: round(unicosListaNeto + primerMesListaNeto + pagoInicialImp),
   };
+}
+
+/** Sufija las claves neutras de computeTotalsPais ("Cop"/"Iva", "Pen"/"Igv"). */
+function sufijarTotales(t, moneda, impuesto) {
+  const out = {};
+  for (const [k, v] of Object.entries(t)) {
+    if (k === "conActivacionLegada" || k === "descuentoPct") { out[k] = v; continue; }
+    out[k.replace(/Imp$/, impuesto) + moneda] = v;
+  }
+  return out;
+}
+
+/**
+ * Montos a cobrar (shape de computePaymentAmounts; los campos *Clp llevan la
+ * moneda del país). Patrón CL: oneShotItems = pagos únicos, firstMonth =
+ * primer mes de los recurrentes, oneShot = la suma. El checkout de MP arma
+ * las mismas dos líneas que en Chile.
+ */
+function paymentAmountsDesdeTotales(t, d, extra) {
+  return {
+    oneShotClp: t.pagoInicial,
+    oneShotItemsClp: t.unicos,
+    firstMonthClp: t.primerMes,
+    recurringClp: t.mensualidad,
+    includeIva: true,
+    includeFirstMonth: true,
+    descuentoPct: d.recurrentePct,
+    descuentos: d,
+    breakdown: {
+      oneShotNetClp: t.unicosNeto,
+      oneShotIvaClp: t.unicosImp,
+      firstMonthNetClp: t.primerMesNeto,
+      firstMonthIvaClp: t.primerMesImp,
+      recurringNetClp: t.mensualidadNeta,
+      recurringIvaClp: t.mensualidadImp,
+    },
+    ...extra,
+  };
+}
+
+/** Totales COLOMBIA (COP enteros, IVA 19 % solo en las filas afectas = hardware). */
+function computeTotalsCO(items, descuentos) {
+  return sufijarTotales(
+    computeTotalsPais(items, descuentos, {
+      tasa: IVA_RATE,
+      round: Math.round,
+      esFilaPlan: esFilaPlanCO,
+      esFilaActivacion: esFilaActivacionCO,
+      activacionLegadaConDescuento: true,
+    }),
+    "Cop",
+    "Iva",
+  );
 }
 
 function computePaymentAmountsCO(items, descuentos) {
   const totals = computeTotalsCO(items, descuentos);
   const d = normalizeDescuentos(descuentos);
-  return {
-    oneShotClp: totals.pagoInicialCop,
-    oneShotItemsClp: totals.pagoInicialCop,
-    firstMonthClp: 0,
-    recurringClp: totals.mensualidadCop,
-    // Compat de shape: los montos oneShot/recurring ya traen el IVA del
-    // hardware sumado (nada se agrega después); el breakdown lo desglosa.
-    includeIva: true,
-    includeFirstMonth: false,
-    descuentoPct: d.recurrentePct,
-    descuentos: d,
-    breakdown: {
-      oneShotNetClp: totals.pagoInicialNetoCop,
-      oneShotIvaClp: totals.pagoInicialIvaCop,
-      recurringNetClp: totals.mensualidadNetaCop,
-      recurringIvaClp: totals.mensualidadIvaCop,
+  return paymentAmountsDesdeTotales(
+    {
+      pagoInicial: totals.pagoInicialCop, unicos: totals.unicosCop, primerMes: totals.primerMesCop, mensualidad: totals.mensualidadCop,
+      unicosNeto: totals.unicosNetoCop, unicosImp: totals.unicosIvaCop, primerMesNeto: totals.primerMesNetoCop, primerMesImp: totals.primerMesIvaCop,
+      mensualidadNeta: totals.mensualidadNetaCop, mensualidadImp: totals.mensualidadIvaCop,
     },
-    co: totals,
-  };
+    d,
+    { co: totals },
+  );
 }
 
 function esFilaActivacionPE(row) {
@@ -333,108 +442,34 @@ function esFilaPlanPE(row) {
   return isRecurrentModalidad(modalidad) && /asistencia|plan/.test(String(row?.nombre || "").toLowerCase());
 }
 
-/**
- * Totales PERÚ. `descuentos.recurrentePct` (Descuento_Recurrente_Pct de la
- * cotización, escalera chilena 10 → 20 %) rebaja SOLO las filas del plan.
- * Pago inicial = únicos + primer mes (recurrentes ya rebajados); devuelve los
- * dos componentes por separado (`unicos*`, `primerMes*`) para que la página y
- * el PDF los muestren como Chile ("Primer mes del servicio (adelantado)").
- * Devuelve además la mensualidad de LISTA para decir "desde el mes N+1".
- */
+/** Totales PERÚ (soles a céntimos, IGV 18 % en TODAS las filas afectas = todas). */
 function computeTotalsPE(items, descuentos) {
-  const rows = Array.isArray(items) ? items : [];
-  const d = normalizeDescuentos(descuentos);
-  const pct = Number(d.recurrentePct || 0);
-  const factorPlan = pct > 0 ? 1 - pct / 100 : 1;
-  const r2 = (v) => Math.round(v * 100) / 100;
-  let unicosNeto = 0;
-  let unicosIgv = 0;
-  let mensualidadNeta = 0;
-  let mensualidadIgv = 0;
-  let mensualidadListaNeta = 0;
-  let descuentoPlanNeto = 0;
-  // Legado: cotizaciones emitidas antes del 21-sep traen una fila "Activación"
-  // que YA es el primer mes. Si existe, ella manda y no se calcula otro.
-  let activacionLegadaNeto = 0;
-  let activacionLegadaIgv = 0;
-  let conActivacionLegada = false;
-
-  rows.forEach((row) => {
-    const montoLista = toNumber(row?.subtotalClp);
-    const afecto = row?.afectoIva === true;
-    if (isRecurrentModalidad(row?.modalidad)) {
-      const monto = esFilaPlanPE(row) ? montoLista * factorPlan : montoLista;
-      mensualidadListaNeta += montoLista;
-      descuentoPlanNeto += montoLista - monto;
-      mensualidadNeta += monto;
-      mensualidadIgv += afecto ? monto * IGV_RATE_PE : 0;
-    } else if (esFilaActivacionPE(row)) {
-      conActivacionLegada = true;
-      activacionLegadaNeto += montoLista;
-      activacionLegadaIgv += afecto ? montoLista * IGV_RATE_PE : 0;
-    } else {
-      unicosNeto += montoLista;
-      unicosIgv += afecto ? montoLista * IGV_RATE_PE : 0;
-    }
-  });
-
-  const primerMesNeto = conActivacionLegada ? activacionLegadaNeto : mensualidadNeta;
-  const primerMesIgv = conActivacionLegada ? activacionLegadaIgv : mensualidadIgv;
-  const pagoInicialNeto = unicosNeto + primerMesNeto;
-  const pagoInicialIgv = unicosIgv + primerMesIgv;
-
-  return {
-    pagoInicialNetoPen: r2(pagoInicialNeto),
-    pagoInicialIgvPen: r2(pagoInicialIgv),
-    pagoInicialPen: r2(pagoInicialNeto + pagoInicialIgv),
-    // Componentes del pago inicial (patrón CL): únicos y primer mes.
-    unicosNetoPen: r2(unicosNeto),
-    unicosIgvPen: r2(unicosIgv),
-    unicosPen: r2(unicosNeto + unicosIgv),
-    primerMesNetoPen: r2(primerMesNeto),
-    primerMesIgvPen: r2(primerMesIgv),
-    primerMesPen: r2(primerMesNeto + primerMesIgv),
-    conActivacionLegada,
-    mensualidadNetaPen: r2(mensualidadNeta),
-    mensualidadIgvPen: r2(mensualidadIgv),
-    mensualidadPen: r2(mensualidadNeta + mensualidadIgv),
-    // Descuento del plan (escalera chilena): 0 cuando no hay.
-    descuentoPct: pct,
-    descuentoPlanNetoPen: r2(descuentoPlanNeto),
-    mensualidadListaNetaPen: r2(mensualidadListaNeta),
-    mensualidadListaPen: r2(mensualidadListaNeta * (1 + IGV_RATE_PE)),
-  };
+  return sufijarTotales(
+    computeTotalsPais(items, descuentos, {
+      tasa: IGV_RATE_PE,
+      round: (v) => Math.round(v * 100) / 100,
+      esFilaPlan: esFilaPlanPE,
+      esFilaActivacion: esFilaActivacionPE,
+      // La fila legada PE llegaba ya rebajada por el agente: no se toca.
+      activacionLegadaConDescuento: false,
+    }),
+    "Pen",
+    "Igv",
+  );
 }
 
-/**
- * Montos a cobrar de una cotización PERÚ, en el MISMO shape que
- * computePaymentAmounts (los campos *Clp llevan PEN, misma convención del
- * subform). Patrón CL: oneShotItems = pagos únicos, firstMonth = primer mes
- * de los recurrentes, oneShot = la suma; todo con IGV 18 % por línea afecta.
- * El checkout de MP arma las mismas dos líneas que en Chile.
- */
 function computePaymentAmountsPE(items, descuentos) {
   const totals = computeTotalsPE(items, descuentos);
   const d = normalizeDescuentos(descuentos);
-  return {
-    oneShotClp: totals.pagoInicialPen,
-    oneShotItemsClp: totals.unicosPen,
-    firstMonthClp: totals.primerMesPen,
-    recurringClp: totals.mensualidadPen,
-    includeIva: true,
-    includeFirstMonth: true,
-    descuentoPct: d.recurrentePct,
-    descuentos: d,
-    breakdown: {
-      oneShotNetClp: totals.unicosNetoPen,
-      oneShotIvaClp: totals.unicosIgvPen,
-      firstMonthNetClp: totals.primerMesNetoPen,
-      firstMonthIvaClp: totals.primerMesIgvPen,
-      recurringNetClp: totals.mensualidadNetaPen,
-      recurringIvaClp: totals.mensualidadIgvPen,
+  return paymentAmountsDesdeTotales(
+    {
+      pagoInicial: totals.pagoInicialPen, unicos: totals.unicosPen, primerMes: totals.primerMesPen, mensualidad: totals.mensualidadPen,
+      unicosNeto: totals.unicosNetoPen, unicosImp: totals.unicosIgvPen, primerMesNeto: totals.primerMesNetoPen, primerMesImp: totals.primerMesIgvPen,
+      mensualidadNeta: totals.mensualidadNetaPen, mensualidadImp: totals.mensualidadIgvPen,
     },
-    pe: totals,
-  };
+    d,
+    { pe: totals },
+  );
 }
 
 // ── MÉXICO ──────────────────────────────────────────────────────────────────
@@ -491,6 +526,9 @@ function computeTotalsMX(items) {
 module.exports = {
   esFilaPlanCO,
   esFilaActivacionCO,
+  esItemActivacion,
+  quitarFilaActivacion,
+  computeTotalsPais,
   IVA_RATE,
   IVA_RATE_MX,
   DEFAULT_FIELD_MAP,

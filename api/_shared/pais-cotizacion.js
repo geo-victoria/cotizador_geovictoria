@@ -24,7 +24,9 @@
  */
 
 const { toText } = require("./zoho-crm");
-const { sanitizeItems, computePaymentAmountsPE, computePaymentAmountsCO } = require("./quote-pricing");
+const { sanitizeItems, computePaymentAmountsPE, computePaymentAmountsCO,
+  quitarFilaActivacion,
+} = require("./quote-pricing");
 
 /**
  * País firmado en el token de la URL de aceptación: create-from-vicky-co
@@ -156,16 +158,15 @@ function validarItemsPais(pais, items) {
 }
 
 function buildSubformItemsPais(pais, items) {
+  // Sin fila de Activación en NINGÚN país (patrón CL): el primer mes lo
+  // calcula computeTotalsPais desde los recurrentes.
+  const sinActivacion = quitarFilaActivacion(items, `pais-cotizacion:${pais}`);
   if (pais === "pe") {
-    const { buildSubformItemsPE, quitarActivacionPE } = require("../quote-acceptance/create-from-vicky-pe.js");
-    return buildSubformItemsPE(quitarActivacionPE(items));
+    const { buildSubformItemsPE } = require("../quote-acceptance/create-from-vicky-pe.js");
+    return buildSubformItemsPE(sinActivacion);
   }
-  const { buildSubformItemsCO, ensureActivacion } = require("../quote-acceptance/create-from-vicky-co.js");
-  // Anualidad (Lalo 21-sep): el plan anual YA incluye el primer mes, así que
-  // no se vuelve a fabricar la fila de Activación (el plan mensual viene en
-  // 0 y oculto, y la Activación saldría en 0 de todos modos).
-  const esAnual = items.some((it) => String(it?.id || "").toLowerCase() === "plan_anual");
-  return buildSubformItemsCO(esAnual ? items : ensureActivacion(items));
+  const { buildSubformItemsCO } = require("../quote-acceptance/create-from-vicky-co.js");
+  return buildSubformItemsCO(sinActivacion);
 }
 
 // ── PDF del país ─────────────────────────────────────────────────────────

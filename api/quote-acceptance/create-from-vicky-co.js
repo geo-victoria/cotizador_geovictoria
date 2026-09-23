@@ -80,6 +80,7 @@
  *     de las líneas afectas — hardware).
  */
 
+const { quitarFilaActivacion } = require("../_shared/quote-pricing");
 const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
@@ -546,56 +547,16 @@ function mapUnidadToZoho(modalidadZoho, tipo) {
 }
 
 // ¿El item ya es la fila de Activación? (por tipo, id o nombre).
-function esItemActivacion(item) {
-  return (
-    String(item?.tipo || "").toLowerCase() === "activacion" ||
-    /activaci/i.test(String(item?.id || "")) ||
-    /activaci/i.test(String(item?.nombre || ""))
-  );
-}
 
 /**
- * Garantiza la fila de "Activación" (= 1 mes del plan, pago único).
- * Es el "pago inicial" CO — NO existe el esquema chileno de primer mes con
- * descuento. Si el agente ya la mandó, se respeta la suya. El monto es la suma
- * de los recurrentes del PLAN (tipo "plan"); los arriendos de equipos son
- * recurrentes pero no forman parte del plan.
- *
- * La fila se crea con afectoIva=false (la Activación es un mes del plan, y el
- * IVA solo aplica al hardware). El plan se identifica por TIPO, no por su flag
- * de IVA: el arriendo de reloj también es recurrente pero es hardware afecto.
+ * PATRÓN CHILE (Lalo 23-sep, caso Rodrigo: la fila "Activación" salía como
+ * "Equipo / Venta" y parecía un doble cobro): la cotización colombiana NO
+ * lleva fila de Activación. El primer mes adelantado lo calcula
+ * computeTotalsCO desde los recurrentes (con el descuento del plan). Un
+ * agente viejo que aún la mande la ve descartada acá.
  */
-function ensureActivacion(items) {
-  if (items.some(esItemActivacion)) return items;
-  const planMensualCOP = items.reduce((acc, it) => {
-    if (it.esRecurrente === true && String(it.tipo || "").toLowerCase() === "plan") {
-      return acc + Number(it.subtotalCOP || 0);
-    }
-    return acc;
-  }, 0);
-  if (!(planMensualCOP > 0)) {
-    // Sin plan mensual no hay activación que cobrar (edge: cotización solo de
-    // equipos). Se loguea para detectarlo si llegara a pasar.
-    console.warn("[create-from-vicky-co] cotización sin plan mensual: no se agrega fila de Activación.");
-    return items;
-  }
-  const monto = Math.round(planMensualCOP);
-  return [
-    ...items,
-    {
-      tipo: "activacion",
-      id: "activacion",
-      nombre: "Activación",
-      modalidad: "Cobro único",
-      cantidad: 1,
-      precioUnitarioCOP: monto,
-      subtotalCOP: monto,
-      esRecurrente: false,
-      // La Activación es un mes del plan: precio final, sin IVA (el IVA solo
-      // aplica al hardware).
-      afectoIva: false,
-    },
-  ];
+function quitarActivacionCO(items) {
+  return quitarFilaActivacion(items, "create-from-vicky-co");
 }
 
 /**
@@ -746,10 +707,10 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // La fila de Activación va SIEMPRE (pago inicial CO): en Zoho, en el PDF y
-    // en la página de aceptación, así los tres muestran los mismos números.
-    const items = ensureActivacion(body.items);
-    // Total a pagar: netos + IVA 19% de las líneas afectas (solo hardware).
+    // Sin fila de Activación (patrón CL): el primer mes adelantado lo calcula
+    // el cotizador desde los recurrentes en cada superficie.
+    const items = quitarActivacionCO(body.items);
+    // Total (informativo): netos + IVA 19% de las líneas afectas (solo hardware).
     const totalCOP = items.reduce((acc, it) => {
       const subtotal = Number(it.subtotalCOP || 0);
       return acc + subtotal + (it.afectoIva === true ? subtotal * 0.19 : 0);
@@ -1223,4 +1184,4 @@ module.exports = async function handler(req, res) {
 
 // Se exponen para tests/reuso (misma convención que el endpoint chileno).
 module.exports.buildSubformItemsCO = buildSubformItemsCO;
-module.exports.ensureActivacion = ensureActivacion;
+module.exports.quitarActivacionCO = quitarActivacionCO;

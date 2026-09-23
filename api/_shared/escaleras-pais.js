@@ -22,10 +22,13 @@ const ESCALERA_ASISTENCIA_PE = Object.freeze([
 ]);
 
 /** Escalera de asistencia CO en pesos colombianos (espejo de lib/paises/co/catalogo.ts
- * del agente, Lalo 09/10-jul: 1-10 $315.000 fijo · 11-50 $13.700 por usuario). */
+ * del agente). SOFTWARE A LA MITAD (Colombia aprobó, Lalo 23-sep, "todos los
+ * tramos que vende Vicky" = 1-20): 1-10 $157.500 fijo · 11-20 $6.850 por
+ * usuario. El 21-50 no es rango de Vicky y sigue a $13.700 (tabla de cobro). */
 const ESCALERA_ASISTENCIA_CO = Object.freeze([
-  { desde: 1, hasta: 10, modalidad: "fijo", precioUF: 315000 },
-  { desde: 11, hasta: 50, modalidad: "por_usuario", precioUF: 13700 },
+  { desde: 1, hasta: 10, modalidad: "fijo", precioUF: 157500 },
+  { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 6850 },
+  { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 13700 },
 ]);
 
 const MONEDA_POR_PAIS = Object.freeze({

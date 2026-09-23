@@ -96,7 +96,21 @@ test("Colombia: el descuento rebaja el plan y la Activación, el alquiler va a l
   assert.equal(sin.mensualidadCop, 191800 + 86000 + Math.round(86000 * 0.19));
   assert.equal(sin.descuentoPct, 0);
   const con = computeTotalsCO(items, { recurrentePct: 10 });
-  assert.equal(con.pagoInicialCop, 172620); // Activación con el 10 %
+  assert.equal(con.pagoInicialCop, 172620); // Activación legada con el 10 % (= primer mes)
+  assert.equal(con.conActivacionLegada, true);
+  // SIN fila de Activación (emisión desde el 23-sep): pago inicial = únicos + primer mes,
+  // con el descuento del plan, misma mecánica que Chile y Perú (computeTotalsPais).
+  const sinAct = computeTotalsCO(items.filter((r) => r.codigo !== "activacion"), { recurrentePct: 10 });
+  assert.equal(sinAct.conActivacionLegada, false);
+  assert.equal(sinAct.unicosCop, 0);
+  assert.equal(sinAct.primerMesNetoCop, 172620 + 86000);
+  assert.equal(sinAct.primerMesIvaCop, Math.round(86000 * 0.19));
+  assert.equal(sinAct.pagoInicialCop, 172620 + 86000 + Math.round(86000 * 0.19));
+  assert.equal(sinAct.mensualidadCop, sinAct.pagoInicialCop);
+  const amountsSin = computePaymentAmountsCO(items.filter((r) => r.codigo !== "activacion"), { recurrentePct: 10 });
+  assert.equal(amountsSin.includeFirstMonth, true);
+  assert.equal(amountsSin.firstMonthClp, sinAct.primerMesCop);
+  assert.equal(amountsSin.oneShotItemsClp, 0);
   assert.equal(con.mensualidadCop, 172620 + 86000 + Math.round(86000 * 0.19)); // el alquiler no baja
   assert.equal(con.descuentoPlanNetoCop, 19180);
   assert.equal(con.mensualidadListaCop, sin.mensualidadCop);
@@ -155,24 +169,13 @@ test("anualidad PE/CO (Lalo 21-sep): el subform persiste oculto + Descuento_Pct 
   assert.equal(ocultaCO.Es_Recurrente, true);
   assert.equal(ocultaCO.Subtotal_UF, 0);
   assert.equal(rowsCO.find((r) => r.Codigo_Item === "envio").Descuento_Pct, 100);
-  // Sin plan_anual, CO sigue fabricando la Activación como siempre.
+  // Sin plan_anual, CO TAMPOCO fabrica la Activación (23-sep, patrón CL en los dos países).
   const rowsCOnormal = buildSubformItemsPais("co", [
-    { tipo: "plan", id: "plan_asistencia", nombre: "Control de Asistencia", modalidad: "Por usuario", cantidad: 14, precioUnitarioCOP: 13700, subtotalCOP: 191800, esRecurrente: true, afectoIva: false },
+    { tipo: "plan", id: "plan_asistencia", nombre: "Control de Asistencia", modalidad: "Por usuario", cantidad: 14, precioUnitarioCOP: 6850, subtotalCOP: 95900, esRecurrente: true, afectoIva: false },
+    { tipo: "activacion", id: "activacion", nombre: "Activación", modalidad: "Cobro único", cantidad: 1, precioUnitarioCOP: 95900, subtotalCOP: 95900, esRecurrente: false, afectoIva: false },
   ]);
-  assert.ok(rowsCOnormal.some((r) => /activaci/i.test(r.Nombre_Item)));
-
-  const rowsPE = buildSubformItemsPais("pe", [
-    { tipo: "servicio", id: "plan_anual", nombre: "Plan anual — 12 meses anticipados", modalidad: "Cobro único", cantidad: 1, precioUnitarioPEN: 990, subtotalPEN: 990, esRecurrente: false, afectoIgv: true },
-    { tipo: "plan", id: "plan_asistencia", nombre: "Plan de asistencia (16 personas)", modalidad: "Por usuario", cantidad: 16, precioUnitarioPEN: 0, subtotalPEN: 0, esRecurrente: true, afectoIgv: true, oculto: true },
-    { tipo: "hardware", id: "reloj_pe", nombre: "Reloj (arriendo)", modalidad: "Arriendo mensual", cantidad: 1, precioUnitarioPEN: 0, subtotalPEN: 0, esRecurrente: true, afectoIgv: true, oculto: true },
-  ]);
-  assert.equal(rowsPE.length, 3);
-  assert.equal(rowsPE.filter((r) => r.Metadata_Item_JSON === JSON.stringify({ oculto: true })).length, 2);
-  assert.equal(rowsPE[0].Metadata_Item_JSON, undefined);
-  // Y el lector del país las deja fuera al re-editar (regla "solo se ve la fila anual").
-  const leidos = subformAItemsPais("pe", { Detalle_Items_Cotizacion: rowsPE }, config);
-  assert.equal(leidos.length, 1);
-  assert.equal(leidos[0].id, "plan_anual");
+  assert.equal(rowsCOnormal.length, 1, "la fila de Activación que manda un agente viejo se descarta");
+  assert.ok(!rowsCOnormal.some((r) => /activaci/i.test(r.Nombre_Item)));
 });
 
 test("computeTotalsPE vive (IGV 18 %): la constante IGV_RATE_PE se borró una vez y la sesión PE respondía 500", () => {

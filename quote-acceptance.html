@@ -2646,21 +2646,21 @@
         // Tabla de tramos de asistencia: es la lista de precios chilena en UF.
         var pricingSection = document.getElementById("sectionPricing");
         if (pricingSection) pricingSection.style.display = "none";
-        // Cabecera de la tabla de costos: 6 columnas, sin UF y SIN columna de
-        // IVA (precios finales 10-jul: el IVA no existe en la experiencia del
-        // cliente CO).
+        // PATRÓN CHILE (Lalo 23-sep, caso Rodrigo: "no está igual a la de
+        // Chile"): las mismas columnas de la página chilena, con Dcto.; sin
+        // REF. CLP porque el peso colombiano es la moneda de cobro (no hay UF).
         var costHead = document.querySelector("#sectionCosts .cost-table thead tr");
         if (costHead) {
           costHead.innerHTML =
             "<th>Item</th><th>Tipo</th><th>Modalidad</th><th>Cant.</th>" +
-            "<th>Precio Unit.</th><th>Subtotal (COP)</th>";
+            "<th>Precio Unit.</th><th>Dcto.</th><th>Subtotal (COP)</th>";
         }
         // Términos resumidos CO (sin UF, sin Dirección del Trabajo, sin multa;
         // arriendo = equipos de GeoVictoria con devolución; sin permanencia).
         var summary = document.querySelector("#sectionTerms .terms-summary");
         if (summary) {
           summary.innerHTML = [
-            "El pago inicial corresponde a los conceptos de pago único e incluye la Activación, equivalente al primer mes de servicio cobrado por adelantado. La mensualidad se factura desde el mes siguiente.",
+            "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único más el primer mes del servicio, cobrado por adelantado. La mensualidad se factura desde el 2º mes.",
             "Valores en pesos colombianos (COP).",
             "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
             "Para los equipos en modalidad arriendo: el servicio incluye mantención y reposición por falla técnica; los equipos son propiedad de GeoVictoria y deben devolverse al término del servicio.",
@@ -3138,21 +3138,28 @@
               );
             }
             if (esCO) {
-              // Colombia: 6 columnas sin UF; subtotalClp guarda COP (convención
-              // "unidad de pricing del país"). IVA (10-jul refinado): SOLO el
-              // hardware (Afecto_IVA=true) lleva 19% — la fila lo marca
-              // "+ IVA" y los totales lo desglosan; el resto son precios
-              // finales. Sin descuentos en v1.
+              // Colombia = la MISMA fila que Perú y Chile (Lalo 23-sep):
+              // subtotalClp guarda COP (convención "unidad de pricing del
+              // país"); IVA 19 % SOLO en el hardware (Afecto_IVA=true), que la
+              // fila marca "+ IVA" y los totales desglosan; el resto son
+              // precios finales. Celda Dcto. como Chile: línea bonificada
+              // (−100 %, "Incluida") o descuento por línea con la lista tachada.
               const montoCop = Number(row.subtotalClp || 0);
               const marcaIva = row.afectoIva === true ? " + IVA" : "";
-              // Línea bonificada (22-sep: instalación técnica en alquiler en
-              // Bogotá): Descuento_Pct 100 y subtotal 0 → lista tachada + "Incluida".
+              const dPctCo = descuentoLineaPct(row);
+              let dCellCo = "-";
               let subCopCell = fmtCOP(montoCop) + marcaIva;
               if (esLineaBonificada(row)) {
                 const listaCop = Number(row.precioUnitarioClp || 0) * Number(row.cantidad || 0);
+                dCellCo = "&minus;100%";
                 subCopCell =
                   '<span style="text-decoration:line-through;color:#9ca3af">' +
                   fmtCOP(listaCop) + '</span> <b style="color:#0f9d58">Incluida</b>';
+              } else if (dPctCo > 0) {
+                dCellCo = "&minus;" + dPctCo + "%";
+                subCopCell =
+                  '<span style="text-decoration:line-through;color:#9ca3af">' +
+                  fmtCOP(montoCop) + "</span> " + fmtCOP(montoCop * (1 - dPctCo / 100)) + marcaIva;
               }
               return (
                 "<tr>" +
@@ -3161,6 +3168,7 @@
                 "<td>" + normalizeModalidadLabel(row) + "</td>" +
                 "<td>" + Number(row.cantidad || 0) + "</td>" +
                 "<td>" + fmtCOP(row.precioUnitarioClp) + "</td>" +
+                "<td>" + dCellCo + "</td>" +
                 "<td>" + subCopCell + "</td>" +
                 "</tr>"
               );
@@ -3211,15 +3219,15 @@
           // en $0) pero no se pintan — regla "solo se ve la fila anual".
           const rowsVisibles = rows.filter(function (r) {
             if (!r || r.oculto === true) return false;
-            // PE (21-sep, patrón CL): la fila "Activación" de cotizaciones
-            // antiguas no se pinta — el total la cuenta como primer mes.
-            if (esPE && /activaci/i.test(String(r.nombre || "") + " " + String(r.codigo || r.id || ""))) return false;
+            // PE (21-sep) y CO (23-sep), patrón CL: la fila "Activación" de
+            // cotizaciones antiguas no se pinta — el total la cuenta como primer mes.
+            if ((esPE || esCO) && /activaci/i.test(String(r.nombre || "") + " " + String(r.codigo || r.id || ""))) return false;
             return true;
           });
           ES_ANUAL = rows.some(esFilaPlanAnual);
           const itemRowsHtml = rowsVisibles.length
             ? rowsVisibles.map(itemRowHtml).join("")
-            : '<tr><td colspan="' + (esPE ? 7 : esCO || esMX ? 6 : 8) + '">Sin datos.</td></tr>';
+            : '<tr><td colspan="' + (esPE || esCO ? 7 : esMX ? 6 : 8) + '">Sin datos.</td></tr>';
 
           // Valor mensual: el servidor ya entrega el recurrente NETO (con el
           // descuento aplicado). Mostramos el bruto tachado cuando hay descuento.
@@ -3232,6 +3240,93 @@
           var mensualClpBruto = Math.round(recClpBruto * 1.19);
           var mensualUfBruto = recUfBruto * 1.19;
 
+          // ── Configuración por país de las superficies de totales (PE/CO).
+          // Todo lo que difiere entre los dos vive acá; el HTML es uno solo.
+          const PAIS_UI_PE = {
+            t: totals.pe || {}, fmt: fmtPEN, m: "Pen", imp: "Igv",
+            subtotalLabel: "Subtotal (sin IGV)", impLabel: "IGV (18%)", impSoloSiHay: false,
+          };
+          const PAIS_UI_CO = {
+            // CO: el plan es precio FINAL; el IVA (19 %) existe solo en el
+            // hardware, así que la fila de impuesto sale solo cuando hay.
+            t: totals.co || {}, fmt: fmtCOP, m: "Cop", imp: "Iva",
+            subtotalLabel: "Subtotal", impLabel: "IVA equipos (19 %)", impSoloSiHay: true,
+          };
+          function totalesPaisHtml(ui) {
+            const t = ui.t, f = ui.fmt, m = ui.m;
+            const pct = Number(t.descuentoPct || 0);
+            const mensual = Number(t["mensualidad" + m] || 0);
+            const mensualLista = Number(t["mensualidadLista" + m] || mensual);
+            const impInicial = Number(t["pagoInicial" + ui.imp + m] || 0);
+            let h =
+              '<tr class="cost-row-sub"><td colspan="6">' + ui.subtotalLabel + "</td><td>" +
+              f(t["pagoInicialNeto" + m]) + "</td></tr>";
+            if (!ui.impSoloSiHay || impInicial > 0) {
+              h += '<tr class="cost-row-sub"><td colspan="6">' + ui.impLabel + "</td><td>" + f(impInicial) + "</td></tr>";
+            }
+            h +=
+              '<tr class="cost-row-total"><td colspan="6">' +
+              (ES_ANUAL ? "Pago anual — a pagar ahora (12 meses anticipados)" : "Pago inicial — a pagar ahora (incluye 1er mes)") +
+              "</td><td>" + f(t["pagoInicial" + m]) + "</td></tr>";
+            if (mensual > 0) {
+              const mensualCell =
+                pct > 0 && mensualLista > mensual
+                  ? '<span style="text-decoration:line-through;color:#9ca3af">' +
+                    f(mensualLista) + "</span> " + f(mensual) + "/mes"
+                  : f(mensual) + "/mes";
+              const mensualLabel =
+                pct > 0
+                  ? "Valor mensual del servicio — desde el 2&ordm; mes (referencial, " + Math.round(pct) + "% dcto.)"
+                  : "Valor mensual del servicio — desde el 2&ordm; mes (referencial)";
+              h += '<tr class="cost-row-sub"><td colspan="6">' + mensualLabel + "</td><td>" + mensualCell + "</td></tr>";
+            }
+            if (pct > 0) {
+              h +=
+                '<tr><td colspan="7" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
+                "Descuentos aplicados: " + Math.round(pct) + (ES_ANUAL ? "% en la anualidad (" : "% en el plan mensual (") + vigenciaDescuentoCorto() + ")" +
+                "</td></tr>" +
+                '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:4px;line-height:1.5">' +
+                escapeHtml(vigenciaDescuentoTexto()) +
+                "</td></tr>";
+            }
+            if (ES_ANUAL) {
+              h +=
+                '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
+                "El <b>Pago anual</b> se cobra al aceptar y cubre los 12 meses del servicio por adelantado; no hay mensualidades del plan durante el a&ntilde;o." +
+                "</td></tr>";
+            } else if (mensual > 0) {
+              h +=
+                '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
+                "El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el primer mes de servicio. " +
+                "El <b>valor mensual</b> es referencial, seg&uacute;n los usuarios de esta cotizaci&oacute;n y sujeto a mantenerlos; se factura mensualmente desde el segundo mes y la variaci&oacute;n de usuarios activos lo ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
+                "</td></tr>";
+            }
+            return h;
+          }
+          // Tarjetas destacadas PE/CO = Chile: sin pagos únicos, una sola
+          // tarjeta "Plan mensual — a pagar ahora (incluye primer mes)"; con
+          // pagos únicos, pago inicial + plan mensual desde el 2º mes.
+          function heroPaisHtml(ui) {
+            const t = ui.t, f = ui.fmt, m = ui.m;
+            const mensual = Number(t["mensualidad" + m] || 0);
+            const soloRec = mensual > 0 && Number(t["unicosNeto" + m] || 0) <= 0;
+            if (soloRec) {
+              return (
+                '<div class="ch-item"><span>Plan mensual — a pagar ahora (incluye primer mes)</span><strong>' +
+                f(t["pagoInicial" + m]) + "/mes</strong></div>"
+              );
+            }
+            let h =
+              '<div class="ch-item"><span>' +
+              (mensual > 0 ? "Pago inicial — a pagar ahora (incluye 1er mes)" : (ES_ANUAL ? "Pago anual — a pagar ahora (12 meses anticipados)" : "Pago total — a pagar ahora (sin mensualidad)")) +
+              "</span><strong>" + f(t["pagoInicial" + m]) + "</strong></div>";
+            if (mensual > 0) {
+              h +=
+                '<div class="ch-item"><span>Plan mensual — desde el 2&ordm; mes (referencial)</span><strong>' +
+                f(mensual) + "/mes</strong></div>";
+            }
+            return h;
+          }
           let totalsRowsHtml;
           if (esMX) {
             // México: totales del bloque `mx` del servidor (computeTotalsMX,
@@ -3268,117 +3363,15 @@
               "El <b>Pago inicial</b> se cobra al aceptar y corresponde a los conceptos de pago &uacute;nico (capacitaci&oacute;n y, si aplica, equipos, env&iacute;o e instalaci&oacute;n). " +
               "La <b>mensualidad</b> se factura desde la activaci&oacute;n del servicio; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
               "</td></tr>";
-          } else if (esPE) {
-            // Perú (Lalo 21-sep, "igualemos la brecha a Chile"): la MISMA
-            // estructura de filas que la página chilena — Subtotal (sin IGV),
-            // IGV, Pago inicial destacado, valor mensual desde el 2º mes con
-            // la lista tachada si hay descuento, resumen de descuentos,
-            // vigencia y el pie. Los montos salen del bloque `pe` del
-            // servidor (computeTotalsPE: soles, IGV 18 %, pago inicial =
-            // únicos + primer mes, patrón CL).
-            const pe = totals.pe || {};
-            const pePct = Number(pe.descuentoPct || 0);
-            const peMensual = Number(pe.mensualidadPen || 0);
-            const peMensualLista = Number(pe.mensualidadListaPen || peMensual);
-            totalsRowsHtml =
-              '<tr class="cost-row-sub"><td colspan="6">Subtotal (sin IGV)</td><td>' +
-              fmtPEN(pe.pagoInicialNetoPen) + "</td></tr>" +
-              '<tr class="cost-row-sub"><td colspan="6">IGV (18%)</td><td>' +
-              fmtPEN(pe.pagoInicialIgvPen) + "</td></tr>" +
-              '<tr class="cost-row-total"><td colspan="6">' +
-              (ES_ANUAL ? "Pago anual — a pagar ahora (12 meses anticipados)" : "Pago inicial — a pagar ahora (incluye 1er mes)") +
-              "</td><td>" + fmtPEN(pe.pagoInicialPen) + "</td></tr>";
-            if (peMensual > 0) {
-              const mensualPenCell =
-                pePct > 0 && peMensualLista > peMensual
-                  ? '<span style="text-decoration:line-through;color:#9ca3af">' +
-                    fmtPEN(peMensualLista) + "</span> " + fmtPEN(peMensual) + "/mes"
-                  : fmtPEN(peMensual) + "/mes";
-              const mensualLabelPE =
-                pePct > 0
-                  ? "Valor mensual del servicio — desde el 2&ordm; mes (referencial, " + Math.round(pePct) + "% dcto.)"
-                  : "Valor mensual del servicio — desde el 2&ordm; mes (referencial)";
-              totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="6">' + mensualLabelPE + "</td><td>" +
-                mensualPenCell + "</td></tr>";
-            }
-            if (pePct > 0) {
-              totalsRowsHtml +=
-                '<tr><td colspan="7" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
-                "Descuentos aplicados: " + Math.round(pePct) + (ES_ANUAL ? "% en la anualidad (" : "% en el plan mensual (") + vigenciaDescuentoCorto() + ")" +
-                "</td></tr>" +
-                '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:4px;line-height:1.5">' +
-                escapeHtml(vigenciaDescuentoTexto()) +
-                "</td></tr>";
-            }
-            if (peMensual > 0) {
-              totalsRowsHtml +=
-                '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
-                "El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el primer mes de servicio. " +
-                "El <b>valor mensual</b> es referencial, seg&uacute;n los usuarios de esta cotizaci&oacute;n y sujeto a mantenerlos; se factura mensualmente desde el segundo mes y la variaci&oacute;n de usuarios activos lo ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
-                "</td></tr>";
-            }
-          } else if (esCO) {
-            // Colombia: totales del bloque `co` del servidor (computeTotalsCO
-            // aplica IVA 19% SOLO a las líneas Afecto_IVA=true — hardware; el
-            // resto son precios finales). Las filas de IVA aparecen solo si
-            // hay hardware. El "Pago inicial" son SOLO los pagos únicos: la
-            // Activación ya ES el primer mes cobrado por adelantado. La
-            // mensualidad se factura desde el mes siguiente.
-            const co = totals.co || {};
-            // Descuento del plan (escalera chilena, Lalo 21-sep): rebaja el
-            // plan y la Activación; la mensualidad se muestra con la lista
-            // tachada y el resumen de descuentos + vigencia, como Chile.
-            const coPct = Number(co.descuentoPct || 0);
-            const coMensual = Number(co.mensualidadCop || 0);
-            const coMensualLista = Number(co.mensualidadListaCop || coMensual);
-            totalsRowsHtml =
-              '<tr class="cost-row-sub"><td colspan="5">' +
-              (ES_ANUAL ? "Plan anual y pagos únicos (12 meses anticipados)" : "Pago único (incluye Activación" + (coPct > 0 ? ", con el descuento del plan" : "") + ")") +
-              "</td><td>" + fmtCOP(co.pagoInicialNetoCop) + "</td></tr>";
-            if (Number(co.pagoInicialIvaCop || 0) > 0) {
-              totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="5">IVA equipos (19 %)</td><td>' +
-                fmtCOP(co.pagoInicialIvaCop) + "</td></tr>";
-            }
-            totalsRowsHtml +=
-              '<tr class="cost-row-total"><td colspan="5">' +
-              (ES_ANUAL ? "Pago anual — al aceptar (12 meses anticipados)" : "Pago inicial — al aceptar") +
-              "</td><td>" + fmtCOP(co.pagoInicialCop) + "</td></tr>";
-            if (Number(co.mensualidadCop || 0) > 0) {
-              if (Number(co.mensualidadIvaCop || 0) > 0) {
-                totalsRowsHtml +=
-                  '<tr class="cost-row-sub"><td colspan="5">Mensualidad: servicio y equipos</td><td>' +
-                  fmtCOP(co.mensualidadNetaCop) + "</td></tr>" +
-                  '<tr class="cost-row-sub"><td colspan="5">IVA equipos (19 %)</td><td>' +
-                  fmtCOP(co.mensualidadIvaCop) + "</td></tr>";
-              }
-              const mensualCopCell =
-                coPct > 0 && coMensualLista > coMensual
-                  ? '<span style="text-decoration:line-through;color:#9ca3af">' +
-                    fmtCOP(coMensualLista) + "</span> " + fmtCOP(coMensual) + "/mes"
-                  : fmtCOP(coMensual) + "/mes";
-              totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="5">Mensualidad — desde el mes siguiente' + (coPct > 0 ? " (" + Math.round(coPct) + "% dcto.)" : "") + '</td><td>' +
-                mensualCopCell + "</td></tr>";
-            }
-            if (coPct > 0) {
-              totalsRowsHtml +=
-                '<tr><td colspan="6" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
-                "Descuentos aplicados: " + Math.round(coPct) + (ES_ANUAL ? "% en la anualidad (" : "% en el plan mensual (") + vigenciaDescuentoCorto() + ")" +
-                "</td></tr>" +
-                '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:4px;line-height:1.5">' +
-                escapeHtml(vigenciaDescuentoTexto()) +
-                "</td></tr>";
-            }
-            totalsRowsHtml += ES_ANUAL
-              ? '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
-                "El <b>Pago anual</b> se cobra al aceptar y cubre los 12 meses del servicio por adelantado; no hay mensualidades del plan durante el a&ntilde;o." +
-                "</td></tr>"
-              : '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
-              "El <b>Pago inicial</b> se cobra al aceptar; la <b>Activaci&oacute;n</b> equivale al primer mes de servicio, cobrado por adelantado. " +
-              "La <b>mensualidad</b> se factura desde el mes siguiente; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
-              "</td></tr>";
+          } else if (esPE || esCO) {
+            // PERÚ y COLOMBIA = la MISMA estructura que la página chilena, en
+            // UN solo bloque (Lalo 23-sep: "en la cotizadora también hay que
+            // eliminar las brechas por país"): Subtotal, impuesto, Pago inicial
+            // destacado (incluye 1er mes), valor mensual desde el 2º mes con la
+            // lista tachada si hay descuento, resumen de descuentos, vigencia y
+            // el pie. Los montos salen de computeTotalsPais (servidor): pago
+            // inicial = únicos + primer mes, patrón CL.
+            totalsRowsHtml = totalesPaisHtml(esPE ? PAIS_UI_PE : PAIS_UI_CO);
           } else {
           totalsRowsHtml =
             '<tr class="cost-row-sub"><td colspan="6">Subtotal (sin IVA)</td><td>' +
@@ -3455,40 +3448,9 @@
                   '<div class="ch-item"><span>Mensualidad del servicio</span><strong>' +
                   fmtMXN(mx.mensualidadMxn) + " MXN/mes</strong></div>";
               }
-            } else if (esPE) {
-              // Perú = Chile (Lalo 21-sep): sin pagos únicos, una sola
-              // tarjeta "Plan mensual — a pagar ahora (incluye primer mes)";
-              // con pagos únicos, pago inicial + plan mensual desde el 2º mes.
-              const peH = totals.pe || {};
-              const peSoloRec = Number(peH.mensualidadPen || 0) > 0 && Number(peH.unicosNetoPen || 0) <= 0;
-              if (peSoloRec) {
-                chHtml =
-                  '<div class="ch-item"><span>Plan mensual — a pagar ahora (incluye primer mes)</span><strong>' +
-                  fmtPEN(peH.pagoInicialPen) + "/mes</strong></div>";
-              } else {
-                chHtml =
-                  '<div class="ch-item"><span>' +
-                  (Number(peH.mensualidadPen || 0) > 0 ? "Pago inicial — a pagar ahora (incluye 1er mes)" : (ES_ANUAL ? "Pago anual — a pagar ahora (12 meses anticipados)" : "Pago total — a pagar ahora (sin mensualidad)")) +
-                  "</span><strong>" + fmtPEN(peH.pagoInicialPen) + "</strong></div>";
-                if (Number(peH.mensualidadPen || 0) > 0) {
-                  chHtml +=
-                    '<div class="ch-item"><span>Plan mensual — desde el 2&ordm; mes (referencial)</span><strong>' +
-                    fmtPEN(peH.mensualidadPen) + "/mes</strong></div>";
-                }
-              }
-            } else if (esCO) {
-              // Colombia: pago inicial y mensualidad ya vienen con el IVA del
-              // hardware incluido desde computeTotalsCO.
-              const co = totals.co || {};
-              chHtml =
-                '<div class="ch-item"><span>' +
-                (ES_ANUAL ? "Pago anual — al aceptar (12 meses anticipados)" : "Pago inicial — al aceptar (incluye la Activación)") +
-                "</span><strong>" + fmtCOP(co.pagoInicialCop) + "</strong></div>";
-              if (Number(co.mensualidadCop || 0) > 0) {
-                chHtml +=
-                  '<div class="ch-item"><span>Mensualidad — desde el mes siguiente</span><strong>' +
-                  fmtCOP(co.mensualidadCop) + "/mes</strong></div>";
-              }
+            } else if (esPE || esCO) {
+              // Perú y Colombia = Chile (21/23-sep), un solo bloque.
+              chHtml = heroPaisHtml(esPE ? PAIS_UI_PE : PAIS_UI_CO);
             } else {
             // Solo-recurrentes (Eduardo 17-ago): sin ningún pago único, separar
             // "pago inicial" de "plan mensual" es mostrar el MISMO monto dos
