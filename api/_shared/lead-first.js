@@ -197,7 +197,7 @@ async function recuperarIdsConvertidos(leadId) {
  * `dealData` viene SIN Owner cuando el llamador quiere que el dueño humano
  * previo del lead herede; si el lead no tiene dueño humano se usa ownerDefault.
  */
-async function nacerDealDesdeLead({ telefono, contacto, empresa, email, territorio, leadSource, empleados, documento, dealData, ownerDefault, existingIds, etiqueta }) {
+async function nacerDealDesdeLead({ telefono, contacto, empresa, email, territorio, leadSource, empleados, documento, dealData, ownerDefault, existingIds, etiqueta, noHeredables }) {
   const tag = etiqueta || "lead-first";
   let lead = null;
   try { lead = await buscarLeadVivoPorFono(telefono); } catch { /* sin lead */ }
@@ -208,7 +208,13 @@ async function nacerDealDesdeLead({ telefono, contacto, empresa, email, territor
     viaLead = "nuevo";
   }
   if (!leadId) return null;
-  const ownerHeredado = lead?.humano && lead.ownerId ? lead.ownerId : "";
+  // `noHeredables` (Set de user ids): dueños humanos cuyo lead SE CONVIERTE
+  // pero cuya gestión NO se hereda al deal — las SDR de calificación (CL
+  // 10-sep, CO 23-sep): recibieron el lead para calificarlo, no para
+  // quedarse con la venta; el deal nace con el interino y lo sortea la
+  // tómbola al traspasar.
+  const heredable = lead?.humano && lead.ownerId && !(noHeredables && noHeredables.has(lead.ownerId));
+  const ownerHeredado = heredable ? lead.ownerId : "";
   const data = {
     ...dealData,
     Owner: ownerHeredado ? { id: ownerHeredado } : ownerDefault || dealData.Owner,

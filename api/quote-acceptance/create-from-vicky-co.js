@@ -194,13 +194,21 @@ async function coConvertFirstOn() {
 }
 
 // Owners cuyo lead se ADOPTA y convierte (bot + interino + SDR CO): un lead de
-// dueño humano REAL no se toca. El deal nace a nombre del ejecutivo (OWNER_CO).
+// dueño humano REAL no se toca. El deal nace a nombre del interino (OWNER_CO).
+// SDR_CO = las SDR de Colombia (Lalo 23-sep: Sanabria Torres, Nariño Chavarro y
+// Galindo reciben los leads): su lead se convierte pero NO heredan el deal —
+// lo sortea la tómbola "Deals 2026" al traspasar, como en Chile y Perú.
+const SDR_CO = new Set([
+  "3525045000613817111", // Eddy Galindo
+  "3525045000654443071", // Mauricio Sanabria Torres
+  "3525045000639927045", // Jhon Nariño Chavarro
+  "3525045000619732095", // Guerrero (histórico)
+  "3525045000639899035", // Quiroga (histórico)
+]);
 const OWNERS_ADOPTABLES_CO = new Set([
   "3525045000484500876", // Vicky GeoVictoria
-  "3525045000203758005", // Gordillo (interino)
-  "3525045000613817111", // Eddy Galindo (SDR)
-  "3525045000619732095", // Guerrero (SDR)
-  "3525045000639899035", // Quiroga (SDR)
+  "3525045000203758005", // Gordillo (interino histórico)
+  ...SDR_CO,
 ]);
 
 // Lead VIVO sin convertir del teléfono (candado kv del agente → búsqueda Zoho),
@@ -342,8 +350,13 @@ const VICKY_CO_SECTOR = toText(process.env.VICKY_SECTOR_FALLBACK) || "19. Servic
 const VICKY_CO_EXPANSION = toText(process.env.VICKY_EXPANSION_REGIONAL) || "No";
 
 // Owner opcional de los registros CO (ver header). {id} solo si está definido.
+// DUEÑO DE LOS REGISTROS QUE CREA LA FORMAL (23-sep, Colombia a las reglas de
+// Zoho como Chile y Perú): nacen con el usuario VICKY (interino) y los sortea
+// "Deals 2026" al traspasar. La regla vieja del 05-ago (todo a nombre de
+// Gordillo, env VICKY_CO_OWNER_ID) sigue disponible con VICKY_CO_OWNER_FIJO=on.
 const VICKY_CO_OWNER_ID = toText(process.env.VICKY_CO_OWNER_ID);
-const OWNER_CO = VICKY_CO_OWNER_ID ? { id: VICKY_CO_OWNER_ID } : undefined;
+const CO_OWNER_FIJO = /^(on|1|true)$/i.test(toText(process.env.VICKY_CO_OWNER_FIJO));
+const OWNER_CO = CO_OWNER_FIJO && VICKY_CO_OWNER_ID ? { id: VICKY_CO_OWNER_ID } : { id: "3525045000484500876" };
 
 // Cuentas internas que NUNCA deben reusarse al deduplicar por NIT (mismo
 // riesgo real que en Chile: un NIT de prueba puede colisionar con una cuenta
@@ -794,7 +807,7 @@ module.exports = async function handler(req, res) {
             N_Empleados_que_marcan: userCount,
             Tipo_de_Cobro: (Number(userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
             Producto_Soluci_n: VICKY_CO_PRODUCTO,
-            Owner: OWNER_CO, // deal → ejecutivo CO (Gordillo)
+            Owner: OWNER_CO, // deal → interino (Vicky; Gordillo solo con VICKY_CO_OWNER_FIJO)
           };
           const conv = await convertLeadCO(leadVivo, dealDataCO);
           accountId = conv.accountId;
@@ -978,7 +991,7 @@ module.exports = async function handler(req, res) {
       telefono: contactoTelefono, contacto, empresa, email: contactoEmail,
       territorio: VICKY_CO_TERRITORIO, leadSource: VICKY_CO_LEAD_SOURCE,
       empleados: userCount, documento: nitParaGuardarCO(nit),
-      dealData: dealDataCO2, ownerDefault: OWNER_CO,
+      dealData: dealDataCO2, ownerDefault: OWNER_CO, noHeredables: SDR_CO,
       existingIds: { accountId, contactId }, etiqueta: "create-from-vicky-co",
     }).catch(() => null);
     if (nacido?.dealId) {
