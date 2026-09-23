@@ -437,7 +437,11 @@ module.exports = async function handler(req, res) {
     const companyId = toText(body.companyId).replace(/\D/g, "");
     // PERÚ (21-sep): plan en PEN + hardware en USD (dos notas). El agente
     // manda `pais` desde el prefijo del contacto.
-    const paisAlta = toText(body.pais).toLowerCase() === "pe" ? "pe" : "cl";
+    const paisRaw = toText(body.pais).toLowerCase();
+    // COLOMBIA (23-sep): una sola nota en COP (plan + equipo en pesos), sin la
+    // nota USD aparte de Perú; el arreglo en sitio (UF) tampoco aplica.
+    const paisAlta = paisRaw === "pe" ? "pe" : paisRaw === "co" ? "co" : "cl";
+    const overridesRegen = paisAlta === "pe" ? { moneda: "PEN", pais: "Perú", filtroLineas: "sin_hardware" } : paisAlta === "co" ? { moneda: "COP", pais: "Colombia" } : {};
     if (!quoteId) return sendJson(res, 400, { ok: false, error: "Falta quoteId." });
     if (!companyId && body.soloEspejo !== true) {
       return sendJson(res, 400, { ok: false, error: "Falta companyId (id de la empresa en la plataforma)." });
@@ -505,7 +509,7 @@ module.exports = async function handler(req, res) {
       const diag = await diagnosticoEspejo(cfg, cot, quote, config);
       if (diag.regenerar && !cotForzado) {
         const anulado = await anularEspejo(cfg, cotId);
-        const nuevo = await regenerarEspejo(quoteId, Math.max(15_000, queda() - 5_000), paisAlta === "pe" ? { moneda: "PEN", pais: "Perú", filtroLineas: "sin_hardware" } : {});
+        const nuevo = await regenerarEspejo(quoteId, Math.max(15_000, queda() - 5_000), overridesRegen);
         return sendJson(res, 200, { ok: true, soloEspejo: true, cotId, diag, viejoAnulado: anulado, nuevo, pasos });
       }
       return sendJson(res, 200, { ok: true, soloEspejo: true, cotId, diag, pasos });
@@ -539,7 +543,7 @@ module.exports = async function handler(req, res) {
         // conversión en esta misma pasada, sin quemar un correlativo.
         paso = "arreglo_en_sitio";
         // PE: el arreglo en sitio recalcula tablas en UF — no aplica; se regenera.
-        const enSitio = paisAlta === "pe" ? null : await intentarArregloEnSitio(cfg, cotId, quote, config);
+        const enSitio = paisAlta !== "cl" ? null : await intentarArregloEnSitio(cfg, cotId, quote, config);
         if (enSitio) {
           // El maestro no se toca en este arreglo (los PATCH van a sus hijos),
           // así que `cot` sigue vigente y la conversión continúa en esta pasada.
@@ -547,7 +551,7 @@ module.exports = async function handler(req, res) {
         } else {
         paso = "regenerar_espejo";
         const anulado = await anularEspejo(cfg, cotId);
-        const nuevo = queda() > 20_000 ? await regenerarEspejo(quoteId, Math.max(15_000, queda() - 8_000), paisAlta === "pe" ? { moneda: "PEN", pais: "Perú", filtroLineas: "sin_hardware" } : {}) : { ok: false, error: "sin presupuesto" };
+        const nuevo = queda() > 20_000 ? await regenerarEspejo(quoteId, Math.max(15_000, queda() - 8_000), overridesRegen) : { ok: false, error: "sin presupuesto" };
         pasos.push({ regenerarEspejo: { motivos: diag.motivos, viejoAnulado: anulado, nuevo } });
         console.log(
           `[ndv-alta-chat] espejo ${cotId} regenerado (${diag.motivos.join("; ")}) → ${nuevo.ok ? nuevo.ndvId : `pendiente: ${nuevo.error}`}`,
