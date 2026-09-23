@@ -51,7 +51,9 @@ const HARDWARE_A_ARTICULO = {
     // línea es de arriendo (ahí `Valor_Mensual` lleva la mensualidad), y de ahí
     // sale el `rate` de la orden de venta. Verificado en 59 bloques de arriendo
     // de agosto: los 8 revisados traen Valor=5.000 sin excepción.
-    valorListaUF: 5,
+    // 23-sep: lista del Senseface 4A = 4 UF (correo Valeria 22-sep; Vicky vende
+    // a ese mismo precio por orden de Lalo). Las notas viejas del 2A quedan en 5.
+    valorListaUF: 4,
   },
   // Lector de huella USB, la alternativa económica al reloj de pared. Está
   // habilitado para Vicky (`disponibleParaVicky: true` en el catálogo, venta 3
