@@ -38,6 +38,11 @@ const NOTIFY_CC_PAGADA_CL = (process.env.QUOTE_NOTIFY_CC_PAGADA || "aaraque@geov
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+// COLOMBIA (Lalo 23-sep): la gestora de la venta autónoma es Gabriela Linares.
+const NOTIFY_CC_PAGADA_CO = (process.env.QUOTE_NOTIFY_CC_PAGADA_CO || "glinares@geovictoria.com")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // Usuarios "robot" cuyas notas no cuentan como gestión del ejecutivo (el
 // usuario Vicky y el token de integración). Las notas del ESPEJO las crea el
@@ -117,9 +122,12 @@ const SOLO_VENTAS_VICKY = new Set(
     .filter(Boolean),
 );
 
+// COLOMBIA (Lalo 23-sep, "los correos de aceptación y pago van con copia a los
+// mismos roles"): Lalo + Rodrigo + la líder comercial CO (María Fernanda Cely,
+// el rol de Victoria Luna); el propietario se agrega dinámico como en Chile.
 const NOTIFY_RECIPIENTS_CO = (
   process.env.QUOTE_NOTIFY_RECIPIENTS_CO ||
-  "egomez@geovictoria.com,agordillo@geovictoria.com,rlewit@geovictoria.com"
+  "egomez@geovictoria.com,rlewit@geovictoria.com,mcelyv@geovictoria.com"
 )
   .split(",")
   .map((s) => s.trim())
@@ -687,7 +695,7 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false
     // Copia a la dueña del acompañamiento autónomo en TODO pago CL (Lalo
     // 24-ago) — se entera tanto de las autónomas (suyas) como de las
     // asistidas (contexto).
-    const ccPagada = evento === "pagada" && !esCO && !esMX && !esPE ? NOTIFY_CC_PAGADA_CL : [];
+    const ccPagada = evento === "pagada" ? (esCO ? NOTIFY_CC_PAGADA_CO : !esMX && !esPE ? NOTIFY_CC_PAGADA_CL : []) : [];
     const vistos = new Set();
     const recipients = [...base, ownerEmail, ...ccPagada].filter((e) => {
       const low = String(e || "").trim().toLowerCase();

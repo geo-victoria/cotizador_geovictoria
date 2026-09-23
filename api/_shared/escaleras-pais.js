@@ -21,6 +21,13 @@ const ESCALERA_ASISTENCIA_PE = Object.freeze([
   { desde: 101, hasta: 500, modalidad: "por_usuario", precioUF: 4.5 },
 ]);
 
+/** Escalera de asistencia CO en pesos colombianos (espejo de lib/paises/co/catalogo.ts
+ * del agente, Lalo 09/10-jul: 1-10 $315.000 fijo · 11-50 $13.700 por usuario). */
+const ESCALERA_ASISTENCIA_CO = Object.freeze([
+  { desde: 1, hasta: 10, modalidad: "fijo", precioUF: 315000 },
+  { desde: 11, hasta: 50, modalidad: "por_usuario", precioUF: 13700 },
+]);
+
 const MONEDA_POR_PAIS = Object.freeze({
   chile: { moneda: "UF", pais: "Chile" },
   peru: { moneda: "PEN", pais: "Perú" },
@@ -74,7 +81,12 @@ function escalerasDefaultPorMoneda(moneda) {
     const filas = ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t }));
     return { plan_asistencia: filas, asistencia: filas.map((t) => ({ ...t })) };
   }
+  // Colombia (23-sep): el plan viaja en el subform como `plan_asistencia`.
+  if (m === "cop") {
+    const filas = ESCALERA_ASISTENCIA_CO.map((t) => ({ ...t }));
+    return { plan_asistencia: filas, asistencia: filas.map((t) => ({ ...t })) };
+  }
   return {};
 }
 
-module.exports = { ESCALERA_ASISTENCIA_PE, monedaYPais, escalerasDefaultPorMoneda };
+module.exports = { ESCALERA_ASISTENCIA_PE, ESCALERA_ASISTENCIA_CO, monedaYPais, escalerasDefaultPorMoneda };

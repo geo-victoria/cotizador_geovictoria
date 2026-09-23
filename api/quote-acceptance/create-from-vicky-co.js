@@ -1176,6 +1176,32 @@ module.exports = async function handler(req, res) {
             console.error("[create-from-vicky-co] correo de cotización falló:", mailErr?.message || mailErr),
           );
         }
+        // ── Cotización en Zoho Creator (23-sep, "cerremos Colombia") ──
+        // Mismo puente que Chile/Perú, con moneda COP, país Colombia y la
+        // escalera colombiana en pesos (escaleras-pais). Va ÚLTIMO y
+        // best-effort: el link, el PDF y el correo son la ruta crítica.
+        // UNA sola nota (plan + equipo en COP): en Colombia el hardware se
+        // factura en pesos, no en una nota USD aparte como en Perú.
+        try {
+          const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
+          const { ESCALERA_ASISTENCIA_CO } = require("../_shared/escaleras-pais");
+          await emitirCotizacionEnCreator({
+            config,
+            quoteId,
+            dealId,
+            acceptanceData: { companyRut: nit },
+            escalerasPrecio: {
+              plan_asistencia: ESCALERA_ASISTENCIA_CO.map((t) => ({ ...t })),
+              asistencia: ESCALERA_ASISTENCIA_CO.map((t) => ({ ...t })),
+            },
+            userCount: Number(userCount) || 0,
+            crmIncompleto,
+            motivo: "emision-co",
+            creatorOverrides: { moneda: "COP", pais: "Colombia" },
+          });
+        } catch (creatorErr) {
+          console.error("[create-from-vicky-co] Creator falló (best-effort):", creatorErr?.message || creatorErr);
+        }
       })().catch((bgErr) =>
         console.error(
           "[create-from-vicky-co] PDF en segundo plano falló:",
