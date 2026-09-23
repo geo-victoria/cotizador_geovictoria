@@ -178,6 +178,11 @@ module.exports = async function handler(req, res) {
         ...(toText(body.escaleraPais) ? { escaleraPais: toText(body.escaleraPais) } : {}),
         // Perú (17-sep): plan y hardware en notas separadas (PEN / USD).
         ...(toText(body.filtroLineas) ? { filtroLineas: toText(body.filtroLineas) } : {}),
+        // Dotación explícita (23-sep, Lara pinta el sol): con tramo FIJO la
+        // cotización guarda cantidad 1 y la dotación cae al DEAL, que puede
+        // estar compartido por dos cotizaciones (6 + 10 personas → 16 en cada nota).
+        ...(Number(body.userCount) > 0 ? { userCount: Number(body.userCount) } : {}),
+        ...(body.sinMesesDescuento === true ? { sinMesesDescuento: true } : {}),
       },
     });
     const ndvId = toText(ndvResult?.ndvId);

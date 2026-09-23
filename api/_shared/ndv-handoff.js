@@ -882,6 +882,10 @@ async function buildNdvRecord({
     resolveServicios: resolveServiciosRecurrentesDeFila,
     escalerasEnMemoria: escalerasEfectivas,
   });
+  // Diagnóstico (23-sep, NDV-32175/32176 con PDF vacío): permite rehacer una
+  // nota SIN la vigencia del descuento en el bloque, para aislar si el campo
+  // Cantidad_de_Meses_de_descuento impide que Creator arme el JsonPdf.
+  if (creatorOverrides.sinMesesDescuento === true) chargeTables.mesesDescuento = null;
   let chargeTable = chargeTables.master;
   if (filtroLineas === "solo_hardware") {
     // La nota de hardware no lleva tabla de cobro (golden NDV-32020/32024:
