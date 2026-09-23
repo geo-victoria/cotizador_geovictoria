@@ -206,6 +206,14 @@ async function regenerarEspejo(quoteId, timeoutMs, extra = {}) {
   }
 }
 
+function esLineaDeEquipo(x) {
+  const tipo = `${texto(x?.Tipo_Item)} ${texto(x?.Tipo)} ${texto(x?.Categoria_Item)}`;
+  if (/hardware|equipo|biometric|reloj|accesorio/i.test(tipo)) return true;
+  const codigo = texto(x?.Codigo_Item).toLowerCase();
+  if (/senseface|reloj|kit_qr|impresora|tarjeta/.test(codigo)) return true;
+  return /arriendo/i.test(texto(x?.Modalidad));
+}
+
 /**
  * ARREGLO EN SITIO antes de regenerar (Lalo 11-sep: "por qué en vez de anular
  * no actualiza? está generando muchos correlativos"). Compara el espejo con la
@@ -244,7 +252,12 @@ async function intentarArregloEnSitio(cfg, cotId, quote, config) {
       resolveServicios: resolveServiciosRecurrentesDeFila,
     });
     const items = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
-    const hayHardware = items.some((x) => /hardware|equipo/i.test(texto(x?.Tipo_Item) || texto(x?.Tipo)));
+    // La fila del subform NO trae Tipo_Item (verificado 23-sep, caso Eq cells
+    // NDV-32173): el reloj viene como Categoria_Item "Equipos Biometricos" y
+    // Modalidad "Arriendo"/"Venta". Mirar solo Tipo_Item daba hayHardware=false
+    // y el arreglo en sitio NEUTRALIZABA el bloque de arriendo (Monto 0, fuera
+    // del PDF): la nota salía cobrando solo la asistencia.
+    const hayHardware = items.some((x) => esLineaDeEquipo(x));
 
     const plan = planEnSitio({
       serviciosEspejo,
