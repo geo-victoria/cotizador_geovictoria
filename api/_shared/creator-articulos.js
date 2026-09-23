@@ -38,9 +38,15 @@ const HARDWARE_A_ARTICULO = {
     valorMensual: 20,
     moneda: "USD",
   },
+  // EL RELOJ ESTÁNDAR DE VICKY CHILE (23-sep-2026): el slot `senseface_2a`
+  // pasó a despachar el Senseface 4A (correo de Valeria Barbano 22-sep "hasta
+  // agotar stock", orden de Lalo: mismo precio de Vicky, otra ficha). Artículo
+  // Books "006.11 - Reloj Gama Media Facial WIFI/LAN", SKU
+  // CHL-BIO-SF4A-ZKT-WL-FHT, id 1758661000086449007 (leído de Books el 23-sep).
+  // El 006.10 (2A) queda en las tablas de ids/SKU por las notas ya emitidas.
   senseface_2a: {
-    item: "006.10 - Reloj Gama Entrada Facial WIFI/LAN",
-    modelo: "Senseface 2A",
+    item: "006.11 - Reloj Gama Media Facial WIFI/LAN",
+    modelo: "Senseface 4A",
     // Precio de LISTA de venta. La grilla lo lleva en `Valor` incluso cuando la
     // línea es de arriendo (ahí `Valor_Mensual` lleva la mensualidad), y de ahí
     // sale el `rate` de la orden de venta. Verificado en 59 bloques de arriendo
@@ -198,7 +204,8 @@ function articuloDeServicio(codigoItem, zona) {
  */
 const ITEM_ID_BOOKS = {
   "304": "1758661000080530243", // [PER] Reloj Gama Estándar FACIAL LAN WIFI (Senseface 2A, Perú)
-  "006.10": "1758661000072468396", // Reloj Gama Entrada Facial WIFI/LAN
+  "006.10": "1758661000072468396", // Reloj Gama Entrada Facial WIFI/LAN (Senseface 2A, histórico)
+  "006.11": "1758661000086449007", // Reloj Gama Media Facial WIFI/LAN (Senseface 4A, reloj estándar CL desde 23-sep)
   "006.9": "1758661000071719207", // Reloj Gama Estándar Facial WIFI/LAN (Senseface 3A, kit QR)
   "012": "1758661000001524374", // Huellero URU4500
   "013": "1758661000001962344", // Impresora Termica (Fiscal) SLK-TL202II
@@ -223,7 +230,8 @@ const ITEM_ID_BOOKS = {
  */
 const SKU_BOOKS = {
   "304": "PER-BIO-SF2A-ZKT-LW-HTF", // [PER] Reloj Gama Estándar FACIAL LAN WIFI
-  "006.10": "CHL-BIO-SF2A-ZKT-WL-FHT", // Reloj Gama Entrada Facial WIFI/LAN
+  "006.10": "CHL-BIO-SF2A-ZKT-WL-FHT", // Reloj Gama Entrada Facial WIFI/LAN (Senseface 2A)
+  "006.11": "CHL-BIO-SF4A-ZKT-WL-FHT", // Reloj Gama Media Facial WIFI/LAN (Senseface 4A)
   "012": "CHL-BIO-U4500-HID-USB-HI", // Huellero URU4500
   "006.9": "CHL-BIO-SF3A-ZKT-WL-FHT", // Senseface 3A (kit QR)
   "013": "CHL-ACC-SLKT-SWO-SER", // Impresora Termica (Fiscal)

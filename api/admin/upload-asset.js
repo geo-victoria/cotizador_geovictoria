@@ -11,16 +11,21 @@
  * Flujo de actualización: reemplazar el PDF en api/_shared/assets/, deployar,
  * y llamar este endpoint una vez con {"asset": "<archivo>"}.
  *
- * Auth: header x-admin-secret == env ASSETS_ADMIN_SECRET.
+ * Auth: header x-admin-secret == env ASSETS_ADMIN_SECRET, o el secreto
+ * compartido del agente (x-vicky-secret, secreto-vicky.js) — así el agente
+ * puede empujar un asset por su proxy admin sin una segunda clave (23-sep).
  */
 const fs = require("fs");
 const path = require("path");
+const { secretoValido } = require("../_shared/secreto-vicky");
 
 // Solo los assets conocidos: nada de paths arbitrarios hacia el bucket.
 const PERMITIDOS = new Set([
   "presentacion-comercial.pdf",
   "certificacion-dt.pdf",
   "ficha-reloj-senseface.pdf",
+  // Senseface 4A, reloj estándar de Vicky Chile desde el 23-sep-2026.
+  "ficha-reloj-senseface-4a.pdf",
 ]);
 
 module.exports = async (req, res) => {
@@ -29,7 +34,9 @@ module.exports = async (req, res) => {
   }
   const secret = String(process.env.ASSETS_ADMIN_SECRET || "").trim();
   const provided = String(req.headers["x-admin-secret"] || "").trim();
-  if (!secret || provided !== secret) {
+  const porAdmin = Boolean(secret) && provided === secret;
+  const porVicky = String(req.headers["x-vicky-secret"] || "").trim() !== "" && secretoValido(req);
+  if (!porAdmin && !porVicky) {
     return res.status(401).json({ ok: false, error: "unauthorized" });
   }
 
