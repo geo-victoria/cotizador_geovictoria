@@ -84,6 +84,7 @@ const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono, getKvFlag } = require("../_shared/idempotencia");
+const { nacerDealDesdeLead } = require("../_shared/lead-first");
 const { sendQuoteEmailViaZoho, buildEmailHtml } = require("./create-from-vicky");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { linkCortoDeCotizacion } = require("../_shared/codigo-corto");
@@ -952,19 +953,14 @@ module.exports = async function handler(req, res) {
     }
 
     // ── Deal (Territorio Colombia + obligatorios del layout, ver Chile) ──
-    stage = "create_deal";
     if (!dealId) {
-    const dealResult = await createRecord("Deals", {
+    const dealDataCO2 = {
       Deal_Name: `${empresa} - Cotización Vicky`,
-      ...(accountId ? { Account_Name: { id: accountId } } : {}),
-      ...(contactId ? { Contact_Name: { id: contactId } } : {}),
       Stage: VICKY_CO_DEAL_STAGE,
       Pipeline: "Standard (Standard)",
       Lead_Source: VICKY_CO_LEAD_SOURCE,
       Amount: totalCOP || undefined,
       Description: `Deal creado por Vicky CO para cotización WhatsApp.\nUsuarios: ${userCount || "-"}\nTotal: ${totalCOP} COP`,
-      // Obligatorios del layout de Deals del org (mismo set que Chile: sin
-      // ellos el create devuelve MANDATORY_NOT_FOUND).
       Territorio: VICKY_CO_TERRITORIO,
       Tombola: VICKY_CO_TOMBOLA,
       Monda_del_trato: VICKY_CO_MONEDA,
@@ -972,10 +968,35 @@ module.exports = async function handler(req, res) {
       N_Empleados_que_marcan: userCount,
       Tipo_de_Cobro: (Number(userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
       Producto_Soluci_n: VICKY_CO_PRODUCTO,
-      Owner: OWNER_CO,
-    }, true);
-    dealId = toText(dealResult?.id);
-    if (!dealId) throw new Error("No se obtuvo dealId");
+      ...(OWNER_CO ? { Owner: OWNER_CO } : {}),
+    };
+    // LEAD-FIRST (regla de oro GLOBAL, Lalo 23-sep): el deal NACE de la
+    // conversión del lead vivo (o de uno creado en el acto). El Camino A
+    // gateado de arriba queda como está; este es el piso para todos.
+    stage = "lead_first";
+    const nacido = await nacerDealDesdeLead({
+      telefono: contactoTelefono, contacto, empresa, email: contactoEmail,
+      territorio: VICKY_CO_TERRITORIO, leadSource: VICKY_CO_LEAD_SOURCE,
+      empleados: userCount, documento: nitParaGuardarCO(nit),
+      dealData: dealDataCO2, ownerDefault: OWNER_CO,
+      existingIds: { accountId, contactId }, etiqueta: "create-from-vicky-co",
+    }).catch(() => null);
+    if (nacido?.dealId) {
+      dealId = nacido.dealId;
+      if (!accountId && nacido.accountId) { accountId = nacido.accountId; accountReused = true; }
+      if (!contactId && nacido.contactId) contactId = nacido.contactId;
+    } else {
+      stage = "create_deal";
+      const dealResult = await createRecord("Deals", {
+        ...dealDataCO2,
+        ...(accountId ? { Account_Name: { id: accountId } } : {}),
+        ...(contactId ? { Contact_Name: { id: contactId } } : {}),
+        Description: `${dealDataCO2.Description}\n⚠️ Nació SIN lead convertido: lead-first falló (revisar).`,
+      }, true);
+      dealId = toText(dealResult?.id);
+      if (!dealId) throw new Error("No se obtuvo dealId");
+      console.error(`[create-from-vicky-co] deal ${dealId} nació SIN lead convertido (lead-first falló).`);
+    }
     // Candado cruzado: registrar el deal apenas existe para que crm-hitos lo
     // reuse en vez de crear un gemelo por hito de conversación.
     await setDealPorFono(contactoTelefono, dealId, "cotizacion").catch(() => {});

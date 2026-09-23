@@ -9,6 +9,7 @@ const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { createRecord, updateRecord, getRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, reservarDealPorFono, getLeadCandadoPorFono } = require("../_shared/idempotencia");
+const { nacerDealDesdeLead } = require("../_shared/lead-first");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
@@ -1769,13 +1770,10 @@ module.exports = async function handler(req, res) {
       }
 
       if (!dealId) {
-        stage = "create_deal";
-        const dealResult = await createRecord("Deals", {
+        const dealDataFresco = {
           Deal_Name: `${repararMojibake(cliente.empresa)} - Cotización Vicky`,
           // RUT en el deal, no solo en la cuenta (Lalo 10-ago).
           ...(cliente.rutEmpresa ? { Rut_ID_Account: cliente.rutEmpresa } : {}),
-          ...(accountId ? { Account_Name: { id: accountId } } : {}),
-          ...(contactId ? { Contact_Name: { id: contactId } } : {}),
           Stage: VICKY_DEAL_STAGE,
           Pipeline: "Standard (Standard)",
           Lead_Source: leadSourceEmision,
@@ -1789,9 +1787,37 @@ module.exports = async function handler(req, res) {
           Tipo_de_Cobro: (Number(cliente.userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
           Producto_Soluci_n: VICKY_PRODUCTO_DEFAULT,
           Owner: ownerHeredadoRutSplit ? { id: ownerHeredadoRutSplit } : VICKY_BOT_OWNER,
-        }, true);
-        dealId = toText(dealResult?.id);
-        if (!dealId) throw new Error("No se obtuvo dealId");
+        };
+        // LEAD-FIRST (regla de oro GLOBAL, Lalo 23-sep): acá se llegaba sin
+        // lead adoptable (ninguno, o uno de dueño HUMANO que Chile no tocaba)
+        // y el deal nacía fresco — 4 de 103 desde el 11-sep (Sheerpas/Tamara,
+        // SG Viajes/Paola, EB/Daniela, Francisco). Ahora el deal nace del lead
+        // vivo (dueño humano previo → a su nombre, regla 18-ago) o de uno
+        // creado en el acto; el deal fresco queda solo como respaldo marcado.
+        stage = "lead_first";
+        const nacido = await nacerDealDesdeLead({
+          telefono: cliente.contactoTelefono, contacto: cliente.contacto, empresa: repararMojibake(cliente.empresa),
+          email: cliente.contactoEmail, territorio: VICKY_TERRITORIO, leadSource: leadSourceEmision,
+          empleados: cliente.userCount, documento: cliente.rutEmpresa,
+          dealData: dealDataFresco, ownerDefault: dealDataFresco.Owner,
+          existingIds: { accountId, contactId }, etiqueta: "create-from-vicky",
+        }).catch(() => null);
+        if (nacido?.dealId) {
+          dealId = nacido.dealId;
+          if (!accountId && nacido.accountId) { accountId = nacido.accountId; reuse.accountReused = true; }
+          if (!contactId && nacido.contactId) contactId = nacido.contactId;
+        } else {
+          stage = "create_deal";
+          const dealResult = await createRecord("Deals", {
+            ...dealDataFresco,
+            ...(accountId ? { Account_Name: { id: accountId } } : {}),
+            ...(contactId ? { Contact_Name: { id: contactId } } : {}),
+            Description: `${dealDataFresco.Description}\n⚠️ Nació SIN lead convertido: lead-first falló (revisar).`,
+          }, true);
+          dealId = toText(dealResult?.id);
+          if (!dealId) throw new Error("No se obtuvo dealId");
+          console.error(`[create-from-vicky] deal ${dealId} nació SIN lead convertido (lead-first falló).`);
+        }
       }
     }
     } catch (plumbingError) {

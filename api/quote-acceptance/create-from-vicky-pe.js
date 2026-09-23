@@ -58,6 +58,7 @@ const { buildProposalHtmlPE, IGV_PE } = require("../_shared/proposal-html-builde
 const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
 const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
 const { ESCALERA_ASISTENCIA_PE } = require("../_shared/escaleras-pais");
+const { nacerDealDesdeLead } = require("../_shared/lead-first");
 
 let waitUntil;
 try {
@@ -640,12 +641,9 @@ module.exports = async function handler(req, res) {
       }
 
       // ── Deal (Territorio Perú + obligatorios del layout) ──
-      stage = "create_deal";
       if (!dealId) {
-        const dealResult = await createRecord("Deals", {
+        const dealDataPE = {
           Deal_Name: `${empresa} - Cotización Vicky`,
-          ...(accountId ? { Account_Name: { id: accountId } } : {}),
-          ...(contactId ? { Contact_Name: { id: contactId } } : {}),
           Stage: VICKY_PE_DEAL_STAGE,
           Pipeline: "Standard (Standard)",
           Lead_Source: VICKY_PE_LEAD_SOURCE,
@@ -660,9 +658,36 @@ module.exports = async function handler(req, res) {
           Tipo_de_Cobro: (Number(userCount) || 1) <= 20 ? "Mensual fijo" : "Por usuario",
           Producto_Soluci_n: VICKY_PE_PRODUCTO,
           Owner: OWNER_PE,
-        }, true);
-        dealId = toText(dealResult?.id);
-        if (!dealId) throw new Error("No se obtuvo dealId");
+        };
+        // LEAD-FIRST (regla de oro GLOBAL, Lalo 23-sep): el deal NACE de la
+        // conversión del lead vivo del contacto (o de uno creado en el acto).
+        // Hasta hoy Perú creaba el deal directo: 0 de 10 deals con lead
+        // convertido, y el traspaso entregaba el lead dejando el deal en Vicky.
+        stage = "lead_first";
+        const nacido = await nacerDealDesdeLead({
+          telefono: contactoTelefono, contacto, empresa, email: contactoEmail,
+          territorio: VICKY_PE_TERRITORIO, leadSource: VICKY_PE_LEAD_SOURCE,
+          empleados: userCount, documento: rucParaGuardar(ruc),
+          dealData: dealDataPE, ownerDefault: OWNER_PE,
+          existingIds: { accountId, contactId }, etiqueta: "create-from-vicky-pe",
+        }).catch(() => null);
+        if (nacido?.dealId) {
+          dealId = nacido.dealId;
+          if (!accountId && nacido.accountId) { accountId = nacido.accountId; accountReused = true; }
+          if (!contactId && nacido.contactId) contactId = nacido.contactId;
+        } else {
+          // Respaldo: deal fresco, MARCADO para revisión (la cotización siempre se entrega).
+          stage = "create_deal";
+          const dealResult = await createRecord("Deals", {
+            ...dealDataPE,
+            ...(accountId ? { Account_Name: { id: accountId } } : {}),
+            ...(contactId ? { Contact_Name: { id: contactId } } : {}),
+            Description: `${dealDataPE.Description}\n⚠️ Nació SIN lead convertido: lead-first falló (revisar).`,
+          }, true);
+          dealId = toText(dealResult?.id);
+          if (!dealId) throw new Error("No se obtuvo dealId");
+          console.error(`[create-from-vicky-pe] deal ${dealId} nació SIN lead convertido (lead-first falló).`);
+        }
         await setDealPorFono(contactoTelefono, dealId, "cotizacion").catch(() => {});
       }
     } catch (plumbingError) {
