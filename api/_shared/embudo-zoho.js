@@ -16,6 +16,12 @@ const { toText } = require("./zoho-crm");
 
 const ETAPA_TRATO_CREADO = "1. Trato Creado";
 const STATUS_CALIFICADO = "4. Calificado";
+// Campos de las transiciones del blueprint de Deals que la emisión no conoce.
+const DEFAULTS_TRANSICION = {
+  Tipo_de_soluci_n_actual: "No se sabe",
+  Producto_Soluci_n: "Control de Asistencia",
+  Tipo_de_Cobro: "Mensual fijo",
+};
 
 function numeroEtapa(stage) {
   const m = /^\s*(\d+)\s*\./.exec(toText(stage));
@@ -142,8 +148,15 @@ async function avanzarDealDesdeTratoCreado(dealId, etapaObjetivo, dealData = {})
       const data = { ...(t.data || {}) };
       for (const f of t.fields || []) {
         const api = f?.api_name;
-        if (!api || data[api] !== undefined && data[api] !== null && data[api] !== "") continue;
+        if (!api) continue;
+        // Lo que la emisión definió manda sobre lo pre-llenado por Zoho (un
+        // workflow deja Monda_del_trato en UF; la convención es la moneda del país).
         if (dealData[api] !== undefined && dealData[api] !== null && dealData[api] !== "") data[api] = dealData[api];
+        // Sin valor, la transición responde "Fields are partially saved" y NO
+        // mueve la etapa (medido 24-sep): defaults neutros de la venta online.
+        if ((data[api] === undefined || data[api] === null || data[api] === "") && DEFAULTS_TRANSICION[api] !== undefined) {
+          data[api] = DEFAULTS_TRANSICION[api];
+        }
         if (f?.data_type === "multiselectpicklist" && typeof data[api] === "string") {
           data[api] = data[api].split(";").map((v) => v.trim()).filter(Boolean);
         }
@@ -155,7 +168,7 @@ async function avanzarDealDesdeTratoCreado(dealId, etapaObjetivo, dealData = {})
       });
       const ej = await leerJson(exec);
       console.warn(`[embudo] deal ${dealId}: ${stage} → ${toText(t.next_field_value)} (${exec.status} ${toText(ej?.code)} ${toText(ej?.message).slice(0, 80)})`);
-      if (!exec.ok) return { ok: false, motivo: `transicion_${exec.status}` };
+      if (!exec.ok || /partial/i.test(toText(ej?.message))) return { ok: false, motivo: `transicion_${exec.status}_${toText(ej?.message).slice(0, 40)}` };
     }
     return { ok: false, motivo: "demasiados_saltos" };
   } catch (e) {
