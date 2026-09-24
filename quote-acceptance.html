@@ -2587,13 +2587,13 @@
         if (costHead) {
           costHead.innerHTML =
             "<th>Item</th><th>Tipo</th><th>Modalidad</th><th>Cant.</th>" +
-            "<th>Precio Unit.</th><th>Subtotal (MXN)</th>";
+            "<th>Precio Unit.</th><th>Dcto.</th><th>Subtotal (MXN)</th>";
         }
         // Términos resumidos MX (espejo de los del PDF mexicano).
         var summary = document.querySelector("#sectionTerms .terms-summary");
         if (summary) {
           summary.innerHTML = [
-            "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único: capacitación y, si aplica, equipos, envío e instalación. La mensualidad del servicio se factura desde la activación.",
+            "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único (si aplica, equipos, envío e instalación) más el primer mes del servicio, cobrado por adelantado. La mensualidad se factura desde el 2º mes.",
             "Valores en pesos mexicanos (MXN). Los montos no incluyen IVA (16 %), que se agrega donde se indica.",
             "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
             "Para los relojes en modalidad renta: el servicio incluye mantención y reposición por falla técnica; los equipos son propiedad de GeoVictoria y deben devolverse al término del servicio. Si terminas el servicio con menos de 6 mensualidades de renta pagadas, se cobra el equivalente a 6 mensualidades por reloj.",
@@ -3082,24 +3082,38 @@
 
           function itemRowHtml(row) {
             if (esMX) {
-              // México: 6 columnas sin UF; subtotalClp guarda MXN (convención
-              // "unidad de pricing del país"). El IVA es 16 % y aplica a las
-              // líneas Afecto_IVA=true (en MX: servicios Y hardware) — la fila
-              // lo marca "+ IVA" y los totales lo desglosan. Sin descuentos en
-              // el chat (la escalera vive en el cotizador).
+              // México = la MISMA fila que Chile, Perú y Colombia (Lalo 24-sep):
+              // subtotalClp guarda MXN (convención "unidad de pricing del
+              // país"); IVA 16 % en las líneas Afecto_IVA=true, marcadas
+              // "+ IVA" (los totales lo desglosan). Celda Dcto. como Chile:
+              // línea bonificada (−100 %, "Incluida" — también el gancho de la
+              // capacitación: lista con subtotal $0) o descuento por línea.
               const montoMxn = Number(row.subtotalClp || 0);
               const marcaIvaMx = row.afectoIva === true ? " + IVA" : "";
-              // Gancho (12-ago): precio de lista con subtotal $0 (capacitación)
-              // → lista TACHADA y "$0 — incluida" como beneficio visible.
-              const esGanchoMx = montoMxn === 0 && Number(row.precioUnitarioClp || 0) > 0;
+              const listaMxn = Number(row.precioUnitarioClp || 0) * Number(row.cantidad || 0);
+              const dPctMx = descuentoLineaPct(row);
+              let dCellMx = "-";
+              let subMxCell = fmtMXN(montoMxn) + marcaIvaMx;
+              if (esLineaBonificada(row) || (montoMxn === 0 && listaMxn > 0)) {
+                dCellMx = "&minus;100%";
+                subMxCell =
+                  '<span style="text-decoration:line-through;color:#9ca3af">' +
+                  fmtMXN(listaMxn) + '</span> <b style="color:#0f9d58">Incluida</b>';
+              } else if (dPctMx > 0) {
+                dCellMx = "&minus;" + dPctMx + "%";
+                subMxCell =
+                  '<span style="text-decoration:line-through;color:#9ca3af">' +
+                  fmtMXN(montoMxn) + "</span> " + fmtMXN(montoMxn * (1 - dPctMx / 100)) + marcaIvaMx;
+              }
               return (
                 "<tr>" +
                 "<td>" + (row.nombre || "-") + "</td>" +
                 "<td>" + inferItemType(row) + "</td>" +
                 "<td>" + normalizeModalidadLabel(row) + "</td>" +
                 "<td>" + Number(row.cantidad || 0) + "</td>" +
-                "<td>" + (esGanchoMx ? "<s>" + fmtMXN(row.precioUnitarioClp) + "</s>" : fmtMXN(row.precioUnitarioClp)) + "</td>" +
-                "<td>" + (esGanchoMx ? "<s>" + fmtMXN(row.precioUnitarioClp) + "</s> " + fmtMXN(0) + " — incluida" : fmtMXN(montoMxn) + marcaIvaMx) + "</td>" +
+                "<td>" + fmtMXN(row.precioUnitarioClp) + "</td>" +
+                "<td>" + dCellMx + "</td>" +
+                "<td>" + subMxCell + "</td>" +
                 "</tr>"
               );
             }
@@ -3227,7 +3241,7 @@
           ES_ANUAL = rows.some(esFilaPlanAnual);
           const itemRowsHtml = rowsVisibles.length
             ? rowsVisibles.map(itemRowHtml).join("")
-            : '<tr><td colspan="' + (esPE || esCO ? 7 : esMX ? 6 : 8) + '">Sin datos.</td></tr>';
+            : '<tr><td colspan="' + (esPE || esCO || esMX ? 7 : 8) + '">Sin datos.</td></tr>';
 
           // Valor mensual: el servidor ya entrega el recurrente NETO (con el
           // descuento aplicado). Mostramos el bruto tachado cuando hay descuento.
