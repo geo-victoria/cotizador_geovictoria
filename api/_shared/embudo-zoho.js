@@ -21,7 +21,13 @@ const DEFAULTS_TRANSICION = {
   Tipo_de_soluci_n_actual: "No se sabe",
   Producto_Soluci_n: "Control de Asistencia",
   Tipo_de_Cobro: "Mensual fijo",
+  // Perú y México (medido 24-sep): sus blueprints piden además estos dos.
+  Proveedor_actual_new: "Otro",
 };
+// Fecha estimada de cierre (blueprint Perú): 30 días desde hoy.
+function fechaEstimadaCierre() {
+  return new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+}
 
 function numeroEtapa(stage) {
   const m = /^\s*(\d+)\s*\./.exec(toText(stage));
@@ -156,6 +162,9 @@ async function avanzarDealDesdeTratoCreado(dealId, etapaObjetivo, dealData = {})
         // mueve la etapa (medido 24-sep): defaults neutros de la venta online.
         if ((data[api] === undefined || data[api] === null || data[api] === "") && DEFAULTS_TRANSICION[api] !== undefined) {
           data[api] = DEFAULTS_TRANSICION[api];
+        }
+        if ((data[api] === undefined || data[api] === null || data[api] === "") && f?.data_type === "date") {
+          data[api] = fechaEstimadaCierre();
         }
         if (f?.data_type === "multiselectpicklist" && typeof data[api] === "string") {
           data[api] = data[api].split(";").map((v) => v.trim()).filter(Boolean);
