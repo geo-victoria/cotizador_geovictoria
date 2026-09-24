@@ -9,6 +9,7 @@ const { finalizeAfterPayment, marcarEstadoPagada } = require("../_shared/post-pa
 const { onboardingPorChat } = require("../_shared/onboarding-chat");
 const { notifyQuoteEvent } = require("../_shared/quote-internal-notify");
 const { fichaPago, presentacionPago } = require("../_shared/pais-pago");
+const { origenDeVenta } = require("../_shared/origen-venta");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -103,8 +104,20 @@ async function telefonoUsuario(userId) {
 // banco) y el registro automático le manda el correo de PAGADA. Rollback sin
 // deploy: env TRANSFER_RECEIPT_TO_OWNER=1 vuelve a mandar el botón al dueño.
 const RECEIPT_TO_OWNER = /^(1|true|on)$/i.test(toText(process.env.TRANSFER_RECEIPT_TO_OWNER));
-async function buildTransferInfo(quote, pais = "cl") {
+// CORREO DE LA TRANSFERENCIA POR ORIGEN (Lalo 24-sep): lo que inició Vicky
+// (emisión suya, reemisión/actualización del ejecutivo sobre la suya, o precio
+// mostrado por ella) muestra vicky@ — la casilla lee el aviso del banco y lo
+// registra solo. Lo que el ejecutivo cotizó DESDE CERO muestra el correo del
+// ejecutivo: el aviso del banco le llega a él. Sin dueño humano legible,
+// vicky@ como siempre. Regla en _shared/origen-venta.js (la misma del correo
+// ACEPTADA/PAGADA).
+async function buildTransferInfo(quote, pais = "cl", quoteModule = "") {
   const dueno = await propietarioHumano(quote).catch(() => null);
+  let origen = { deVicky: true, motivo: "no_verificado" };
+  if (dueno && dueno.email && quoteModule) {
+    origen = await origenDeVenta({ quoteModule, quote, quoteId: toText(quote?.id) }).catch(() => origen);
+  }
+  const correoEjecutivo = !origen.deVicky && dueno && dueno.email ? dueno.email : "";
   let executiveName = "Vicky";
   let whatsappPhone = normalizeWhatsappPhone(fichaPago(pais).whatsappVicky());
   // Nombre del ejecutivo para el texto ("tu ejecutivo X recibe el aviso").
@@ -120,7 +133,9 @@ async function buildTransferInfo(quote, pais = "cl") {
     executiveName,
     whatsappPhone,
     ejecutivoNombre,
-    transferEmail: RECEIPT_TO_OWNER && dueno && dueno.email ? dueno.email : TRANSFER_CONTACT_EMAIL,
+    transferEmail:
+      (RECEIPT_TO_OWNER && dueno && dueno.email ? dueno.email : "") || correoEjecutivo || TRANSFER_CONTACT_EMAIL,
+    origenVenta: origen.deVicky ? "vicky" : "ejecutivo",
     quoteNumber: toText(quote?.Numero_Cotizacion),
     pais,
     // Filas de la cuenta bancaria del país (ficha).
@@ -191,7 +206,7 @@ export default async function handler(req, res) {
     // tres países muestran el bloque.
     const transfer =
       hasOneShot && !oneShotApproved
-        ? await buildTransferInfo(quote, pais)
+        ? await buildTransferInfo(quote, pais, acceptanceConfig.quoteModule)
         : { executiveName: "", whatsappPhone: "", quoteNumber: "" };
 
     let onboardingUrl = toText(quote?.[acceptanceConfig.quoteOnboardingUrlField]);

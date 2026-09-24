@@ -14,6 +14,7 @@ const { zohoApiFetch } = require("./zoho-auth");
 const { getRecordWithFields, toText, coqlQuery } = require("./zoho-crm");
 const { getMercadoPagoConfig } = require("./mercadopago-config");
 const { esCotizacionCO } = require("./payment-session");
+const { origenDeVenta } = require("./origen-venta");
 const {
   searchPaymentsByExternalReference,
   buildExternalReference,
@@ -553,86 +554,18 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false
     // Comprobante MP: solo en el evento de pago (best-effort, nunca bloquea).
     const pagosMp = evento === "pagada" ? await detallePagosMP(quoteId) : [];
 
-    // CANAL DE ORIGEN (Lalo 19-ago): Intervenci_n_Humana se estampa en la
-    // emisión ("100% Vicky" / "Con intervención humana" = cotizadora del
-    // ejecutivo). Cotizaciones anteriores al 19-ago no lo traen → sin sufijo.
+    // CANAL DE ORIGEN (Lalo 19-ago) + REEMISIÓN (08/09-sep) + PRECIO
+    // MOSTRADO (caso GSL): regla única en origen-venta.js, la misma que decide
+    // qué correo ve el cliente en la página de pago (24-sep).
     let canal = "";
-    try {
-      const marca = toText(
-        quote?.Intervenci_n_Humana ||
-          (await getRecordWithFields(config.quoteModule, quoteId, ["Intervenci_n_Humana"]).then(
-            (r) => r?.Intervenci_n_Humana,
-          )),
-      );
-      canal = /100%\s*Vicky/i.test(marca) ? "vicky" : /intervenci/i.test(marca) ? "ejecutivo" : "";
-    } catch (_e) {
-      canal = "";
-    }
-    // REEMISIÓN DEL EJECUTIVO SOBRE UNA VENTA DE VICKY (Lalo 08-sep, caso
-    // UDES/COT1324): Vicky cotizó COT1288, traspasó, la clienta aceptó y al
-    // cambiar el RUT el ejecutivo emitió OTRA cotización en vez de actualizar
-    // la de Vicky → el correo salió "Canal: EJECUTIVO" y el dash perdió la
-    // venta. Si el mismo deal ya tenía una cotización '100% Vicky' emitida
-    // ANTES que esta, la venta es de Vicky (asistida): el ejecutivo solo la
-    // reemitió. Best-effort: si la COQL falla, queda la marca de la emisión.
     let reemision = false;
-    // Deal O teléfono (Lalo 09-sep, caso Clínica Talca/COT1327: Vicky cotizó
-    // COT407 en un deal y el ejecutivo emitió en OTRO deal del mismo cliente
-    // — por deal solo, el correo salió "Canal: EJECUTIVO").
-    const tel9 = toText(quote?.Tel_fono_Contacto).replace(/\D/g, "").slice(-9);
-    if (canal === "ejecutivo" && (dealId || tel9.length === 9)) {
-      try {
-        const creadaMs = Date.parse(toText(quote?.Created_Time));
-        const partes = [
-          dealId ? `Deal_Asociado = '${String(dealId).replace(/\D/g, "")}'` : "",
-          tel9.length === 9 ? `Tel_fono_Contacto like '%${tel9}%'` : "",
-        ].filter(Boolean);
-        const cond = partes.length === 2 ? `(${partes[0]} or ${partes[1]})` : partes[0];
-        const r = await coqlQuery(
-          `select id, Numero_Cotizacion, Created_Time from ${config.quoteModule} where (${cond} and Intervenci_n_Humana = '100% Vicky') limit 20`,
-        );
-        // coqlQuery devuelve el ARREGLO de filas (no {data}); se toleran las dos formas.
-        const filas = Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
-        console.log(`[quote-internal-notify] ${quoteId} origen: ${filas.length} cotización(es) 100% Vicky en el deal ${dealId || "-"} / tel ${tel9 || "-"}`);
-        const previas = filas.filter((q) => {
-          if (String(q.id) === String(quoteId)) return false;
-          const cMs = Date.parse(toText(q.Created_Time));
-          return !Number.isFinite(creadaMs) || !Number.isFinite(cMs) || cMs <= creadaMs;
-        });
-        if (previas.length) {
-          reemision = true;
-          canal = "vicky";
-          console.log(
-            `[quote-internal-notify] ${quoteId} reemitida por ejecutivo sobre venta de Vicky (deal ${dealId}: ${previas.map((q) => q.Numero_Cotizacion || q.id).join(", ")})`,
-          );
-        }
-      } catch (e) {
-        console.warn(`[quote-internal-notify] origen Vicky no verificable para ${quoteId}: ${e.message}`);
-      }
-      // CASO C (Lalo 09-sep, "agrega Seguridad GSL"): sin cotización de Vicky
-      // pero con PRECIO MOSTRADO por ella en el chat antes de esta emisión →
-      // también es venta de Vicky. La señal vive en la base del agente, así
-      // que se le pregunta (mismo par URL/secreto del aviso por WhatsApp).
-      // Best-effort: sin config o con falla, queda la marca de la emisión.
-      if (!reemision && tel9.length === 9 && AGENT_NOTIFY_URL && AGENT_CRON_SECRET) {
-        try {
-          const base = new URL(AGENT_NOTIFY_URL).origin;
-          const tel = toText(quote?.Tel_fono_Contacto).replace(/\D/g, "").replace(/^5656/, "56");
-          const antes = toText(quote?.Created_Time);
-          const rp = await fetch(
-            `${base}/api/vic-precio-mostrado?tel=${encodeURIComponent(tel)}&antes=${encodeURIComponent(antes)}`,
-            { headers: { "x-cron-secret": AGENT_CRON_SECRET }, signal: AbortSignal.timeout(6000) },
-          );
-          const jp = rp.ok ? await rp.json().catch(() => ({})) : {};
-          if (jp && jp.mostrado === true) {
-            reemision = true;
-            canal = "vicky";
-            console.log(`[quote-internal-notify] ${quoteId} precio mostrado por Vicky el ${jp.at} antes de la emisión ejecutiva → venta de Vicky`);
-          }
-        } catch (e) {
-          console.warn(`[quote-internal-notify] precio mostrado no verificable para ${quoteId}: ${e.message}`);
-        }
-      }
+    try {
+      const o = await origenDeVenta({ quoteModule: config.quoteModule, quote, quoteId });
+      canal = o.canal;
+      reemision = o.reemision;
+      if (o.reemision) console.log(`[quote-internal-notify] ${quoteId} venta de Vicky vía ${o.motivo}`);
+    } catch (e) {
+      console.warn(`[quote-internal-notify] origen no verificable para ${quoteId}: ${e.message}`);
     }
     // VENTA AUTÓNOMA vs ASISTIDA (Lalo 24-ago): en el PAGO de una venta de
     // Vicky, el correo dice si el ejecutivo registró gestión en el deal
