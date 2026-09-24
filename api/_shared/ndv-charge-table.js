@@ -293,6 +293,83 @@ function escaleraAFilas(escalera, factorDescuento, extenderConOficial = true) {
 }
 
 /**
+ * Tabla de cobro de ASISTENCIA en UF con la forma que finanzas acepta.
+ *
+ * REGLA (Lalo 24-sep, caso Nailliw: 18 notas anuladas la noche del 23-sep por
+ * "valor usuario adicional" vacío; supersede los 13 tramos del 15-sep):
+ *   · tramo FIJO contratado → una fila "Rango Fijo 1..tope del tramo" con el
+ *     precio del tramo, más las filas fijas que sigan (el plan de 1-2 imprime
+ *     también la de 3-10). El "hasta" es el TOPE del tramo, no la dotación:
+ *     Vicky vendió un plan de 3 a 10 a 0,55, así que 7 que llegan a 9 no
+ *     pagan más. Y nunca más un "hasta 1" heredado de una dotación ausente.
+ *   · Valor_Usuario_Adicional de cada fila fija = lo que cuesta pasarse de
+ *     ella según la MISMA lista: el precio por usuario del primer tramo por
+ *     usuario (0,055) o, si la fila siguiente también es fija, la diferencia
+ *     entre los dos fijos (0,30 al pasar de 2 a 3 personas). Con 0,55 = 10 ×
+ *     0,055 la fila reproduce la lista exacta hasta 20 personas.
+ *   · plan POR USUARIO → una fila "Rango por Usuario 1..N" con el unitario
+ *     como valor y como adicional (así salían bien antes del 15-sep).
+ * Sobre 20 no se imprime nada: Vicky no vende ahí y los tramos que se
+ * extendían por razón no eran precios reales de nadie.
+ *
+ * `tiers` = escalera del agente ({desde,hasta,modalidad,precioUF}) o, sin ella,
+ * PRICING_TIERS normalizada. `precioListaFijo` = subtotal de lista de la línea
+ * fija (identifica el tramo aunque la dotación no haya llegado).
+ */
+function filasAsistenciaVicky({ tiers, empleados, porUsuario, unitarioLista, precioListaFijo, factor }) {
+  const norm = (Array.isArray(tiers) ? tiers : [])
+    .map((t) => ({
+      desde: toPositiveInt(t?.desde ?? t?.min),
+      hasta: Number.isFinite(Number(t?.hasta ?? t?.max)) ? toPositiveInt(t?.hasta ?? t?.max) : TOPE_ULTIMO_TRAMO,
+      fijo: normalizar(t?.modalidad ?? t?.type) === "fijo",
+      precio: toNumber(t?.precioUF ?? t?.uf),
+    }))
+    .filter((t) => t.desde > 0 && t.hasta >= t.desde && t.precio > 0)
+    .sort((a, b) => a.desde - b.desde);
+  const fijos = norm.filter((t) => t.fijo);
+  const primerPorUsuario = norm.find((t) => !t.fijo);
+  const f = factor > 0 ? factor : 1;
+  const topeFijo = fijos.length > 0 ? fijos[fijos.length - 1].hasta : 0;
+
+  // Plan por usuario (o dotación por sobre el último tramo fijo): una fila 1..N.
+  if (porUsuario || fijos.length === 0 || empleados > topeFijo) {
+    const unit = unitarioLista > 0 ? unitarioLista : precioListaFijo > 0 && empleados > 0 ? precioListaFijo / empleados : 0;
+    if (unit <= 0) return [];
+    return [
+      {
+        Modalidad: MODALIDAD_POR_USUARIO,
+        Desde: 1,
+        Hasta: Math.max(empleados, 1),
+        Valor: redondear(unit * f),
+        Valor_Usuario_Adicional: redondear(unit * f),
+      },
+    ];
+  }
+
+  // Tramo fijo contratado: primero por PRECIO (identifica el tramo aunque la
+  // dotación venga mal), después por dotación, y si nada calza el primero.
+  let i = fijos.findIndex((t) => precioListaFijo > 0 && Math.abs(t.precio - precioListaFijo) <= Math.max(1e-6, t.precio * 0.005));
+  if (i < 0) i = fijos.findIndex((t) => empleados >= t.desde && empleados <= t.hasta);
+  if (i < 0) i = 0;
+
+  return fijos.slice(i).map((t, k, arr) => {
+    const siguienteFijo = arr[k + 1];
+    const adicional = siguienteFijo
+      ? Math.max(siguienteFijo.precio - t.precio, 0)
+      : primerPorUsuario
+        ? primerPorUsuario.precio
+        : t.precio / t.hasta;
+    return {
+      Modalidad: MODALIDAD_FIJA,
+      Desde: k === 0 ? 1 : t.desde,
+      Hasta: t.hasta,
+      Valor: redondear(t.precio * f),
+      Valor_Usuario_Adicional: redondear(adicional * f),
+    };
+  });
+}
+
+/**
  * ¿La línea se cobra por usuario? El subform ya trae la modalidad mapeada a Zoho
  * ("Recurrente" = por usuario, "Único" = tarifa fija mensual, "Arriendo", "Venta").
  * Se exige además que la cantidad coincida con la dotación comprometida: si no,
@@ -498,6 +575,7 @@ function buildChargeTables({
   const porServicio = {};
   const descuentoPorServicio = {};
   const serviciosConEscalera = [];
+  let asistenciaUf = false;
   for (const [servicio, montos] of acumulado.entries()) {
     // Descuento del servicio. Creator lo aplica a toda la tabla, así que solo se
     // puede delegar cuando TODAS las líneas del servicio comparten el mismo %.
@@ -514,6 +592,28 @@ function buildChargeTables({
     // se usa el tramo único, que al menos mantiene el monto correcto.
     const codigos = Array.from(new Set(montos.codigos.filter(Boolean)));
     const escalera = codigos.length === 1 ? escaleras[codigos[0]] : null;
+
+    // ASISTENCIA EN UF: la forma que finanzas acepta (ver filasAsistenciaVicky).
+    // Va ANTES de la escalera en memoria y de la completación oficial: las dos
+    // imprimían 13 tramos con el adicional en cero en la fila que rige, y admin
+    // rechazaba la nota (Nailliw, 23-sep).
+    const esAsistencia = codigos.length === 1 && /^asistencia$/i.test(codigos[0]);
+    if (esAsistencia && usaUf) {
+      const filas = filasAsistenciaVicky({
+        tiers: Array.isArray(escalera) && escalera.length > 0 ? escalera : PRICING_TIERS,
+        empleados,
+        porUsuario: montos.todasPorUsuario,
+        unitarioLista: montos.unitarioLista,
+        precioListaFijo: montos.subtotalLista,
+        factor: factorIncorporado,
+      });
+      if (filas.length > 0) {
+        porServicio[servicio] = filas;
+        asistenciaUf = true;
+        continue;
+      }
+    }
+
     if (Array.isArray(escalera) && escalera.length > 0) {
       const filas = escaleraAFilas(escalera, factorIncorporado, usaUf);
       if (filas.length > 0) {
@@ -537,6 +637,7 @@ function buildChargeTables({
     // con UNA fila "Rango Fijo 1..N" — sin la escalera el cliente que crece a
     // 11 no tiene precio en la nota. Lo que no tiene escalera es un módulo plano
     // o un cobro único, no el tramo fijo de asistencia: se decide por el CÓDIGO.
+    // (24-sep) asistencia en UF ya no llega acá: la resuelve filasAsistenciaVicky.
     const codigoEscalonado = codigos.length === 1 && /^asistencia$/i.test(codigos[0]);
     // Solo en UF: PRICING_TIERS es la escalera CHILENA; en soles o pesos una
     // cotización sin escalera propia se queda con el tramo único (montos
@@ -641,6 +742,7 @@ function buildChargeTables({
     mesesDescuento: mesesVigencia(quote, config),
     diagnostico: {
       fallback,
+      asistenciaUf,
       moneda: moneda || "UF",
       empleados,
       descuentos,
@@ -653,6 +755,7 @@ function buildChargeTables({
 }
 
 module.exports = {
+  filasAsistenciaVicky,
   MODALIDAD_POR_USUARIO,
   MODALIDAD_FIJA,
   buildChargeTables,

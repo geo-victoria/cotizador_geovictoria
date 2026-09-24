@@ -164,6 +164,7 @@ function prevalidateNdvRecord(ndvRecord, opts = {}) {
       "NDV_PREVALIDATION_FAILED"
     );
   }
+
 }
 
 function prevalidateDraftInput({ proposalData, deal, account }) {
@@ -886,6 +887,30 @@ async function buildNdvRecord({
   // nota SIN la vigencia del descuento en el bloque, para aislar si el campo
   // Cantidad_de_Meses_de_descuento impide que Creator arme el JsonPdf.
   if (creatorOverrides.sinMesesDescuento === true) chargeTables.mesesDescuento = null;
+  // CANDADO (Lalo 24-sep): una nota de asistencia en UF sin "Valor Usuario
+  // Adicional" en la fila que rige NO nace — admin la rechaza y alguien la
+  // anula y la rehace a mano (18 notas la noche del 23-sep). Solo aplica a la
+  // tabla que arma filasAsistenciaVicky (la anualidad y los demás módulos
+  // siguen su camino de siempre).
+  if (chargeTables?.diagnostico?.asistenciaUf && filtroLineas !== "solo_hardware") {
+    const filas = safeArray(chargeTables.master);
+    const sinAdicional = filas.find((row) => toPositiveNumber(row?.Valor) > 0 && toPositiveNumber(row?.Valor_Usuario_Adicional) <= 0);
+    if (sinAdicional) {
+      throw new NdvBusinessError(
+        "La tabla de cobro no trae el valor por usuario adicional; la nota no se crea así.",
+        `sin_adicional=${JSON.stringify(sinAdicional)}`,
+        "NDV_PREVALIDATION_FAILED"
+      );
+    }
+    const corta = filas.find((row) => /por usuario/i.test(toText(row?.Modalidad)) && toPositiveInt(row?.Hasta) < toPositiveInt(committedEmployees));
+    if (corta) {
+      throw new NdvBusinessError(
+        `La tabla de cobro llega hasta ${toPositiveInt(corta.Hasta)} usuarios y la dotación es ${toPositiveInt(committedEmployees)}; la nota no se crea así.`,
+        `tramo_corto=${JSON.stringify(corta)}; empleados=${committedEmployees}`,
+        "NDV_PREVALIDATION_FAILED"
+      );
+    }
+  }
   let chargeTable = chargeTables.master;
   if (filtroLineas === "solo_hardware") {
     // La nota de hardware no lleva tabla de cobro (golden NDV-32020/32024:

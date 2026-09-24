@@ -88,11 +88,15 @@ function normalizarTabla(tabla) {
   if (!Array.isArray(tabla)) return [];
   return tabla
     .map((t) => ({
-      from: num(t?.From ?? t?.from),
-      to: num(t?.To ?? t?.to),
-      rate: Number(num(t?.Rate ?? t?.rate).toFixed(5)),
-      extra: Number(num(t?.AdditionalUserRate ?? t?.extra).toFixed(5)),
-      modalidad: texto(t?.Modality ?? t?.modalidad),
+      // Llaves en inglés (JsonPdf) y en español (Tabla_de_Cobro del hijo en
+      // Creator y filas que arma ndv-charge-table). Sin las españolas TODA
+      // fila normalizaba a ceros y dos tablas del mismo largo se daban por
+      // iguales aunque el valor o el adicional fueran otros (24-sep).
+      from: num(t?.From ?? t?.from ?? t?.Desde),
+      to: num(t?.To ?? t?.to ?? t?.Hasta),
+      rate: Number(num(t?.Rate ?? t?.rate ?? t?.Valor).toFixed(5)),
+      extra: Number(num(t?.AdditionalUserRate ?? t?.extra ?? t?.Valor_Usuario_Adicional).toFixed(5)),
+      modalidad: texto(t?.Modality ?? t?.modalidad ?? t?.Modalidad),
     }))
     .sort((a, b) => a.from - b.from || a.to - b.to);
 }
