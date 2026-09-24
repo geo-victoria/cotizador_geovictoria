@@ -22,6 +22,8 @@ function recurrenteNetoDesdeItems(items, pct) {
   return Math.round(base * (1 - (Number(pct) || 0) / 100));
 }
 
+const MONEDA_POR_TERRITORIO = { Chile: "CLP", "Perú": "SOL", Peru: "SOL", Colombia: "COP", "México": "MXN", Mexico: "MXN" };
+
 async function estamparValorDeal({ quoteModule, quoteId, dealId, empleados }) {
   if (!quoteId) return { ok: false, motivo: "sin_ids" };
   try {
@@ -31,7 +33,14 @@ async function estamparValorDeal({ quoteModule, quoteId, dealId, empleados }) {
     if (!dealId) return { ok: false, motivo: "sin_deal" };
     const valor = recurrenteNetoDesdeItems(q?.Detalle_Items_Cotizacion, q?.Descuento_Recurrente_Pct);
     if (!(valor > 0)) return { ok: false, motivo: "sin_recurrente" };
-    const data = { id: dealId, Valor_fijo_del_trato_Global: valor, Tipo_de_Cobro: "Mensual fijo", Valor_por_usuario_Global: null };
+    // MONEDA DEL TRATO junto con el valor (Victoria Luna + Dave 24-sep: el
+    // trato nacía con "Moneda del trato" en UF por defecto y el valor en CLP →
+    // 36.900 UF en el pipe/forecast hasta que el pase de limpieza de 6 h lo
+    // corregía). Subtotal_CLP guarda la moneda del país (soles en PE, pesos en
+    // CO/MX), así que la moneda sale del Territorio del deal.
+    const deal = await getRecordWithFields("Deals", dealId, ["Territorio"]).catch(() => null);
+    const moneda = MONEDA_POR_TERRITORIO[toText(deal?.Territorio)] || "CLP";
+    const data = { id: dealId, Valor_fijo_del_trato_Global: valor, Tipo_de_Cobro: "Mensual fijo", Monda_del_trato: moneda, Valor_por_usuario_Global: null };
     if (Number(empleados) > 0) data.N_Empleados_que_marcan = Number(empleados);
     const r = await zohoApiFetch(`/crm/v3/Deals`, {
       method: "PUT",
@@ -39,7 +48,7 @@ async function estamparValorDeal({ quoteModule, quoteId, dealId, empleados }) {
       body: JSON.stringify({ data: [data], trigger: ["blueprint"], skip_feature_execution: [{ name: "assignment_rules" }] }),
     });
     const fila = (await r.json().catch(() => ({})))?.data?.[0] || {};
-    console.warn(`[valor-deal] deal ${dealId} ← ${valor} (cotización ${quoteId}): ${toText(fila.code) || r.status}`);
+    console.warn(`[valor-deal] deal ${dealId} ← ${valor} ${moneda} (cotización ${quoteId}): ${toText(fila.code) || r.status}`);
     return { ok: fila.code === "SUCCESS", valor };
   } catch (e) {
     console.warn(`[valor-deal] deal ${dealId}: ${toText(e?.message || e).slice(0, 200)}`);
