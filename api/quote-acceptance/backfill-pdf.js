@@ -198,9 +198,6 @@ async function rescatarCotizacion(quoteId, config) {
   // País (21-sep, perfil único): PE/CO se rescatan con su PDF y su correo;
   // MX sigue fuera (no está sobre el núcleo).
   const paisQuote = paisDeCotizacion(quote, config);
-  if (paisQuote === "mx") {
-    return { skipped: "cotizacion_mx" };
-  }
   if (paisConPerfil(paisQuote)) {
     return rescatarCotizacionPais(paisQuote, quote, quoteId, config);
   }

@@ -24,7 +24,7 @@
  */
 
 const { toText } = require("./zoho-crm");
-const { sanitizeItems, computePaymentAmountsPE, computePaymentAmountsCO,
+const { sanitizeItems, computePaymentAmountsPE, computePaymentAmountsCO, computePaymentAmountsMX,
   quitarFilaActivacion,
 } = require("./quote-pricing");
 
@@ -55,7 +55,7 @@ function paisDeCotizacion(quote, config) {
 
 /** Países cuyos endpoints de edición corren sobre este perfil (Chile va por su camino nativo). */
 function paisConPerfil(pais) {
-  return pais === "pe" || pais === "co";
+  return pais === "pe" || pais === "co" || pais === "mx";
 }
 
 const NOMBRE_PAIS = { cl: "Chile", pe: "Perú", co: "Colombia", mx: "México" };
@@ -117,6 +117,15 @@ function subformAItemsPais(pais, quote, config) {
       // Descuento por línea (bonificada = 100): el PDF regenerado lo necesita
       // para tachar la lista en vez de mostrar un S/0 pelado.
       const descuentoPct = Number(row?.Descuento_Pct || 0);
+      if (pais === "mx") {
+        return {
+          ...base,
+          precioUnitarioMXN: r2(row?.Precio_Unitario_UF),
+          subtotalMXN: r2(row?.Subtotal_UF),
+          afectoIva: row?.Afecto_IVA === true,
+          ...(descuentoPct > 0 ? { descuentoPct } : {}),
+        };
+      }
       if (pais === "pe") {
         return {
           ...base,
@@ -140,8 +149,8 @@ function subformAItemsPais(pais, quote, config) {
 function validarItemsPais(pais, items) {
   const arr = Array.isArray(items) ? items : [];
   if (!arr.length) return "cotizacion.items requerido (configuración COMPLETA nueva, no solo el delta).";
-  const pu = pais === "pe" ? "precioUnitarioPEN" : "precioUnitarioCOP";
-  const st = pais === "pe" ? "subtotalPEN" : "subtotalCOP";
+  const pu = pais === "pe" ? "precioUnitarioPEN" : pais === "mx" ? "precioUnitarioMXN" : "precioUnitarioCOP";
+  const st = pais === "pe" ? "subtotalPEN" : pais === "mx" ? "subtotalMXN" : "subtotalCOP";
   const afecto = pais === "pe" ? "afectoIgv" : "afectoIva";
   for (let i = 0; i < arr.length; i++) {
     const it = arr[i];
@@ -165,6 +174,10 @@ function buildSubformItemsPais(pais, items) {
     const { buildSubformItemsPE } = require("../quote-acceptance/create-from-vicky-pe.js");
     return buildSubformItemsPE(sinActivacion);
   }
+  if (pais === "mx") {
+    const { buildSubformItemsMX } = require("../quote-acceptance/create-from-vicky-mx.js");
+    return buildSubformItemsMX(sinActivacion);
+  }
   const { buildSubformItemsCO } = require("../quote-acceptance/create-from-vicky-co.js");
   return buildSubformItemsCO(sinActivacion);
 }
@@ -180,6 +193,15 @@ function renderHtmlPais(pais, { cliente, items, acceptanceUrl, cotizacionId, val
       mesesDescuento,
     });
   }
+  if (pais === "mx") {
+    const { buildProposalHtmlMX } = require("./proposal-html-builder-mx");
+    return buildProposalHtmlMX({
+      cliente: { empresa: cliente.empresa, contacto: cliente.contacto, rfc: cliente.documento },
+      items, acceptanceUrl, cotizacionId, validezHasta, version,
+      descuentos: descuentos || { recurrentePct: 0 },
+      mesesDescuento,
+    });
+  }
   const { buildProposalHtmlCO } = require("./proposal-html-builder-co");
   return buildProposalHtmlCO({
     cliente: { empresa: cliente.empresa, contacto: cliente.contacto, nit: cliente.documento },
@@ -190,9 +212,9 @@ function renderHtmlPais(pais, { cliente, items, acceptanceUrl, cotizacionId, val
 }
 
 // ── Negociación: montos y mensaje ────────────────────────────────────────
-/** Escalera de descuento de cara al cliente por país (CL, PE y CO — Lalo 21-sep "permitamos descuento en Colombia igual que en Chile"). MX: fuera del núcleo todavía. */
+/** Escalera de descuento de cara al cliente por país (CL, PE, CO — Lalo 21-sep — y MX — Lalo 24-sep "descuento igualemos con Chile"). */
 function descuentoDisponible(pais) {
-  return pais === "cl" || pais === "pe" || pais === "co";
+  return pais === "cl" || pais === "pe" || pais === "co" || pais === "mx";
 }
 
 function errorDescuentoNoDisponible(pais) {
@@ -208,6 +230,7 @@ function errorDescuentoNoDisponible(pais) {
 function previewAmountsPais(pais, quote, config, descuentos) {
   const items = sanitizeItems(quote?.[config.quoteItemsSubformField]);
   if (pais === "pe") return computePaymentAmountsPE(items, descuentos);
+  if (pais === "mx") return computePaymentAmountsMX(items, descuentos);
   return computePaymentAmountsCO(items, descuentos);
 }
 
@@ -217,6 +240,11 @@ function fmtMonto(pais, n) {
     const r = Math.round(v * 100) / 100;
     const opts = Number.isInteger(r) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
     return "S/" + r.toLocaleString("es-PE", opts);
+  }
+  if (pais === "mx") {
+    const r = Math.round(v * 100) / 100;
+    const opts = Number.isInteger(r) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+    return "$" + r.toLocaleString("en-US", opts);
   }
   return "$" + Math.round(v).toLocaleString("en-US").replace(/,/g, ".");
 }
@@ -238,10 +266,17 @@ function buildMensajeNegociacionPais(pais, escalon, amounts, esUltimo, opts = {}
   // el hardware y ya viene sumado en los totales), así que el mensaje usa los
   // totales con IVA y no dice "+ IVA".
   const esCO = pais === "co";
+  // MÉXICO habla en NETO "+ IVA" como Perú (así lo entrega cotizarMX).
   const pagoInicialNeto = esCO
     ? Number(amounts?.co?.pagoInicialCop ?? amounts?.oneShotClp ?? 0)
-    : amounts?.pe?.pagoInicialNetoPen ?? Number(neto.oneShotNetClp || 0) + Number(neto.firstMonthNetClp || 0);
-  const mensualNeto = esCO ? Number(amounts?.co?.mensualidadCop ?? amounts?.recurringClp ?? 0) : neto.recurringNetClp ?? amounts.recurringClp;
+    : pais === "mx"
+      ? Number(amounts?.mx?.pagoInicialNetoMxn ?? 0)
+      : amounts?.pe?.pagoInicialNetoPen ?? Number(neto.oneShotNetClp || 0) + Number(neto.firstMonthNetClp || 0);
+  const mensualNeto = esCO
+    ? Number(amounts?.co?.mensualidadCop ?? amounts?.recurringClp ?? 0)
+    : pais === "mx"
+      ? Number(amounts?.mx?.mensualidadNetaMxn ?? 0)
+      : neto.recurringNetClp ?? amounts.recurringClp;
   const pagoInicial = fmtMonto(pais, pagoInicialNeto);
   const mensual = fmtMonto(pais, mensualNeto);
   const impuesto = pais === "pe" ? " + IGV" : esCO ? "" : " + IVA";
@@ -261,13 +296,16 @@ function buildMensajeNegociacionPais(pais, escalon, amounts, esUltimo, opts = {}
 
 // ── Correo del país (misma plantilla que la emisión) ─────────────────────
 function copiasCorreoPais(pais) {
-  const raw = pais === "pe"
+  const raw = pais === "mx"
+    ? toText(process.env.VICKY_MX_QUOTE_CC || "ysegura@geovictoria.com")
+    : pais === "pe"
     ? toText(process.env.VICKY_PE_QUOTE_CC || "mmendozav@geovictoria.com")
     : toText(process.env.VICKY_CO_QUOTE_CC || "agordillo@geovictoria.com");
   return raw.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
 function ejecutivoCorreoPais(pais) {
+  if (pais === "mx") return { nombre: "Yahel Segura", email: "ysegura@geovictoria.com" };
   return pais === "pe"
     ? { nombre: "Mónica Mendoza", email: "mmendozav@geovictoria.com" }
     : { nombre: "Alejandro Gordillo", email: "agordillo@geovictoria.com" };

@@ -212,12 +212,6 @@ module.exports = async function handler(req, res) {
     // Una cotización CO/MX regenerada acá saldría con montos y textos de
     // Chile — mejor fallar claro que sobreescribir el PDF con basura.
     const paisQuote = paisDeCotizacion(quote, config);
-    if (paisQuote === "mx") {
-      return sendJson(res, 422, {
-        ok: false,
-        error: "COTIZACION_MX: regenerate-pdf no soporta México todavía (fuera del núcleo).",
-      });
-    }
     if (paisConPerfil(paisQuote)) {
       // PE/CO: PDF del país desde el subform (sin UF), misma versión+1 y
       // mismo puntero. Chile sigue abajo con su camino de siempre.

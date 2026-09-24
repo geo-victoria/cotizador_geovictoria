@@ -241,12 +241,6 @@ module.exports = async function handler(req, res) {
     // ── País: PE/CO editan en sitio con su perfil; MX sigue fuera (no está
     // sobre el núcleo); Chile continúa abajo con el motor UF de siempre.
     const paisQuote = paisDeCotizacion(quote, config);
-    if (paisQuote === "mx") {
-      return sendJson(res, 422, {
-        ok: false,
-        error: "COTIZACION_MX: actualizar-cotizacion no soporta México todavía (fuera del núcleo).",
-      });
-    }
     if (paisConPerfil(paisQuote)) {
       stage = `actualizar_${paisQuote}`;
       return actualizarEnSitioPais({ pais: paisQuote, config, quote, quoteId, items, body, resumenCambio, sinCorreoCliente, res });

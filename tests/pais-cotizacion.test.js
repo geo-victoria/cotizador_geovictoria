@@ -28,7 +28,7 @@ test("paisDeCotizacion: el país sale del token; sin país es Chile", () => {
   assert.equal(paisDeCotizacion({}, config), "cl");
   assert.equal(paisConPerfil("pe"), true);
   assert.equal(paisConPerfil("cl"), false);
-  assert.equal(paisConPerfil("mx"), false);
+  assert.equal(paisConPerfil("mx"), true); // 24-sep: México entra al perfil único
 });
 
 test("subformAItemsPais PE: filas del CRM → ítems en soles con la forma del contrato PE (ocultas fuera)", () => {
@@ -71,16 +71,39 @@ test("validarItemsPais: nombra el campo que falta en la moneda del país", () =>
   assert.match(validarItemsPais("pe", []), /items requerido/);
 });
 
-test("descuento: CL, PE y CO tienen escalera (Lalo 21-sep); MX responde claro sin afirmar rebajas", () => {
-  assert.equal(descuentoDisponible("cl"), true);
-  assert.equal(descuentoDisponible("pe"), true);
-  assert.equal(descuentoDisponible("co"), true);
-  assert.equal(descuentoDisponible("mx"), false);
+test("descuento: los 4 países tienen escalera (CL/PE/CO 21-sep, MX 24-sep); el error sigue nombrando el país", () => {
+  for (const p of ["cl", "pe", "co", "mx"]) assert.equal(descuentoDisponible(p), true);
   const e = errorDescuentoNoDisponible("mx");
   assert.equal(e.ok, false);
   assert.equal(e.error, "DESCUENTO_NO_DISPONIBLE_MX");
-  assert.equal(e.tope_alcanzado, true);
   assert.match(e.detail, /M[eé]xico/);
+});
+
+test("México (Lalo 24-sep): 10 % solo en el plan, renta a lista, mensaje NETO + IVA y PDF con la rebaja", () => {
+  const { previewAmountsPais, renderHtmlPais } = require("../api/_shared/pais-cotizacion");
+  assert.equal(paisConPerfil("mx"), true);
+  const quote = {
+    Detalle_Items_Cotizacion: [
+      { Codigo_Item: "plan_asistencia", Nombre_Item: "Plan Asistencia", Categoria_Item: "Plataforma Asistencia", Modalidad: "Recurrente", Cantidad: 16, Precio_Unitario_UF: 83, Subtotal_UF: 1328, Precio_Unitario_CLP: 83, Subtotal_CLP: 1328, Es_Recurrente: true, Afecto_IVA: true },
+      { Codigo_Item: "reloj_mx", Nombre_Item: "Reloj checador", Categoria_Item: "Equipos Biometricos", Modalidad: "Arriendo", Cantidad: 1, Precio_Unitario_UF: 350, Subtotal_UF: 350, Precio_Unitario_CLP: 350, Subtotal_CLP: 350, Es_Recurrente: true, Afecto_IVA: true },
+    ],
+  };
+  const items = subformAItemsPais("mx", quote, config);
+  assert.equal(items[0].precioUnitarioMXN, 83);
+  assert.equal(validarItemsPais("mx", items), null);
+  const a = previewAmountsPais("mx", quote, config, { recurrentePct: 10 });
+  // 1,328 × 0.9 = 1,195.20 + 350 de renta a lista = 1,545.20 neto
+  assert.equal(a.mx.mensualidadNetaMxn, 1545.2);
+  const msg = buildMensajeNegociacionPais("mx", { pct: 10 }, a, false);
+  assert.match(msg, /\$1,545\.20 \+ IVA al mes/);
+  assert.equal(fmtMonto("mx", 1200), "$1,200");
+  const html = renderHtmlPais("mx", {
+    cliente: { empresa: "Prueba SA de CV", contacto: "Ana", documento: "XAXX010101000" },
+    items, acceptanceUrl: "https://x", cotizacionId: "COT1", validezHasta: new Date().toISOString(), version: 2,
+    descuentos: { recurrentePct: 10 }, mesesDescuento: 6,
+  });
+  assert.match(html, /Descuento 10 % en el plan \(6 meses\)/);
+  assert.match(html, /Desde el mes 7/);
 });
 
 test("Colombia: el descuento rebaja el plan y la Activación, el alquiler va a lista; mensaje en precios finales", () => {

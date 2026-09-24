@@ -29,9 +29,10 @@
  *     auto-instalada) el payload simplemente NO trae el ítem de instalación y
  *     el PDF no lo muestra — este endpoint no agrega ni exige ese ítem.
  *   - Capacitación online: incluida sin costo (ítem siempre presente; Lalo 13-ago).
- *   - Escalera de descuento recurrente 10→15 %: la negocia el agente y los
- *     items llegan con el precio final (igual que CO v1, sin campos de
- *     descuento acá). El clamp de 40 % de quote-pricing no interfiere.
+ *   - Descuento = CHILE (Lalo 24-sep): el agente manda el ESCALÓN aceptado
+ *     (1 = 10 %, 2 = 20 %, sobre el plan, 6 meses) y los ítems a LISTA; acá se
+ *     estampa en la cotización para que sesión, PDF y aceptación lo apliquen
+ *     SOLO al plan (misma forma que create-from-vicky CL y PE).
  *
  * Auth: header `x-vicky-secret` (mismo esquema que CL/CO). Se valida contra
  * VICKY_COTIZADORA_SECRET_MX y, si esa env no existe, contra
@@ -41,7 +42,7 @@
  * {
  *   "empresa":          string  (requerido) — razón social / nombre de la empresa
  *   "contacto":         string  (requerido) — nombre completo del contacto
- *   "contactoEmail":    string  (requerido)
+ *   "contactoEmail":    string  (OPCIONAL, como en CL/PE/CO — 24-sep)
  *   "rfc":              string  (requerido) — RFC, ej "CEC2005286R4"
  *   "contactoTelefono": string  (opcional)
  *   "userCount":        number  (opcional) — usuarios que marcan (para el Deal)
@@ -186,6 +187,9 @@ const { IVA_RATE_MX } = require("../_shared/quote-pricing");
 // Reuso del envío de correo vía Zoho send_mail del endpoint chileno (misma
 // función que usa el cron backfill-pdf): una sola implementación.
 const { sendQuoteEmailViaZoho } = require("./create-from-vicky");
+const { linkCortoDeCotizacion } = require("../_shared/codigo-corto");
+const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
+const { nacerDealDesdeLead } = require("../_shared/lead-first");
 
 // waitUntil: corre trabajo en segundo plano DESPUÉS de responder (mismo patrón
 // que CL/CO). Fallback best-effort si el paquete no está disponible.
@@ -261,6 +265,12 @@ const VICKY_FROM_EMAIL = toText(process.env.VICKY_FROM_EMAIL) || "vicky@geovicto
 // tropicalización). Overrideable por env, como el owner CO.
 const VICKY_MX_OWNER_ID = toText(process.env.VICKY_MX_OWNER_ID) || "3525045000308323003";
 const OWNER_MX = { id: VICKY_MX_OWNER_ID };
+// SDR de México (Lalo 24-sep: "el único SDR en México es Pablo Rodríguez"; se
+// suma Miguel Guzmán, SDR fijo hasta ese día): su lead se convierte pero su
+// gestión NO se hereda al deal.
+const SDR_MX = new Set(
+  (process.env.VICKY_SDR_MX_IDS || "3525045000391904256,3525045000434395001").split(",").map((s) => s.trim()).filter(Boolean),
+);
 
 // Documentos hosteados para el correo (los mismos genéricos del chileno; la
 // certificación de la Dirección del Trabajo es SOLO Chile y NO se incluye).
@@ -637,12 +647,17 @@ module.exports = async function handler(req, res) {
     const rfc = toText(body.rfc);
     const contactoTelefono = toText(body.contactoTelefono);
     const userCount = Number(body.userCount) > 0 ? Number(body.userCount) : undefined;
+    const escalonDescuento = Math.max(0, Math.min(DISCOUNT_LADDER.length, Math.floor(Number(body.escalonDescuento) || 0)));
+    const descuentoPlanPct = escalonDescuento > 0 ? Number(DISCOUNT_LADDER[escalonDescuento - 1].pct) : 0;
+    const descuentos = { recurrentePct: descuentoPlanPct, instalacionRMPct: 0, instalacionRegionPct: 0 };
 
-    // Validaciones del contrato
-    if (!empresa || !contacto || !contactoEmail || !rfc) {
+    // Validaciones del contrato. contactoEmail es OPCIONAL (mismo contrato que
+    // Chile/Perú/Colombia): sin correo no sale el correo con el PDF y el link
+    // viaja por el chat.
+    if (!empresa || !contacto || !rfc) {
       return sendJson(res, 400, {
         ok: false,
-        error: "Faltan campos: empresa, contacto, contactoEmail, rfc",
+        error: "Faltan campos: empresa, contacto, rfc",
       });
     }
     if (!rfcPareceValido(rfc)) {
@@ -688,6 +703,7 @@ module.exports = async function handler(req, res) {
         quoteId: previoIdem.quoteId, dealId: previoIdem.dealId || "",
         accountId: previoIdem.accountId || "", contactId: previoIdem.contactId || "",
         acceptanceUrl: acceptanceUrlIdem,
+        linkCorto: linkCortoDeCotizacion(previoIdem.quoteId, config.baseUrl),
         pdfUrl: "", pdfPendiente: true,
         reuse: { retryIdempotente: true },
         expiresAt: new Date(expMsIdem).toISOString(),
@@ -805,7 +821,7 @@ module.exports = async function handler(req, res) {
       const contactResult = await createRecord("Contacts", {
         First_Name: firstName,
         Last_Name: lastName,
-        Email: contactoEmail,
+        Email: contactoEmail || undefined,
         Phone: contactoTelefono || undefined,
         ...(accountId ? { Account_Name: { id: accountId } } : {}),
         Lead_Source: VICKY_MX_LEAD_SOURCE,
@@ -817,7 +833,7 @@ module.exports = async function handler(req, res) {
     } catch (createError) {
       if (!isDuplicateDataError(createError)) throw createError;
       stage = "dedupe_contact_by_email";
-      const existingContactId = await findContactIdByEmail(contactoEmail);
+      const existingContactId = contactoEmail ? await findContactIdByEmail(contactoEmail) : "";
       if (!existingContactId) {
         throw new Error(
           `Zoho reportó duplicate data pero no se encontró Contact con Email ${contactoEmail}`,
@@ -826,34 +842,57 @@ module.exports = async function handler(req, res) {
       contactId = existingContactId;
     }
 
-    // ── Deal (Territorio México + obligatorios del layout, ver Chile) ──
-    stage = "create_deal";
+    // ── Deal: nace de un LEAD CONVERTIDO (regla de oro global, 23-sep —
+    // hasta hoy México creaba el deal directo, sin lead) ──
     if (!dealId) {
-    const dealResult = await createRecord("Deals", {
-      Deal_Name: `${empresa} - Cotización Vicky`,
-      ...(accountId ? { Account_Name: { id: accountId } } : {}),
-      ...(contactId ? { Contact_Name: { id: contactId } } : {}),
-      Stage: VICKY_MX_DEAL_STAGE,
-      Pipeline: "Standard (Standard)",
-      Lead_Source: VICKY_MX_LEAD_SOURCE,
-      Amount: totalMXN || undefined,
-      Description: `Deal creado por Vicky MX para cotización WhatsApp.\nUsuarios: ${userCount || "-"}\nTotal: ${totalMXN} MXN`,
-      // Obligatorios del layout de Deals del org (mismo set que CL/CO: sin
-      // ellos el create devuelve MANDATORY_NOT_FOUND).
-      Territorio: VICKY_MX_TERRITORIO,
-      Tombola: VICKY_MX_TOMBOLA,
-      Monda_del_trato: VICKY_MX_MONEDA,
-      Sector: VICKY_MX_SECTOR,
-      N_Empleados_que_marcan: userCount,
-      Tipo_de_Cobro: (Number(userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario",
-      Producto_Soluci_n: VICKY_MX_PRODUCTO,
-      Owner: OWNER_MX,
-    }, true);
-    dealId = toText(dealResult?.id);
-    if (!dealId) throw new Error("No se obtuvo dealId");
-    // Candado cruzado: registrar el deal apenas existe para que crm-hitos lo
-    // reuse en vez de crear un gemelo por hito de conversación.
-    await setDealPorFono(contactoTelefono, dealId, "cotizacion").catch(() => {});
+      const dealDataMX = {
+        Deal_Name: `${empresa} - Cotización Vicky`,
+        Stage: VICKY_MX_DEAL_STAGE,
+        Pipeline: "Standard (Standard)",
+        Lead_Source: VICKY_MX_LEAD_SOURCE,
+        Description: `Deal creado por Vicky MX para cotización WhatsApp.\nUsuarios: ${userCount || "-"}\nTotal: ${totalMXN} MXN`,
+        // Obligatorios del layout de Deals del org (mismo set que CL/CO: sin
+        // ellos el create devuelve MANDATORY_NOT_FOUND).
+        Territorio: VICKY_MX_TERRITORIO,
+        Tombola: VICKY_MX_TOMBOLA,
+        Monda_del_trato: VICKY_MX_MONEDA,
+        Sector: VICKY_MX_SECTOR,
+        N_Empleados_que_marcan: userCount,
+        Tipo_de_Cobro: "Mensual fijo",
+        Producto_Soluci_n: VICKY_MX_PRODUCTO,
+        Owner: OWNER_MX,
+      };
+      stage = "lead_first";
+      const nacido = await nacerDealDesdeLead({
+        telefono: contactoTelefono, contacto, empresa, email: contactoEmail,
+        territorio: VICKY_MX_TERRITORIO, leadSource: VICKY_MX_LEAD_SOURCE,
+        empleados: userCount, documento: rfc,
+        dealData: dealDataMX, ownerDefault: OWNER_MX,
+        // El SDR de México recibe el lead para calificarlo, no se queda con
+        // la venta (regla CL 10-sep / CO 23-sep).
+        noHeredables: SDR_MX,
+        existingIds: { accountId, contactId }, etiqueta: "create-from-vicky-mx",
+      }).catch(() => null);
+      if (nacido?.dealId) {
+        dealId = nacido.dealId;
+        if (!accountId && nacido.accountId) { accountId = nacido.accountId; accountReused = true; }
+        if (!contactId && nacido.contactId) contactId = nacido.contactId;
+      } else {
+        // Respaldo: deal fresco, MARCADO para revisión (la cotización siempre se entrega).
+        stage = "create_deal";
+        const dealResult = await createRecord("Deals", {
+          ...dealDataMX,
+          ...(accountId ? { Account_Name: { id: accountId } } : {}),
+          ...(contactId ? { Contact_Name: { id: contactId } } : {}),
+          Description: `${dealDataMX.Description}\n⚠️ Nació SIN lead convertido: lead-first falló (revisar).`,
+        }, true);
+        dealId = toText(dealResult?.id);
+        if (!dealId) throw new Error("No se obtuvo dealId");
+        console.error(`[create-from-vicky-mx] deal ${dealId} nació SIN lead convertido (lead-first falló).`);
+      }
+      // Candado cruzado: registrar el deal apenas existe para que crm-hitos lo
+      // reuse en vez de crear un gemelo por hito de conversación.
+      await setDealPorFono(contactoTelefono, dealId, "cotizacion").catch(() => {});
     }
     } catch (plumbingError) {
       if (String(process.env.CRM_STRICT || "") === "1") throw plumbingError;
@@ -883,11 +922,22 @@ module.exports = async function handler(req, res) {
       CRM_Incompleto: crmIncompleto,
       [config.quoteDateField]: new Date().toISOString().slice(0, 10),
       [config.quoteStatusField]: "Borrador",
-      [config.contactEmailField]: contactoEmail,
+      [config.contactEmailField]: contactoEmail || undefined,
       [config.contactPhoneField]: contactoTelefono || undefined,
       [config.companyRutField]: rfc,
       [config.quoteItemsSubformField]: subformItems,
       [config.quoteVersionPdfField]: 1,
+      // Descuento del plan, misma forma que create-from-vicky (CL) y PE.
+      ...(escalonDescuento > 0
+        ? {
+            [config.quoteEscalonField]: escalonDescuento,
+            [config.quoteEscalonNegociacionField]: escalonDescuento,
+            [config.quoteDiscountUnlockedField]: true,
+            [config.quoteDiscountPctField]: descuentoPlanPct,
+            [config.quoteDiscountInstRMPctField]: 0,
+            [config.quoteDiscountInstRegionPctField]: 0,
+          }
+        : {}),
     }, true);
     const quoteId = toText(quoteResult?.id);
     if (!quoteId) throw new Error("No se obtuvo quoteId");
@@ -931,9 +981,11 @@ module.exports = async function handler(req, res) {
       ok: true,
       quoteId, dealId, accountId, contactId,
       acceptanceUrl,
+      linkCorto: linkCortoDeCotizacion(quoteId, config.baseUrl),
       pdfUrl: "",
       pdfPendiente: true,
       accountReused,
+      descuentoPlanPct,
       expiresAt: new Date(expMs).toISOString(),
     });
 
@@ -949,6 +1001,8 @@ module.exports = async function handler(req, res) {
           acceptanceUrl,
           cotizacionId: numeroParaPdf(numeroCotizacion, quoteId),
           validezHasta: new Date(expMs).toISOString(),
+          descuentos,
+          mesesDescuento: MESES_DESCUENTO_PLAN,
         });
         const pdfBuffer = await htmlToPdfBuffer(html, { format: "Letter", margin: "0" });
         const { pdfUrl } = await uploadPdfToSupabase({
@@ -962,6 +1016,7 @@ module.exports = async function handler(req, res) {
         // Propaga al puntero de Supabase (principio Lalo 07-ago: el PDF nuevo en TODOS lados)
         await actualizarPunteroPdf(quoteId, pdfUrl);
         const tieneReloj = items.some((it) => it && String(it.tipo || "").toLowerCase() === "hardware");
+        if (!contactoEmail) return; // sin correo: el link viaja por el chat
         await sendQuoteEmailViaZoho({
           quoteModule: config.quoteModule,
           quoteId,

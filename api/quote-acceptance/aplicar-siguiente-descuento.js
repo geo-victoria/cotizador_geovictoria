@@ -470,7 +470,8 @@ module.exports = async function handler(req, res) {
     // segundo plano, porque el agente está esperando esta respuesta.
     // COLOMBIA no tiene espejo Creator (su emisión no lo crea): no se fabrica
     // uno acá con un descuento.
-    if (pais !== "co") waitUntil(
+    // MÉXICO tampoco tiene espejo Creator todavía (su emisión no lo crea).
+    if (pais !== "co" && pais !== "mx") waitUntil(
       emitirCotizacionEnCreator({
         config,
         quoteId,

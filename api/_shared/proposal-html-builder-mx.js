@@ -164,8 +164,22 @@ function buildProposalHtmlMX({
   cotizacionId,
   validezHasta,
   version,
+  // Descuento del plan (escalera de Chile, Lalo 24-sep): % sobre el PLAN y
+  // sus meses; el reloj en renta va a lista.
+  descuentos,
+  mesesDescuento,
 }) {
   cliente = cliente || {};
+  const pctPlan = Math.max(0, Math.min(100, Number(descuentos?.recurrentePct || 0)));
+  const mesesDcto = Number.isFinite(Number(mesesDescuento)) && Number(mesesDescuento) > 0 ? Number(mesesDescuento) : 6;
+  const esFilaPlan = (item) => {
+    const id = String(item?.id || "").toLowerCase();
+    if (id.startsWith("plan")) return true;
+    if (/reloj|equipo|hardware|arriendo|envio|instalacion|capacitaci/.test(id)) return false;
+    return item?.esRecurrente === true && String(item?.tipo || "").toLowerCase() === "plan";
+  };
+  let descuentoPlanNeto = 0;
+  let descuentoPlanTotal = 0;
   const versionNum = Number(version) > 1 ? Number(version) : 1;
 
   const empresa = escapeHtml(cliente.empresa || "EMPRESA");
@@ -183,12 +197,19 @@ function buildProposalHtmlMX({
   // capacitación cobrada viene garantizada en items por el endpoint) ──
   const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
   const filas = (Array.isArray(items) ? items : []).map((item) => {
-    const subtotal = round2(item.subtotalMXN);
+    const subtotalLista = round2(item.subtotalMXN);
     const afectoIva = item.afectoIva === true;
+    const conDcto = pctPlan > 0 && item.esRecurrente === true && esFilaPlan(item);
+    const subtotal = conDcto ? round2(subtotalLista * (1 - pctPlan / 100)) : subtotalLista;
+    if (conDcto) {
+      const rebaja = round2(subtotalLista - subtotal);
+      descuentoPlanNeto += rebaja;
+      descuentoPlanTotal += afectoIva ? round2(rebaja * (1 + IVA_RATE_MX)) : rebaja;
+    }
     return {
       nombre: escapeHtml(item.nombre || ""),
       modalidad: item.esRecurrente === true ? "Pago mensual" : "Pago único",
-      desc: escapeHtml(descripcionItemMX(item)),
+      desc: escapeHtml(descripcionItemMX(item)) + (conDcto ? ` Incluye ${pctPlan} % de descuento durante ${mesesDcto} meses (precio de lista ${formatMXN(subtotalLista)}/mes).` : ""),
       puMXN: round2(item.precioUnitarioMXN),
       cant: Number(item.cantidad || 1),
       subtotal,
@@ -254,7 +275,7 @@ function buildProposalHtmlMX({
     totHtml += `<div class="tr"><span>Conceptos de pago único</span><span>${formatMXN(uniNeto)}</span></div>`;
   }
   if (recTot > 0) {
-    totHtml += `<div class="tr"><span>Primer mes del servicio (adelantado)</span><span>${formatMXN(recNeto)}</span></div>`;
+    totHtml += `<div class="tr"><span>Primer mes del servicio (adelantado${descuentoPlanNeto > 0 ? ", con el descuento del plan" : ""})</span><span>${formatMXN(recNeto)}</span></div>`;
   }
   if (iniIva > 0) {
     totHtml += `<div class="tr"><span>IVA (16 %)</span><span>${formatMXN(iniIva)}</span></div>`;
@@ -266,7 +287,11 @@ function buildProposalHtmlMX({
     if (recIva > 0) {
       totHtml += `<div class="tr"><span>IVA (16 %)</span><span>${formatMXN(recIva)}</span></div>`;
     }
-    totHtml += `<div class="tr grand"><span>Total mensual</span><span>${formatMXN(recTot)} MXN/mes</span></div>`;
+    totHtml += `<div class="tr grand"><span>Total mensual${descuentoPlanNeto > 0 ? ` (primeros ${mesesDcto} meses)` : ""}</span><span>${formatMXN(recTot)} MXN/mes</span></div>`;
+    if (descuentoPlanNeto > 0) {
+      totHtml += `<div class="tr"><span>Descuento ${pctPlan} % en el plan (${mesesDcto} meses)</span><span>−${formatMXN(descuentoPlanNeto)} + IVA</span></div>`;
+      totHtml += `<div class="tr"><span>Desde el mes ${mesesDcto + 1} (precio de lista)</span><span>${formatMXN(round2(recTot + descuentoPlanTotal))} MXN/mes</span></div>`;
+    }
   }
   totHtml +=
     `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
