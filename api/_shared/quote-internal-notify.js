@@ -430,7 +430,7 @@ async function sendInternalMail({ quoteModule, quoteId, subject, htmlBody, recip
 const AGENT_NOTIFY_URL = toText(process.env.VICKY_AGENT_NOTIFY_URL);
 const AGENT_CRON_SECRET = toText(process.env.VICKY_AGENT_CRON_SECRET);
 
-async function notifyWhatsApp({ evento, empresa, numero, montoClp, quoteId }) {
+async function notifyWhatsApp({ evento, empresa, numero, montoClp, quoteId, facturacion }) {
   // Sin la config, el aviso al agente NO sale — y con él se pierden el cierre
   // de cadencia y el traspaso post-pago en tiempo real (el agente tiene un
   // barrido horario de respaldo, pero el tiempo real vive aquí). Gritarlo en
@@ -447,7 +447,11 @@ async function notifyWhatsApp({ evento, empresa, numero, montoClp, quoteId }) {
       headers: { "Content-Type": "application/json", "x-cron-secret": AGENT_CRON_SECRET },
       // quoteId permite al agente cerrar la cadencia de seguimiento del
       // contacto (nada de nudges ni llamadas a quien ya aceptó/pagó).
-      body: JSON.stringify({ evento, empresa, numero, monto: montoClp, quoteId }),
+      // `facturacion` (24-sep): giro/comuna/dirección/RUT/teléfono/correo que el
+      // cliente escribió en el pop-up de aceptación. El módulo de cotizaciones
+      // no tiene esos campos y se perdían; el agente los guarda como fuente
+      // única y con ellos nace la Solicitud de Facturación automática.
+      body: JSON.stringify({ evento, empresa, numero, monto: montoClp, quoteId, ...(facturacion ? { facturacion } : {}) }),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -501,7 +505,7 @@ async function yaSalioAvisoEvento(quoteModule, quoteId, evento, ventanaMs = 24 *
   }
 }
 
-async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false }) {
+async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false, facturacion = null }) {
   try {
     if (!config || !quote || !quoteId) return;
     const numero = toText(quote?.Numero_Cotizacion);
@@ -706,7 +710,7 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false
     await sendInternalMail({ quoteModule: config.quoteModule, quoteId, subject, htmlBody, recipients });
     console.log(`[quote-notify] enviado evento=${evento} quote=${numero || quoteId} pais=${esCO ? "co" : esMX ? "mx" : esPE ? "pe" : "cl"} → ${recipients.join(", ")}`);
     // Además del correo: aviso por WhatsApp (best-effort, no bloquea).
-    await notifyWhatsApp({ evento, empresa, numero, montoClp, quoteId });
+    await notifyWhatsApp({ evento, empresa, numero, montoClp, quoteId, facturacion });
   } catch (err) {
     console.error(`[quote-notify] falló (best-effort) evento=${evento}:`, toText(err?.message || err).slice(0, 200));
   }

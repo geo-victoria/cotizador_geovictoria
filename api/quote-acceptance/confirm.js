@@ -575,7 +575,22 @@ export default async function handler(req, res) {
 
       // Notificación interna al equipo (best-effort, no bloquea la aceptación).
       // Solo en la PRIMERA aceptación (estamos dentro de !alreadyAccepted).
-      await notifyQuoteEvent({ config, quote, quoteId: payload.quoteId, evento: "aceptada" });
+      await notifyQuoteEvent({
+        config,
+        quote,
+        quoteId: payload.quoteId,
+        evento: "aceptada",
+        // Datos de facturación del pop-up → agente (fuente única, 24-sep).
+        facturacion: {
+          rut: toText(acceptanceData.companyRut),
+          giro: toText(acceptanceData.companyGiro),
+          comuna: toText(acceptanceData.companyComuna),
+          direccion: toText(acceptanceData.companyAddress),
+          telefono: toText(acceptanceData.billingPhone),
+          email: toText(acceptanceData.billingEmail),
+          razonSocial: toText(acceptanceData.companyName || acceptanceData.razonSocial),
+        },
+      });
     }
 
     // Forma de pago elegida por el cliente: se deja como NOTA en la cotizacion
