@@ -155,6 +155,11 @@ module.exports = async function handler(req, res) {
 
     stage = "handoff";
     const acceptanceData = buildAcceptanceDataFromQuote(config, quote);
+    // Correo de respaldo (24-sep, caso TRANSPORT MINING COT1653): Creator exige
+    // "Correo de contacto" y una cotización emitida sin correo no tenía espejo.
+    // El alta por chat manda el correo del administrador.
+    const correoRespaldo = String(body.correoContacto || "").trim();
+    if (correoRespaldo && !acceptanceData.contactEmail) acceptanceData.contactEmail = correoRespaldo;
     const ndvResult = await runNdvHandoff({
       config,
       quoteId,

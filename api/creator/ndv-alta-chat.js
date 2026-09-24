@@ -447,6 +447,7 @@ module.exports = async function handler(req, res) {
       : paisAlta === "co" ? { moneda: "COP", pais: "Colombia" }
       : paisAlta === "mx" ? { moneda: "MXN", pais: "México" }
       : {};
+    if (toText(body.correoContacto)) overridesRegen.correoContacto = toText(body.correoContacto);
     if (!quoteId) return sendJson(res, 400, { ok: false, error: "Falta quoteId." });
     if (!companyId && body.soloEspejo !== true) {
       return sendJson(res, 400, { ok: false, error: "Falta companyId (id de la empresa en la plataforma)." });
@@ -498,6 +499,22 @@ module.exports = async function handler(req, res) {
         }
       : await espejoDeCotizacion(cfg, quote, quoteId, paisAlta);
     if (!cot) {
+      // SIN ESPEJO (24-sep, TRANSPORT MINING COT1653 y la E2E de los 4 países):
+      // la emisión no lo creó porque la cotización nació sin correo de contacto.
+      // Se crea ahora desde los ítems vigentes (con el correo que ya tenga la
+      // cotización o el del administrador) y la próxima pasada lo convierte.
+      if (por === "sin_espejo" && !cotForzado && queda() > 20_000) {
+        const nuevo = await regenerarEspejo(quoteId, Math.max(15_000, queda() - 8_000), overridesRegen);
+        console.log(`[ndv-alta-chat] cotización ${quoteId} sin espejo → creado: ${nuevo.ok ? nuevo.ndvId : `falló: ${nuevo.error}`}`);
+        return sendJson(res, 200, {
+          ok: nuevo.ok,
+          listo: false,
+          reintentable: true,
+          pendiente: "espejo_creado",
+          espejoNuevo: nuevo.ndvId || undefined,
+          error: nuevo.ok ? undefined : `sin espejo y no se pudo crear: ${nuevo.error}`,
+        });
+      }
       return sendJson(res, 200, {
         ok: false,
         listo: false,
