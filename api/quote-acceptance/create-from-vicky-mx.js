@@ -1016,8 +1016,8 @@ module.exports = async function handler(req, res) {
         // Propaga al puntero de Supabase (principio Lalo 07-ago: el PDF nuevo en TODOS lados)
         await actualizarPunteroPdf(quoteId, pdfUrl);
         const tieneReloj = items.some((it) => it && String(it.tipo || "").toLowerCase() === "hardware");
-        if (!contactoEmail) return; // sin correo: el link viaja por el chat
-        await sendQuoteEmailViaZoho({
+        // sin correo: el link viaja por el chat (el espejo Creator va igual).
+        if (contactoEmail) await sendQuoteEmailViaZoho({
           quoteModule: config.quoteModule,
           quoteId,
           fromEmail: VICKY_FROM_EMAIL,
@@ -1039,7 +1039,33 @@ module.exports = async function handler(req, res) {
             pdfUrl,
             tieneReloj,
           }),
-        });
+        }).catch((mailErr) =>
+          console.error("[create-from-vicky-mx] correo de cotización falló:", mailErr?.message || mailErr),
+        );
+        // ── Cotización en Zoho Creator (24-sep, alta por chat en México) ──
+        // Mismo puente que Chile/Perú/Colombia con moneda MXN, país México y la
+        // escalera mexicana. Va ÚLTIMO y best-effort: link, PDF y correo son la
+        // ruta crítica. UNA sola nota (plan + equipo en pesos), como Colombia.
+        try {
+          const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
+          const { ESCALERA_ASISTENCIA_MX } = require("../_shared/escaleras-pais");
+          await emitirCotizacionEnCreator({
+            config,
+            quoteId,
+            dealId,
+            acceptanceData: { companyRut: rfc },
+            escalerasPrecio: {
+              plan_asistencia: ESCALERA_ASISTENCIA_MX.map((t) => ({ ...t })),
+              asistencia: ESCALERA_ASISTENCIA_MX.map((t) => ({ ...t })),
+            },
+            userCount: Number(userCount) || 0,
+            crmIncompleto,
+            motivo: "emision-mx",
+            creatorOverrides: { moneda: "MXN", pais: "México" },
+          });
+        } catch (creatorErr) {
+          console.error("[create-from-vicky-mx] Creator falló (best-effort):", creatorErr?.message || creatorErr);
+        }
       })().catch((bgErr) =>
         console.error(
           "[create-from-vicky-mx] PDF/correo en segundo plano falló:",

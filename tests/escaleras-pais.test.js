@@ -41,3 +41,11 @@ test("tabla de cobro en PEN: tramos peruanos en soles, sin extender con la escal
   assert.equal(r.diagnostico.moneda, "PEN");
   assert.equal(r.diagnostico.fallback, false);
 });
+
+test("México (24-sep): la nota de venta lleva la escalera en pesos mexicanos", () => {
+  const { escalerasDefaultPorMoneda, monedaYPais } = require("../api/_shared/escaleras-pais");
+  const e = escalerasDefaultPorMoneda("MXN");
+  assert.deepEqual(e.plan_asistencia[0], { desde: 1, hasta: 15, modalidad: "fijo", precioUF: 1200 });
+  assert.equal(e.plan_asistencia[1].precioUF, 83);
+  assert.deepEqual(monedaYPais({ deal: { Territorio: "México" } }).moneda, "MXN");
+});

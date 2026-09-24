@@ -32,6 +32,16 @@ const ESCALERA_ASISTENCIA_CO = Object.freeze([
   { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 13700 },
 ]);
 
+/** Escalera de asistencia MX en pesos mexicanos (espejo de lib/paises/mx/catalogo.ts
+ * del agente, precio de Karen 24-sep: 1-15 $1,200 fijo · 16-20 $83 por usuario;
+ * 21-30 $79 y 31-50 $75 quedan fuera del rango de Vicky, solo tabla de cobro). */
+const ESCALERA_ASISTENCIA_MX = Object.freeze([
+  { desde: 1, hasta: 15, modalidad: "fijo", precioUF: 1200 },
+  { desde: 16, hasta: 20, modalidad: "por_usuario", precioUF: 83 },
+  { desde: 21, hasta: 30, modalidad: "por_usuario", precioUF: 79 },
+  { desde: 31, hasta: 50, modalidad: "por_usuario", precioUF: 75 },
+]);
+
 const MONEDA_POR_PAIS = Object.freeze({
   chile: { moneda: "UF", pais: "Chile" },
   peru: { moneda: "PEN", pais: "Perú" },
@@ -90,7 +100,12 @@ function escalerasDefaultPorMoneda(moneda) {
     const filas = ESCALERA_ASISTENCIA_CO.map((t) => ({ ...t }));
     return { plan_asistencia: filas, asistencia: filas.map((t) => ({ ...t })) };
   }
+  // México (24-sep): mismo patrón, plan como `plan_asistencia`.
+  if (m === "mxn") {
+    const filas = ESCALERA_ASISTENCIA_MX.map((t) => ({ ...t }));
+    return { plan_asistencia: filas, asistencia: filas.map((t) => ({ ...t })) };
+  }
   return {};
 }
 
-module.exports = { ESCALERA_ASISTENCIA_PE, ESCALERA_ASISTENCIA_CO, monedaYPais, escalerasDefaultPorMoneda };
+module.exports = { ESCALERA_ASISTENCIA_PE, ESCALERA_ASISTENCIA_CO, ESCALERA_ASISTENCIA_MX, monedaYPais, escalerasDefaultPorMoneda };

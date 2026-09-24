@@ -440,8 +440,13 @@ module.exports = async function handler(req, res) {
     const paisRaw = toText(body.pais).toLowerCase();
     // COLOMBIA (23-sep): una sola nota en COP (plan + equipo en pesos), sin la
     // nota USD aparte de Perú; el arreglo en sitio (UF) tampoco aplica.
-    const paisAlta = paisRaw === "pe" ? "pe" : paisRaw === "co" ? "co" : "cl";
-    const overridesRegen = paisAlta === "pe" ? { moneda: "PEN", pais: "Perú", filtroLineas: "sin_hardware" } : paisAlta === "co" ? { moneda: "COP", pais: "Colombia" } : {};
+    // MÉXICO (24-sep): igual que Colombia, una sola nota en MXN.
+    const paisAlta = paisRaw === "pe" ? "pe" : paisRaw === "co" ? "co" : paisRaw === "mx" ? "mx" : "cl";
+    const overridesRegen =
+      paisAlta === "pe" ? { moneda: "PEN", pais: "Perú", filtroLineas: "sin_hardware" }
+      : paisAlta === "co" ? { moneda: "COP", pais: "Colombia" }
+      : paisAlta === "mx" ? { moneda: "MXN", pais: "México" }
+      : {};
     if (!quoteId) return sendJson(res, 400, { ok: false, error: "Falta quoteId." });
     if (!companyId && body.soloEspejo !== true) {
       return sendJson(res, 400, { ok: false, error: "Falta companyId (id de la empresa en la plataforma)." });
