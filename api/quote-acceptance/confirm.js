@@ -1,7 +1,12 @@
 const { verifyAcceptanceToken } = require("../_shared/acceptance-token");
 const { getRecord, updateRecordBestEffort, createRecord, toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
-const { getMercadoPagoConfig, isTestLaneQuote } = require("../_shared/mercadopago-config");
+const {
+  getMercadoPagoConfig,
+  getMercadoPagoConfigForQuotePais,
+  isTestLaneQuote,
+} = require("../_shared/mercadopago-config");
+const { paisDeToken } = require("../_shared/pais-pago");
 const { runOnboardingHandoff } = require("../_shared/onboarding-handoff");
 const {
   runNdvHandoff,
@@ -109,10 +114,11 @@ function buildPaymentSessionToken(mpConfig, { quoteId, dealId, billingEmail, pai
       quoteId,
       dealId,
       billingEmail,
-      // pais viaja SOLO cuando es "co" (viene del token de aceptación firmado
-      // por create-from-vicky-co): así payment-session sabe que debe cobrar con
-      // la app MP Colombia sin ir a Zoho, y el token chileno queda idéntico.
-      ...(["co", "pe"].includes(toText(pais).toLowerCase()) ? { pais: toText(pais).toLowerCase() } : {}),
+      // pais viaja SOLO cuando no es Chile (viene del token de aceptación
+      // firmado por la emisión del país): así payment-session sabe con qué app
+      // de MP cobrar sin ir a Zoho, y el token chileno queda idéntico. Los
+      // países válidos salen de la ficha (pais-pago.js).
+      ...(paisDeToken({ pais }) ? { pais: paisDeToken({ pais }) } : {}),
       exp: Date.now() + ttlMinutes * 60 * 1000,
     },
     "payment_session"
@@ -286,13 +292,12 @@ export default async function handler(req, res) {
     const config = getAcceptanceConfig(req);
     const mpConfig = getMercadoPagoConfig(req);
     const payload = verifyAcceptanceToken(token);
-    // MÉXICO v1: sin pago en línea. La pasarela MercadoPago de este proyecto es
-    // CHILENA (cuenta CL, moneda CLP; el token de sesión de pago ni siquiera
-    // propaga pais "mx") — un mexicano NO puede pasar por ahí. Su camino es:
-    // aceptar acá → transferir a BANORTE → mandar el comprobante por WhatsApp
-    // (registrar_comprobante_transferencia le entrega el onboarding). Por lo
-    // mismo, la aceptación MX TAMPOCO dispara el handoff directo: la puerta del
-    // onboarding es el comprobante (decisión de dos puertas, 26-jul).
+    // MÉXICO: el cobro en línea depende de que la cuenta de Mercado Pago de
+    // CHECADOR, S.A. de C.V. esté cargada (MP_ACCESS_TOKEN_MX; o la sandbox
+    // para la empresa de prueba). Con ella, México sigue el MISMO camino de
+    // pago que Chile, Perú y Colombia (tarjeta o transferencia en pago.html).
+    // Sin ella, queda el camino de siempre: aceptar → transferir a BANORTE →
+    // comprobante por WhatsApp (la puerta del onboarding es el comprobante).
     const esMx = toText(payload.pais).toLowerCase() === "mx";
     const DATOS_TRANSFERENCIA_MX = {
       beneficiario: "CHECADOR, S.A. de C.V.",
@@ -314,6 +319,17 @@ export default async function handler(req, res) {
     // MercadoPago, se trata la cotización como pagada y se finaliza directo
     // (mismo handoff que crea el COT). Permite testear el flujo completo sin pago.
     const bypassPayment = isTestLaneQuote(quote, config);
+    let mxEnLinea = false;
+    if (esMx) {
+      try {
+        mxEnLinea = getMercadoPagoConfigForQuotePais(req, quote, config, "mx").enabled === true;
+      } catch (mxErr) {
+        // Carril de prueba sin credenciales sandbox: jamás caer a producción.
+        console.warn("[confirm] MX sin pago en línea:", toText(mxErr?.message || mxErr));
+      }
+    }
+    // MX sin cuenta de MP cargada → transferencia + comprobante por WhatsApp.
+    const mxPorTransferencia = esMx && !bypassPayment && !mxEnLinea;
     const currentOnboardingUrl = toText(quote?.[config.quoteOnboardingUrlField]);
     const currentOnboardingLookup = toText(quote?.[config.quoteOnboardingLookupField]?.id);
     let authoritativeContactEmail = normalizeEmail(quote?.[config.contactEmailField]);
@@ -401,7 +417,7 @@ export default async function handler(req, res) {
     if (alreadyAccepted) {
       // MX ya aceptada: se repiten las instrucciones de transferencia. Nunca
       // se reanuda el "journey de pago" chileno ni se entrega onboarding.
-      if (esMx && !bypassPayment) {
+      if (mxPorTransferencia) {
         sendJson(res, 200, {
           success: true,
           alreadyAccepted: true,
@@ -620,7 +636,7 @@ export default async function handler(req, res) {
     // MÉXICO: aceptada, con nota, y el cliente vuelve al chat con los datos de
     // la transferencia. Ni MercadoPago (pasarela chilena) ni handoff (la puerta
     // del onboarding es el comprobante por WhatsApp).
-    if (esMx && !bypassPayment) {
+    if (mxPorTransferencia) {
       try {
         await createRecord(
           "Notes",

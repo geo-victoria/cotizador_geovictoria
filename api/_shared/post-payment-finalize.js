@@ -26,12 +26,10 @@ const { notifyQuoteEvent } = require("./quote-internal-notify");
 const {
   sanitizeItems,
   clampDescuentoPct,
-  computePaymentAmounts,
-  computePaymentAmountsCO,
-  computePaymentAmountsPE,
+  computePaymentAmountsPais,
 } = require("./quote-pricing");
-const { getMercadoPagoConfigForQuoteCO, getMercadoPagoConfigForQuotePE } = require("./mercadopago-config");
-const { esCotizacionCO, esCotizacionPE } = require("./payment-session");
+const { getMercadoPagoConfigForQuotePais } = require("./mercadopago-config");
+const { resolverPaisCotizacion } = require("./payment-session");
 const {
   searchPaymentsByExternalReference,
   buildExternalReference,
@@ -238,34 +236,21 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
   // config (respetando el carril sandbox de la empresa de prueba) y los montos
   // CO (con el IVA del hardware incluido), para que oneShotApproved
   // busque los pagos con el token correcto y compare contra el monto correcto.
-  const pais =
-    mpConfig?.pais === "co" || (await esCotizacionCO(quote, null, acceptanceConfig))
-      ? "co"
-      : mpConfig?.pais === "pe" || (await esCotizacionPE(quote, null, acceptanceConfig))
-        ? "pe"
-        : "cl";
-  if (pais === "co") {
-    mpConfig = getMercadoPagoConfigForQuoteCO(null, quote, acceptanceConfig);
-  } else if (pais === "pe") {
-    mpConfig = getMercadoPagoConfigForQuotePE(null, quote, acceptanceConfig);
+  const pais = mpConfig?.pais || (await resolverPaisCotizacion(quote, null, acceptanceConfig));
+  if (pais !== "cl") {
+    mpConfig = getMercadoPagoConfigForQuotePais(null, quote, acceptanceConfig, pais);
   }
 
   const items = sanitizeItems(quote?.[acceptanceConfig.quoteItemsSubformField]);
   const descuentoPct = clampDescuentoPct(quote?.[acceptanceConfig.quoteDiscountPctField]);
-  const amounts =
-    pais === "co"
-      ? computePaymentAmountsCO(items, descuentoPct)
-      : pais === "pe"
-        ? computePaymentAmountsPE(items, descuentoPct)
-        : computePaymentAmounts(items, descuentoPct, {
-            includeIva: mpConfig.includeIva,
-            // FIX Gescor/COT395 (13-ago): el checkout cobra el PRIMER MES en el
-            // pago inicial (oneShotIncludeFirstMonth), pero el finalize lo
-            // calculaba sin él — toda cotización SOLO SOFTWARE daba oneShot=0,
-            // 'no hay cobro online' y el pago aprobado en MP quedaba invisible
-            // para siempre. Misma fórmula en ambas caras, siempre.
-            includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
-          });
+  // FIX Gescor/COT395 (13-ago): la fórmula del finalize es la MISMA del
+  // checkout en todos los países (en CL con el primer mes del pago inicial):
+  // toda cotización SOLO SOFTWARE daba oneShot=0 y el pago aprobado en MP
+  // quedaba invisible para siempre.
+  const amounts = computePaymentAmountsPais(pais, items, descuentoPct, {
+    includeIva: mpConfig.includeIva,
+    includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
+  });
 
   const hasOneShot = amounts.oneShotClp > 0;
   // Suscripción MP RETIRADA (Lalo 12-ago): la mensualidad va SIEMPRE por
@@ -362,7 +347,7 @@ async function maybeFinalizeQuote({ mpConfig, acceptanceConfig, quoteId, dealId 
     // El finalize downstream (onboarding + NDV) corre IGUAL que Chile también
     // para CO (decisión paso 4 COLOMBIA.md); si algo resulta Chile-específico
     // se ajustará en fase 2 CO. Se deja traza para diagnosticar esos casos.
-    if (pais === "co" || pais === "pe") {
+    if (pais !== "cl") {
       console.log(`[finalize] cotizacion ${pais.toUpperCase()} ${quoteId}: pago confirmado, finalize estandar (pasos Chile-especificos se ajustan si aparecen).`);
     }
     const result = await finalizeAfterPayment({

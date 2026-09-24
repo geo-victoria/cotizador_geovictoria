@@ -473,54 +473,63 @@ function computePaymentAmountsPE(items, descuentos) {
 }
 
 // ── MÉXICO ──────────────────────────────────────────────────────────────────
-// Totales MX — IVA 16% POR LÍNEA según el flag Afecto_IVA del subform (en MX,
-// a diferencia de CO, el IVA aplica en general a servicios Y hardware: el
-// agente marca afectoIva=true en las líneas gravadas). Convención espejo de
-// COLOMBIA.md: en MX el subform guarda MXN en los campos *_CLP/*_UF, por eso
-// acá `subtotalClp` se lee como MXN.
-//
-// Buckets espejo de CO: "Pago inicial" = SOLO los pagos únicos (capacitación,
-// venta de reloj, envío, instalación); "Mensualidad" = los recurrentes. MX NO
-// tiene fila de Activación (no existe en la tropicalización MX): la
-// mensualidad se factura desde la activación del servicio.
-//
-// REDONDEO (decisión MX): a CENTAVOS (2 decimales, Math.round(x*100)/100) en
-// vez del redondeo a peso entero de CL/CO. El MXN usa centavos y el IVA 16%
-// sobre precios enteros produce centavos exactos (ej: 16 usuarios × $83 =
-// $1.328 + IVA = $1.540,48) — redondear a entero descontaría el cobro.
+// Totales MX = la MISMA función de PE y CO (24-sep, al conectar México a
+// Mercado Pago: "un solo código global con parámetros"). Parámetros del país:
+//   · IVA 16 % POR LÍNEA según Afecto_IVA (en MX el IVA grava servicios Y
+//     hardware; el agente marca afectoIva=true en las líneas gravadas).
+//   · Redondeo a CENTAVOS: el MXN usa centavos y el IVA 16 % sobre precios
+//     enteros los produce exactos (16 × $83 = $1.328 + IVA = $1.540,48).
+//   · Pago inicial = pagos únicos + PRIMER MES (patrón CL/PE/CO). Antes del
+//     24-sep en MX era SOLO los pagos únicos: una venta de solo software
+//     tenía $0 que cobrar en línea. MX nunca tuvo fila de Activación.
+//   · El subform guarda MXN en los campos *_CLP (convención de país).
+// Las claves se sufijan "Mxn"/"Iva" y conservan las de antes
+// (pagoInicialMxn, mensualidadMxn, …) para la página de aceptación.
 const IVA_RATE_MX = 0.16;
 
 function round2(value) {
   return Math.round(toNumber(value) * 100) / 100;
 }
 
-function computeTotalsMX(items) {
-  const rows = Array.isArray(items) ? items : [];
-  let pagoInicialNeto = 0;
-  let pagoInicialIva = 0;
-  let mensualidadNeta = 0;
-  let mensualidadIva = 0;
+function computeTotalsMX(items, descuentos) {
+  return sufijarTotales(
+    computeTotalsPais(items, descuentos, {
+      tasa: IVA_RATE_MX,
+      round: round2,
+      esFilaPlan: esFilaPlanPE,
+      esFilaActivacion: esFilaActivacionPE,
+      activacionLegadaConDescuento: false,
+    }),
+    "Mxn",
+    "Iva",
+  );
+}
 
-  rows.forEach((row) => {
-    const montoMxn = toNumber(row?.subtotalClp);
-    const ivaMxn = row?.afectoIva === true ? montoMxn * IVA_RATE_MX : 0;
-    if (isRecurrentModalidad(row?.modalidad)) {
-      mensualidadNeta += montoMxn;
-      mensualidadIva += ivaMxn;
-    } else {
-      pagoInicialNeto += montoMxn;
-      pagoInicialIva += ivaMxn;
-    }
-  });
+function computePaymentAmountsMX(items, descuentos) {
+  const totals = computeTotalsMX(items, descuentos);
+  const d = normalizeDescuentos(descuentos);
+  return paymentAmountsDesdeTotales(
+    {
+      pagoInicial: totals.pagoInicialMxn, unicos: totals.unicosMxn, primerMes: totals.primerMesMxn, mensualidad: totals.mensualidadMxn,
+      unicosNeto: totals.unicosNetoMxn, unicosImp: totals.unicosIvaMxn, primerMesNeto: totals.primerMesNetoMxn, primerMesImp: totals.primerMesIvaMxn,
+      mensualidadNeta: totals.mensualidadNetaMxn, mensualidadImp: totals.mensualidadIvaMxn,
+    },
+    d,
+    { mx: totals },
+  );
+}
 
-  return {
-    pagoInicialNetoMxn: round2(pagoInicialNeto),
-    pagoInicialIvaMxn: round2(pagoInicialIva),
-    pagoInicialMxn: round2(pagoInicialNeto + pagoInicialIva),
-    mensualidadNetaMxn: round2(mensualidadNeta),
-    mensualidadIvaMxn: round2(mensualidadIva),
-    mensualidadMxn: round2(mensualidadNeta + mensualidadIva),
-  };
+/**
+ * Montos a cobrar según el país de la cotización — el ÚNICO punto que decide
+ * la fórmula. Chile sigue con computePaymentAmounts (UF → CLP, flags de la
+ * config chilena); el resto con su wrapper de computeTotalsPais.
+ */
+function computePaymentAmountsPais(pais, items, descuentos, opcionesCL = {}) {
+  const p = String(pais || "cl").toLowerCase();
+  if (p === "co") return computePaymentAmountsCO(items, descuentos);
+  if (p === "pe") return computePaymentAmountsPE(items, descuentos);
+  if (p === "mx") return computePaymentAmountsMX(items, descuentos);
+  return computePaymentAmounts(items, descuentos, opcionesCL);
 }
 
 module.exports = {
@@ -545,4 +554,6 @@ module.exports = {
   computeTotalsPE,
   computePaymentAmountsPE,
   computeTotalsMX,
+  computePaymentAmountsMX,
+  computePaymentAmountsPais,
 };

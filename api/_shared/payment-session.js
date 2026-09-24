@@ -14,46 +14,42 @@
 const { getRecord, getRecordWithFields, toText } = require("./zoho-crm");
 const { getQuoteConRespaldo } = require("./respaldo-cotizacion");
 const { getAcceptanceConfig } = require("./quote-acceptance-config");
-const { getMercadoPagoConfig, getMercadoPagoConfigForQuoteCO, getMercadoPagoConfigForQuotePE } = require("./mercadopago-config");
+const { getMercadoPagoConfigForQuotePais } = require("./mercadopago-config");
+const { paisDeToken, paisPorTerritorio } = require("./pais-pago");
 const { verifyVerificationToken, normalizeEmail } = require("./verification-token");
 const {
   sanitizeItems,
   clampDescuentoPct,
-  computePaymentAmounts,
-  computePaymentAmountsCO,
-  computePaymentAmountsPE,
+  computePaymentAmountsPais,
 } = require("./quote-pricing");
 
 const PAYMENT_SESSION_PURPOSE = "payment_session";
 
 /**
- * true si la cotización es COLOMBIA. Mecanismo primario: el token (de pago o
- * de aceptación) viene firmado con pais:"co" — lo hace create-from-vicky-co y
- * se propaga a los tokens de pago en confirm.js / session.js — así no hay
- * llamadas extra a Zoho. Respaldo: Territorio del Deal = "Colombia" (el MISMO
- * criterio que usa session.js), para tokens antiguos o re-minteados sin la
- * marca. Chile no cambia: sin marca y sin territorio CO → false.
+ * País de la cotización — UNA función para todos (24-sep). Mecanismo
+ * primario: el token (de pago o de aceptación) firmado con `pais` por la
+ * emisión del país y propagado por confirm.js / session.js, así no hay
+ * llamadas extra a Zoho. Respaldo: Territorio del Deal (tokens antiguos o sin
+ * la marca). Sin marca y sin territorio conocido → "cl" (Chile no cambia).
+ * Best-effort: si Zoho falla en el respaldo se asume Chile, nunca se rompe la
+ * sesión de pago por esto.
  */
-async function esCotizacionCO(quote, tokenPayload, acceptanceConfig) {
-  if (toText(tokenPayload?.pais).toLowerCase() === "co") return true;
+async function resolverPaisCotizacion(quote, tokenPayload, acceptanceConfig) {
+  const delToken = paisDeToken(tokenPayload);
+  if (delToken) return delToken;
   const dealField = toText(acceptanceConfig?.quoteDealLookupField) || "Deal_Asociado";
   const dealId = toText(quote?.[dealField]?.id || quote?.[dealField]);
-  if (!dealId) return false;
-  // Best-effort: si Zoho falla en este respaldo, se asume Chile (el
-  // comportamiento previo), nunca se rompe la sesión de pago por esto.
+  if (!dealId) return "cl";
   const deal = await getRecordWithFields("Deals", dealId, ["id", "Territorio"]).catch(() => null);
-  return /colombia/i.test(toText(deal?.Territorio));
+  return paisPorTerritorio(deal?.Territorio);
 }
 
-/** true si la cotización es PERÚ. Mismo mecanismo que CO: token firmado con
- * pais:"pe" (create-from-vicky-pe) y respaldo Territorio del Deal = "Perú". */
+// Compatibilidad con los llamadores de antes.
+async function esCotizacionCO(quote, tokenPayload, acceptanceConfig) {
+  return (await resolverPaisCotizacion(quote, tokenPayload, acceptanceConfig)) === "co";
+}
 async function esCotizacionPE(quote, tokenPayload, acceptanceConfig) {
-  if (toText(tokenPayload?.pais).toLowerCase() === "pe") return true;
-  const dealField = toText(acceptanceConfig?.quoteDealLookupField) || "Deal_Asociado";
-  const dealId = toText(quote?.[dealField]?.id || quote?.[dealField]);
-  if (!dealId) return false;
-  const deal = await getRecordWithFields("Deals", dealId, ["id", "Territorio"]).catch(() => null);
-  return /per[uú]/i.test(toText(deal?.Territorio));
+  return (await resolverPaisCotizacion(quote, tokenPayload, acceptanceConfig)) === "pe";
 }
 
 async function resolvePaymentSession(req, token) {
@@ -82,20 +78,11 @@ async function resolvePaymentSession(req, token) {
     throw new Error("El token de pago no corresponde a esta cotizacion.");
   }
 
-  // País de la cotización: define credenciales de MP (app CO en COP vs app CL
-  // en CLP) y la fórmula de montos (CO: IVA 19% solo en líneas de hardware,
-  // resto precios finales — vs flag global chileno).
-  const pais = (await esCotizacionCO(quote, payload, acceptanceConfig))
-    ? "co"
-    : (await esCotizacionPE(quote, payload, acceptanceConfig))
-      ? "pe"
-      : "cl";
-  const mpConfig =
-    pais === "co"
-      ? getMercadoPagoConfigForQuoteCO(req, quote, acceptanceConfig)
-      : pais === "pe"
-        ? getMercadoPagoConfigForQuotePE(req, quote, acceptanceConfig)
-        : getMercadoPagoConfig(req);
+  // País de la cotización: define credenciales de MP (app del país, su
+  // moneda y — si es la empresa de prueba — credenciales sandbox) y la
+  // fórmula de montos (impuesto por línea, redondeo, primer mes).
+  const pais = await resolverPaisCotizacion(quote, payload, acceptanceConfig);
+  const mpConfig = getMercadoPagoConfigForQuotePais(req, quote, acceptanceConfig, pais);
 
   const items = sanitizeItems(quote?.[acceptanceConfig.quoteItemsSubformField]);
   const descuentos = {
@@ -103,20 +90,10 @@ async function resolvePaymentSession(req, token) {
     instalacionRMPct: Number(quote?.[acceptanceConfig.quoteDiscountInstRMPctField] || 0),
     instalacionRegionPct: Number(quote?.[acceptanceConfig.quoteDiscountInstRegionPctField] || 0),
   };
-  const amounts =
-    pais === "co"
-      ? // CO: pago único = ítems no recurrentes (+IVA 19% solo en los de
-        // hardware); la Activación ya es el primer mes → sin "primer mes"
-        // adicional. Descuento del plan = Chile (21-sep): rebaja plan y Activación.
-        computePaymentAmountsCO(items, descuentos)
-      : pais === "pe"
-      ? // PE: pago único = no recurrentes (Activación = primer mes completo
-        // adelantado) + IGV 18% por línea afecta (en PE: todas).
-        computePaymentAmountsPE(items, descuentos)
-      : computePaymentAmounts(items, descuentos, {
-          includeIva: mpConfig.includeIva,
-          includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
-        });
+  const amounts = computePaymentAmountsPais(pais, items, descuentos, {
+    includeIva: mpConfig.includeIva,
+    includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
+  });
 
   const billingEmail =
     normalizeEmail(payload?.billingEmail) ||
@@ -126,7 +103,7 @@ async function resolvePaymentSession(req, token) {
   return {
     acceptanceConfig,
     mpConfig,
-    // "co" = Colombia (COP, IVA solo en hardware); "cl" = Chile (sin cambios).
+    // cl | co | pe | mx (ficha en pais-pago.js).
     pais,
     quote,
     quoteId,
@@ -145,6 +122,7 @@ async function resolvePaymentSession(req, token) {
 module.exports = {
   PAYMENT_SESSION_PURPOSE,
   resolvePaymentSession,
+  resolverPaisCotizacion,
   esCotizacionCO,
   esCotizacionPE,
 };

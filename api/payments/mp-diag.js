@@ -27,11 +27,21 @@ function authorized(req) {
   return secretoValido(req);
 }
 
-const ENVS = {
-  cl: { access: "MP_ACCESS_TOKEN", publicKey: "MP_PUBLIC_KEY", webhook: "MP_WEBHOOK_SECRET", testAccess: "MP_TEST_ACCESS_TOKEN", testPublic: "MP_TEST_PUBLIC_KEY" },
-  co: { access: "MP_ACCESS_TOKEN_CO", publicKey: "MP_PUBLIC_KEY_CO", webhook: "MP_WEBHOOK_SECRET_CO", testAccess: "MP_TEST_ACCESS_TOKEN_CO", testPublic: "MP_TEST_PUBLIC_KEY_CO" },
-  pe: { access: "MP_ACCESS_TOKEN_PE", publicKey: "MP_PUBLIC_KEY_PE", webhook: "MP_WEBHOOK_SECRET_PE", testAccess: "MP_TEST_ACCESS_TOKEN_PE", testPublic: "MP_TEST_PUBLIC_KEY_PE" },
-};
+// Nombres de las envs por país, derivados de la ficha (pais-pago.js): un
+// país nuevo aparece en el diagnóstico sin tocar este archivo.
+const { PAISES_PAGO } = require("../_shared/pais-pago");
+const ENVS = Object.fromEntries(
+  Object.values(PAISES_PAGO).map((f) => {
+    const s = f.envSufijo;
+    return [f.codigo, {
+      access: `MP_ACCESS_TOKEN${s}`,
+      publicKey: `MP_PUBLIC_KEY${s}`,
+      webhook: `MP_WEBHOOK_SECRET${s}`,
+      testAccess: `MP_TEST_ACCESS_TOKEN${s}`,
+      testPublic: `MP_TEST_PUBLIC_KEY${s}`,
+    }];
+  }),
+);
 
 /** Tipo de credencial por su prefijo: APP_USR = producción · TEST = prueba. */
 function tipoToken(t) {

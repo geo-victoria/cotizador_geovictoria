@@ -19,10 +19,11 @@
  *     builder NO agrega líneas fijas propias — nada de la mecánica CL/CO de
  *     "valorizada con 100 % de descuento": la capacitación MX se cobra y su
  *     descripción es honesta (sin leyenda de regalo).
- *   - Bloque de totales: "Pago inicial (al aceptar)" = pagos únicos
- *     (capacitación + equipos/envío/instalación si aplican); "Mensualidad" =
- *     recurrentes, facturada desde la activación del servicio. MX no tiene
- *     fila de Activación ni "primer mes por adelantado".
+ *   - Bloque de totales: "Pago inicial (al aceptar)" = pagos únicos + primer
+ *     mes adelantado (24-sep, patrón de los otros tres países)
+ *     (equipos/envío/instalación si aplican); "Mensualidad" = recurrentes,
+ *     facturada desde el segundo mes. MX no tiene fila de Activación: el
+ *     primer mes se calcula desde los recurrentes.
  *   - T&C adaptados de Chile: MXN con IVA 16% donde se indique; relojes en
  *     arriendo propiedad de GeoVictoria con devolución a Hamburgo 213 y multa
  *     equivalente a 6 mensualidades de arriendo ($2,100 MXN por reloj, espejo
@@ -242,14 +243,25 @@ function buildProposalHtmlMX({
 
   // ── Caja de totales ──
   let totHtml = "";
-  totHtml += `<div class="tot-h">Pago inicial — al aceptar</div>`;
-  totHtml += `<div class="tr"><span>Conceptos de pago único (incluye capacitación)</span><span>${formatMXN(uniNeto)}</span></div>`;
-  if (uniIva > 0) {
-    totHtml += `<div class="tr"><span>IVA (16 %)</span><span>${formatMXN(uniIva)}</span></div>`;
+  // Pago inicial = pagos únicos + PRIMER MES adelantado (24-sep, patrón de
+  // Chile, Perú y Colombia: antes en MX eran solo los pagos únicos y una
+  // venta de solo software no tenía nada que cobrar en línea).
+  const iniNeto = round2(uniNeto + recNeto);
+  const iniIva = round2(uniIva + recIva);
+  const iniTot = round2(iniNeto + iniIva);
+  totHtml += `<div class="tot-h">Pago inicial — al aceptar${recTot > 0 ? " (incluye 1er mes)" : ""}</div>`;
+  if (uniNeto > 0 || recTot <= 0) {
+    totHtml += `<div class="tr"><span>Conceptos de pago único</span><span>${formatMXN(uniNeto)}</span></div>`;
   }
-  totHtml += `<div class="tr grand"><span>Total a pagar ahora</span><span>${formatMXN(uniTot)} MXN</span></div>`;
   if (recTot > 0) {
-    totHtml += `<div class="tot-h" style="margin-top:6px">Mensualidad del servicio</div>`;
+    totHtml += `<div class="tr"><span>Primer mes del servicio (adelantado)</span><span>${formatMXN(recNeto)}</span></div>`;
+  }
+  if (iniIva > 0) {
+    totHtml += `<div class="tr"><span>IVA (16 %)</span><span>${formatMXN(iniIva)}</span></div>`;
+  }
+  totHtml += `<div class="tr grand"><span>Total a pagar ahora</span><span>${formatMXN(iniTot)} MXN</span></div>`;
+  if (recTot > 0) {
+    totHtml += `<div class="tot-h" style="margin-top:6px">Mensualidad del servicio — desde el 2&ordm; mes (referencial)</div>`;
     totHtml += `<div class="tr"><span>Neto</span><span>${formatMXN(recNeto)}</span></div>`;
     if (recIva > 0) {
       totHtml += `<div class="tr"><span>IVA (16 %)</span><span>${formatMXN(recIva)}</span></div>`;
@@ -258,9 +270,8 @@ function buildProposalHtmlMX({
   }
   totHtml +=
     `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
-    `El <b>Pago inicial</b> se cobra al aceptar y corresponde a los conceptos de pago &uacute;nico ` +
-    `(capacitaci&oacute;n y, si aplica, equipos, env&iacute;o e instalaci&oacute;n). ` +
-    `La <b>mensualidad</b> se factura desde la activaci&oacute;n del servicio; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente.` +
+    `El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el primer mes de servicio. ` +
+    `La <b>mensualidad</b> es referencial, seg&uacute;n los usuarios de esta cotizaci&oacute;n; se factura mensualmente desde el segundo mes y la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente.` +
     `</div>`;
 
   const ctaHref = escapeHtml(acceptanceUrl || "#");
@@ -271,7 +282,7 @@ function buildProposalHtmlMX({
   // a Hamburgo 213 con multa espejo de la regla CL en MXN, sin permanencia,
   // capacitación COBRADA — por eso NO figura en el bullet "incluye sin costo").
   const TYC_MX = [
-    "El pago inicial —al aceptar esta cotización— corresponde a los conceptos de pago único: capacitación y, si aplica, equipos, envío e instalación. La mensualidad del servicio se factura desde la activación.",
+    "El pago inicial —al aceptar esta cotización— incluye los conceptos de pago único (si aplica, equipos, envío e instalación) y el primer mes de servicio por adelantado. La mensualidad se factura desde el segundo mes.",
     "Valores en pesos mexicanos (MXN). Los montos no incluyen IVA (16 %), que se agrega donde se indica.",
     "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
     `Para los relojes en modalidad arriendo: el servicio incluye mantención y reposición por falla técnica. Los equipos son propiedad de GeoVictoria y al término del servicio deben devolverse en ${ORG_MX.direccion}, ${ORG_MX.ciudad}. Si terminas el servicio con menos de 6 mensualidades de arriendo pagadas y conservas los equipos, se cobra el equivalente a 6 mensualidades de arriendo ($2,100 MXN por reloj).`,

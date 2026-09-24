@@ -8,6 +8,7 @@ const {
 const { finalizeAfterPayment, marcarEstadoPagada } = require("../_shared/post-payment-finalize");
 const { onboardingPorChat } = require("../_shared/onboarding-chat");
 const { notifyQuoteEvent } = require("../_shared/quote-internal-notify");
+const { fichaPago, presentacionPago } = require("../_shared/pais-pago");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -26,25 +27,13 @@ function normalizeWhatsappPhone(value) {
 // finanzas). Antes apuntaba al teléfono del Owner de la cotización en Zoho,
 // pero el usuario "Vicky GeoVictoria" no tiene teléfono, así que el botón de
 // WhatsApp jamás aparecía y el cliente quedaba con un texto vago.
-const VICKY_WHATSAPP_PHONE = toText(process.env.VICKY_WHATSAPP_PHONE || "56967308227");
-// Líneas de Vicky por país para el botón "Enviar comprobante por WhatsApp":
-// el comprobante peruano/colombiano va a SU línea, no a la chilena.
-const VICKY_WHATSAPP_PHONE_PE = toText(process.env.VICKY_WHATSAPP_PHONE_PE || "51922067167");
-const VICKY_WHATSAPP_PHONE_CO = toText(process.env.VICKY_WHATSAPP_PHONE_CO || "573181070737");
-
-// Datos bancarios de COLOMBIA para el modal de transferencia (Lalo 21-sep,
-// "permitamos transferencias en Colombia"; certificado Bancolombia 01-06-2026:
-// GEOVICTORIA COLOMBIA SAS, NIT 901367959, cuenta de ahorros 20200000237).
-// Env-driven para poder cambiar la cuenta sin deploy. CL y PE siguen con los
-// datos escritos en las páginas (se migran acá cuando toque tocarlos).
+// Línea de Vicky y cuenta bancaria de cada país: salen de la ficha
+// (pais-pago.js) — el comprobante peruano/colombiano/mexicano va a SU línea y
+// a SU cuenta, jamás a la chilena.
 function cuentaTransferenciaPorPais(pais) {
-  if (pais !== "co") return [];
-  return [
-    { label: "Titular", value: toText(process.env.TRANSFER_CO_TITULAR || "GEOVICTORIA COLOMBIA SAS") },
-    { label: "NIT", value: toText(process.env.TRANSFER_CO_NIT || "901.367.959-1") },
-    { label: "Banco", value: toText(process.env.TRANSFER_CO_BANCO || "Bancolombia") },
-    { label: toText(process.env.TRANSFER_CO_TIPO_CUENTA || "Cuenta de ahorros"), value: toText(process.env.TRANSFER_CO_CUENTA || "20200000237") },
-  ];
+  // Chile y Perú tienen sus filas escritas también en las páginas (respaldo
+  // para respuestas viejas cacheadas); el servidor manda las de todos.
+  return fichaPago(pais).cuentaTransferencia();
 }
 
 // Correo de la fila "Email" en los datos de transferencia (Lalo 18-ago, dos
@@ -117,9 +106,7 @@ const RECEIPT_TO_OWNER = /^(1|true|on)$/i.test(toText(process.env.TRANSFER_RECEI
 async function buildTransferInfo(quote, pais = "cl") {
   const dueno = await propietarioHumano(quote).catch(() => null);
   let executiveName = "Vicky";
-  let whatsappPhone = normalizeWhatsappPhone(
-    pais === "pe" ? VICKY_WHATSAPP_PHONE_PE : pais === "co" ? VICKY_WHATSAPP_PHONE_CO : VICKY_WHATSAPP_PHONE,
-  );
+  let whatsappPhone = normalizeWhatsappPhone(fichaPago(pais).whatsappVicky());
   // Nombre del ejecutivo para el texto ("tu ejecutivo X recibe el aviso").
   const ejecutivoNombre = dueno ? toText(dueno.name).split(" ")[0] : "";
   if (RECEIPT_TO_OWNER && dueno && dueno.id) {
@@ -136,8 +123,9 @@ async function buildTransferInfo(quote, pais = "cl") {
     transferEmail: RECEIPT_TO_OWNER && dueno && dueno.email ? dueno.email : TRANSFER_CONTACT_EMAIL,
     quoteNumber: toText(quote?.Numero_Cotizacion),
     pais,
-    // Filas de la cuenta bancaria del país (hoy solo CO viene del servidor).
+    // Filas de la cuenta bancaria del país (ficha).
     cuenta: cuentaTransferenciaPorPais(pais),
+    whatsappEtiqueta: fichaPago(pais).whatsappEtiqueta,
   };
 }
 
@@ -261,8 +249,10 @@ export default async function handler(req, res) {
     sendJson(res, 200, {
       success: true,
       quote: { id: quoteId, name: quoteName },
-      // "co" = Colombia: pago.html muestra COP, trato de usted y solo tarjeta.
+      // País y cómo presentarlo (moneda, decimales, trato, pie): pago.html
+      // lo lee de acá en vez de ramificar por país.
       pais,
+      presentacion: presentacionPago(pais),
       currencyId: mpConfig.currencyId,
       includeIva: amounts.includeIva,
       // Regla del recargo tarjeta — MISMA fuente que create-preference
@@ -272,7 +262,7 @@ export default async function handler(req, res) {
       // pct 0 fuera de CL para que pago.html no lo muestre a un peruano.
       recargo: {
         umbralClp: Number(process.env.MP_RECARGO_UMBRAL_CLP || 200000),
-        pct: pais === "co" || pais === "pe" ? 0 : Number(process.env.MP_RECARGO_PCT || 3),
+        pct: fichaPago(pais).recargoTarjeta ? Number(process.env.MP_RECARGO_PCT || 3) : 0,
       },
       amounts: {
         oneShotClp: amounts.oneShotClp,

@@ -1,5 +1,6 @@
 const { toText } = require("../_shared/zoho-crm");
 const { resolvePaymentSession } = require("../_shared/payment-session");
+const { fichaPago } = require("../_shared/pais-pago");
 const { pickInitPoint } = require("../_shared/mercadopago-config");
 const { createPreference, buildExternalReference } = require("../_shared/mercadopago-client");
 
@@ -81,7 +82,8 @@ export default async function handler(req, res) {
     // saber de qué empresa era cada pago. El título ahora lleva número de
     // cotización + empresa + RUT/NIT; el cliente lo ve igual en el checkout
     // (informativo, no molesta).
-    const idTributario = session.pais === "co" ? "NIT" : session.pais === "pe" ? "RUC" : "RUT";
+    const ficha = fichaPago(session.pais);
+    const idTributario = ficha.documento;
     const etiquetaReporte = [
       toText(session.quote?.Numero_Cotizacion) || `Cotizacion ${quoteId}`,
       toText(session.quote?.Cuenta_Asociada?.name),
@@ -128,7 +130,7 @@ export default async function handler(req, res) {
     // Solo CHILE: el umbral es en CLP y la alternativa sin recargo es la
     // transferencia local. CO nunca lo tuvo; PE (montos en PEN) tampoco —
     // aplicarle el umbral chileno a soles cobraría 3% casi nunca/mal.
-    if (session.pais !== "co" && session.pais !== "pe") {
+    if (ficha.recargoTarjeta) {
       const recargoUmbral = Number(process.env.MP_RECARGO_UMBRAL_CLP || 200000);
       const recargoPct = Number(process.env.MP_RECARGO_PCT || 3);
       if (recargoPct > 0 && amounts.oneShotClp > recargoUmbral) {
@@ -161,10 +163,13 @@ export default async function handler(req, res) {
             surname: partesNombre.length > 1 ? partesNombre.slice(-1)[0] : undefined,
           }
         : {}),
-      ...(session.companyRut
+      // Tipo de identificación que acepta el sitio de MP del país (ficha).
+      // México lo omite: MLM no pide identificación en el checkout y un tipo
+      // que el sitio no conoce puede hacer fallar la preferencia.
+      ...(session.companyRut && ficha.tipoIdentificacionMp
         ? {
             identification: {
-              type: session.pais === "co" ? "NIT" : session.pais === "pe" ? "RUC" : "RUT",
+              type: ficha.tipoIdentificacionMp,
               number: session.companyRut,
             },
           }

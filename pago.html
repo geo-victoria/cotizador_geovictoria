@@ -181,6 +181,10 @@
         // bancaria CO para transferencias aún); Chile queda idéntico (CLP).
         var paisPago = "cl";
         var monedaPago = "CLP";
+        // Presentación del país (ficha del servidor, pais-pago.js): locale,
+        // decimales, trato (tú/usted), etiqueta de WhatsApp y pie de montos.
+        // Un país nuevo no necesita una rama más en esta página.
+        var presPago = {};
 
         // ── Telemetría del último metro (Rodrigo 17-ago): pings best-effort
         // al agente (vic-pago-evento) — primer timestamp por evento; jamás
@@ -201,10 +205,9 @@
 
         function fmtMonto(value) {
           try {
-            var locale = paisPago === "co" ? "es-CO" : paisPago === "pe" ? "es-PE" : "es-CL";
-            // PEN usa céntimos (el descuento de cierre 20% los produce);
-            // CLP/COP van a peso entero como siempre.
-            var maxFrac = paisPago === "pe" ? 2 : 0;
+            var locale = presPago.locale || (paisPago === "co" ? "es-CO" : paisPago === "pe" ? "es-PE" : "es-CL");
+            // PEN y MXN usan centavos; CLP/COP van a peso entero como siempre.
+            var maxFrac = Number.isFinite(presPago.decimales) ? presPago.decimales : paisPago === "pe" ? 2 : 0;
             return new Intl.NumberFormat(locale, {
               style: "currency",
               currency: monedaPago,
@@ -358,8 +361,10 @@
         }
 
         function renderOneShot(state) {
-          var esCO = paisPago === "co";
-          var esPE = paisPago === "pe";
+          // Trato del país: usted (CO) o tú (resto). Fuera de Chile el pago
+          // inicial SIEMPRE incluye el primer mes (patrón CL, 23-24 sep).
+          var esCO = presPago.tratamiento ? presPago.tratamiento === "usted" : paisPago === "co";
+          var esPE = paisPago !== "cl" && !esCO;
           var a = state.amounts;
           var hasFirstMonth = Number(a.firstMonthClp || 0) > 0;
           var rows = "";
@@ -509,6 +514,7 @@
           // (GEOVICTORIA PERU S.A.C. / BBVA, datos de Lalo 15-sep). JAMÁS los
           // chilenos a un cliente peruano.
           var esPEt = paisPago === "pe";
+          var etiquetaWa = (state && state.transfer && state.transfer.whatsappEtiqueta) || presPago.whatsappEtiqueta || "";
           var tCuenta = (state && state.transfer && state.transfer.cuenta) || [];
           var filasCuenta = Array.isArray(tCuenta) && tCuenta.length
             ? tCuenta.map(function (r) {
@@ -530,7 +536,7 @@
             ? '<a class="btn" id="transferWaBtn" href="' + waLink +
               '" target="_blank" rel="noopener noreferrer" onclick="pfPing(&quot;transfer_wsp_click&quot;)">Enviar comprobante por WhatsApp</a>'
             : '<p class="transfer-help">Env&iacute;ale el comprobante a Vicky por WhatsApp ' +
-              (esPEt ? "(+51 922 067 167)" : paisPago === "co" ? "(+57 318 107 0737)" : "(+56 9 6730 8227)") + " para procesar tu pedido.</p>";
+              "(" + (etiquetaWa || "+56 9 6730 8227") + ") para procesar tu pedido.</p>";
           return (
             '<div id="transferPanel" class="transfer-panel hidden">' +
             '<div class="transfer-title">Datos para transferencia</div>' +
@@ -559,7 +565,7 @@
           // CO/PE: mismos estados que Chile pero sin mencionar "suscripción"
           // (la mensualidad va por facturación). CO en usted; PE reusa ese
           // texto (neutro y correcto también en tuteo peruano).
-          var esCO = paisPago === "co" || paisPago === "pe";
+          var esCO = paisPago !== "cl";
           if (state.onboarding.ready && state.onboarding.chat) {
             // Alta por CHAT de Vicky (05-sep): nada de wizard ni redirección —
             // Vicky le manda el formulario de alta por WhatsApp.
@@ -648,7 +654,8 @@
             // País/moneda ANTES de renderizar: todos los formatos y textos
             // condicionados por CO dependen de estas dos variables.
             paisPago = String(state.pais || "cl").toLowerCase();
-            monedaPago = String(state.currencyId || (paisPago === "co" ? "COP" : paisPago === "pe" ? "PEN" : "CLP"));
+            presPago = state.presentacion || {};
+            monedaPago = String(state.currencyId || presPago.moneda || (paisPago === "co" ? "COP" : paisPago === "pe" ? "PEN" : "CLP"));
             if (state.quote && state.quote.id && !__pfQuoteId) {
               __pfQuoteId = String(state.quote.id);
               pfPing("pago_abierto");
@@ -673,7 +680,9 @@
             // desglose vive en la cotización/PDF); acá solo se indica la moneda.
             footEl.innerHTML =
               "Pagos procesados por Mercado Pago." +
-              (paisPago === "co"
+              (presPago.pieMontos
+                ? " " + presPago.pieMontos
+                : paisPago === "co"
                 ? " Montos en pesos colombianos (COP)."
                 : paisPago === "pe"
                 ? " Montos en soles (PEN), IGV incluido."

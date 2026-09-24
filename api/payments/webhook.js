@@ -1,6 +1,7 @@
 const { toText } = require("../_shared/zoho-crm");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
-const { getMercadoPagoConfig, getMercadoPagoConfigCO, getMercadoPagoConfigPE } = require("../_shared/mercadopago-config");
+const { getMercadoPagoConfig, getMercadoPagoConfigPais } = require("../_shared/mercadopago-config");
+const { paisesConCuentaPropia } = require("../_shared/pais-pago");
 const {
   getPayment,
   validateWebhookSignature,
@@ -68,8 +69,8 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Multi-país: la MISMA URL recibe los webhooks de las apps de Chile y de
-  // Colombia. El país se determina por CUÁL clave valida la firma (cada app
+  // Multi-país: la MISMA URL recibe los webhooks de las apps de todos los
+  // países. El país se determina por CUÁL clave valida la firma (cada app
   // firma con su propia clave secreta); las credenciales para consultar el
   // pago y finalizar salen de la config de ese país.
   let mpConfig = getMercadoPagoConfig(req);
@@ -94,26 +95,17 @@ export default async function handler(req, res) {
       dataId: toText(query["data.id"] || query.id || body?.data?.id),
     };
     let signature = validateWebhookSignature({ ...firmaArgs, secret: mpConfig.webhookSecret });
-    if (!signature.valid) {
-      const mpConfigCO = getMercadoPagoConfigCO(req);
-      if (mpConfigCO.webhookSecret) {
-        const firmaCO = validateWebhookSignature({ ...firmaArgs, secret: mpConfigCO.webhookSecret });
-        if (firmaCO.valid) {
-          signature = firmaCO;
-          mpConfig = mpConfigCO;
-          console.log("[mp-webhook] firma validada con la app de COLOMBIA");
-        }
-      }
-    }
-    if (!signature.valid) {
-      const mpConfigPE = getMercadoPagoConfigPE(req);
-      if (mpConfigPE.webhookSecret) {
-        const firmaPE = validateWebhookSignature({ ...firmaArgs, secret: mpConfigPE.webhookSecret });
-        if (firmaPE.valid) {
-          signature = firmaPE;
-          mpConfig = mpConfigPE;
-          console.log("[mp-webhook] firma validada con la app de PERÚ");
-        }
+    // Resto de los países: se prueba la clave de cada app con cuenta propia
+    // (ficha pais-pago.js). Un país nuevo entra acá sin tocar este archivo.
+    for (const pais of paisesConCuentaPropia()) {
+      if (signature.valid) break;
+      const cfgPais = getMercadoPagoConfigPais(req, pais);
+      if (!cfgPais.webhookSecret) continue;
+      const firma = validateWebhookSignature({ ...firmaArgs, secret: cfgPais.webhookSecret });
+      if (firma.valid) {
+        signature = firma;
+        mpConfig = cfgPais;
+        console.log(`[mp-webhook] firma validada con la app de ${pais.toUpperCase()}`);
       }
     }
 

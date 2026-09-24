@@ -9,7 +9,8 @@
 
 const { toText } = require("../_shared/zoho-crm");
 const { secretoValido } = require("../_shared/secreto-vicky");
-const { getMercadoPagoConfig } = require("../_shared/mercadopago-config");
+const { getMercadoPagoConfigPais } = require("../_shared/mercadopago-config");
+const { fichaPago } = require("../_shared/pais-pago");
 const {
   searchPaymentsByExternalReference,
   buildExternalReference,
@@ -34,7 +35,9 @@ module.exports = async function handler(req, res) {
   const quoteId = toText(req?.query?.quoteId);
   if (!quoteId) return sendJson(res, 400, { ok: false, error: "quoteId requerido" });
 
-  const mpConfig = getMercadoPagoConfig(req);
+  // ?pais=co|pe|mx consulta la cuenta de MP de ese país (ficha); sin él, Chile.
+  const pais = fichaPago(toText(req?.query?.pais).toLowerCase()).codigo;
+  const mpConfig = getMercadoPagoConfigPais(req, pais);
   if (!mpConfig.enabled || !mpConfig.accessToken) {
     return sendJson(res, 503, { ok: false, error: "MP no configurado" });
   }

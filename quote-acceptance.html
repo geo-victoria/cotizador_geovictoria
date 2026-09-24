@@ -3252,20 +3252,30 @@
             t: totals.co || {}, fmt: fmtCOP, m: "Cop", imp: "Iva",
             subtotalLabel: "Subtotal", impLabel: "IVA equipos (19 %)", impSoloSiHay: true,
           };
+          // MX (24-sep, al conectar México a Mercado Pago): la MISMA
+          // estructura. IVA 16 % sobre las líneas afectas (servicios Y
+          // hardware); el pago inicial incluye el primer mes, como en los
+          // otros tres países. La tabla MX tiene 6 columnas (sin Dcto.).
+          const PAIS_UI_MX = {
+            t: totals.mx || {}, fmt: fmtMXN, m: "Mxn", imp: "Iva",
+            subtotalLabel: "Subtotal (sin IVA)", impLabel: "IVA (16 %)", impSoloSiHay: true, cols: 6,
+          };
           function totalesPaisHtml(ui) {
             const t = ui.t, f = ui.fmt, m = ui.m;
+            const cols = ui.cols || 7;
+            const cs = String(cols - 1);
             const pct = Number(t.descuentoPct || 0);
             const mensual = Number(t["mensualidad" + m] || 0);
             const mensualLista = Number(t["mensualidadLista" + m] || mensual);
             const impInicial = Number(t["pagoInicial" + ui.imp + m] || 0);
             let h =
-              '<tr class="cost-row-sub"><td colspan="6">' + ui.subtotalLabel + "</td><td>" +
+              '<tr class="cost-row-sub"><td colspan="' + cs + '">' + ui.subtotalLabel + "</td><td>" +
               f(t["pagoInicialNeto" + m]) + "</td></tr>";
             if (!ui.impSoloSiHay || impInicial > 0) {
-              h += '<tr class="cost-row-sub"><td colspan="6">' + ui.impLabel + "</td><td>" + f(impInicial) + "</td></tr>";
+              h += '<tr class="cost-row-sub"><td colspan="' + cs + '">' + ui.impLabel + "</td><td>" + f(impInicial) + "</td></tr>";
             }
             h +=
-              '<tr class="cost-row-total"><td colspan="6">' +
+              '<tr class="cost-row-total"><td colspan="' + cs + '">' +
               (ES_ANUAL ? "Pago anual — a pagar ahora (12 meses anticipados)" : "Pago inicial — a pagar ahora (incluye 1er mes)") +
               "</td><td>" + f(t["pagoInicial" + m]) + "</td></tr>";
             if (mensual > 0) {
@@ -3278,25 +3288,25 @@
                 pct > 0
                   ? "Valor mensual del servicio — desde el 2&ordm; mes (referencial, " + Math.round(pct) + "% dcto.)"
                   : "Valor mensual del servicio — desde el 2&ordm; mes (referencial)";
-              h += '<tr class="cost-row-sub"><td colspan="6">' + mensualLabel + "</td><td>" + mensualCell + "</td></tr>";
+              h += '<tr class="cost-row-sub"><td colspan="' + cs + '">' + mensualLabel + "</td><td>" + mensualCell + "</td></tr>";
             }
             if (pct > 0) {
               h +=
-                '<tr><td colspan="7" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
+                '<tr><td colspan="' + cols + '" style="font-size:12px;color:#047857;padding-top:6px;font-weight:600">' +
                 "Descuentos aplicados: " + Math.round(pct) + (ES_ANUAL ? "% en la anualidad (" : "% en el plan mensual (") + vigenciaDescuentoCorto() + ")" +
                 "</td></tr>" +
-                '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:4px;line-height:1.5">' +
+                '<tr><td colspan="' + cols + '" style="font-size:11px;color:#6b7280;padding-top:4px;line-height:1.5">' +
                 escapeHtml(vigenciaDescuentoTexto()) +
                 "</td></tr>";
             }
             if (ES_ANUAL) {
               h +=
-                '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
+                '<tr><td colspan="' + cols + '" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
                 "El <b>Pago anual</b> se cobra al aceptar y cubre los 12 meses del servicio por adelantado; no hay mensualidades del plan durante el a&ntilde;o." +
                 "</td></tr>";
             } else if (mensual > 0) {
               h +=
-                '<tr><td colspan="7" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
+                '<tr><td colspan="' + cols + '" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
                 "El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el primer mes de servicio. " +
                 "El <b>valor mensual</b> es referencial, seg&uacute;n los usuarios de esta cotizaci&oacute;n y sujeto a mantenerlos; se factura mensualmente desde el segundo mes y la variaci&oacute;n de usuarios activos lo ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
                 "</td></tr>";
@@ -3329,40 +3339,7 @@
           }
           let totalsRowsHtml;
           if (esMX) {
-            // México: totales del bloque `mx` del servidor (computeTotalsMX,
-            // IVA 16 % sobre las líneas Afecto_IVA — en MX aplica a servicios
-            // Y hardware). Sin fila de Activación: en MX no existe; la
-            // mensualidad se factura desde la activación del servicio. Espejo
-            // de los bloques "PAGO INICIAL" / "MENSUALIDAD" del PDF MX.
-            const mx = totals.mx || {};
-            totalsRowsHtml =
-              '<tr class="cost-row-sub"><td colspan="5">Conceptos de pago único (incluye capacitación)</td><td>' +
-              fmtMXN(mx.pagoInicialNetoMxn) + "</td></tr>";
-            if (Number(mx.pagoInicialIvaMxn || 0) > 0) {
-              totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="5">IVA (16 %)</td><td>' +
-                fmtMXN(mx.pagoInicialIvaMxn) + "</td></tr>";
-            }
-            totalsRowsHtml +=
-              '<tr class="cost-row-total"><td colspan="5">Pago inicial — al aceptar</td><td>' +
-              fmtMXN(mx.pagoInicialMxn) + " MXN</td></tr>";
-            if (Number(mx.mensualidadMxn || 0) > 0) {
-              if (Number(mx.mensualidadIvaMxn || 0) > 0) {
-                totalsRowsHtml +=
-                  '<tr class="cost-row-sub"><td colspan="5">Mensualidad del servicio (neto)</td><td>' +
-                  fmtMXN(mx.mensualidadNetaMxn) + "</td></tr>" +
-                  '<tr class="cost-row-sub"><td colspan="5">IVA (16 %)</td><td>' +
-                  fmtMXN(mx.mensualidadIvaMxn) + "</td></tr>";
-              }
-              totalsRowsHtml +=
-                '<tr class="cost-row-sub"><td colspan="5">Total mensual</td><td>' +
-                fmtMXN(mx.mensualidadMxn) + " MXN/mes</td></tr>";
-            }
-            totalsRowsHtml +=
-              '<tr><td colspan="6" style="font-size:11px;color:#6b7280;padding-top:6px;line-height:1.5">' +
-              "El <b>Pago inicial</b> se cobra al aceptar y corresponde a los conceptos de pago &uacute;nico (capacitaci&oacute;n y, si aplica, equipos, env&iacute;o e instalaci&oacute;n). " +
-              "La <b>mensualidad</b> se factura desde la activaci&oacute;n del servicio; la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente." +
-              "</td></tr>";
+            totalsRowsHtml = totalesPaisHtml(PAIS_UI_MX);
           } else if (esPE || esCO) {
             // PERÚ y COLOMBIA = la MISMA estructura que la página chilena, en
             // UN solo bloque (Lalo 23-sep: "en la cotizadora también hay que
@@ -3438,16 +3415,7 @@
           if (costHighlight) {
             let chHtml;
             if (esMX) {
-              // México: montos con IVA 16 % incluido desde computeTotalsMX.
-              const mx = totals.mx || {};
-              chHtml =
-                '<div class="ch-item"><span>Pago inicial — al aceptar (incluye capacitación)</span><strong>' +
-                fmtMXN(mx.pagoInicialMxn) + " MXN</strong></div>";
-              if (Number(mx.mensualidadMxn || 0) > 0) {
-                chHtml +=
-                  '<div class="ch-item"><span>Mensualidad del servicio</span><strong>' +
-                  fmtMXN(mx.mensualidadMxn) + " MXN/mes</strong></div>";
-              }
+              chHtml = heroPaisHtml(PAIS_UI_MX);
             } else if (esPE || esCO) {
               // Perú y Colombia = Chile (21/23-sep), un solo bloque.
               chHtml = heroPaisHtml(esPE ? PAIS_UI_PE : PAIS_UI_CO);

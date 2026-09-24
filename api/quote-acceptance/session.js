@@ -11,15 +11,14 @@ const { getRecord, getRecordWithFields, getUserById, toText } = require("../_sha
 const { getQuoteConRespaldo } = require("../_shared/respaldo-cotizacion");
 const { onboardingPorChat } = require("../_shared/onboarding-chat");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
-const { getMercadoPagoConfig } = require("../_shared/mercadopago-config");
+const { getMercadoPagoConfig, getMercadoPagoConfigForQuotePais } = require("../_shared/mercadopago-config");
+const { paisDeToken } = require("../_shared/pais-pago");
 const { signVerificationPayload } = require("../_shared/verification-token");
 const {
-  computePaymentAmounts,
-  computePaymentAmountsCO,
   computeTotalsCO,
   computeTotalsMX,
   computeTotalsPE,
-  computePaymentAmountsPE,
+  computePaymentAmountsPais,
 } = require("../_shared/quote-pricing");
 
 // Minteo del link de pago para un cliente que VUELVE a una cotización ya
@@ -32,9 +31,10 @@ function buildPaymentUrlForQuote(mpConfig, { quoteId, dealId, billingEmail, pais
       quoteId,
       dealId,
       billingEmail,
-      // pais viaja cuando es "co" o "pe": payment-session cobra con la app MP
-      // del país sin ir a Zoho; el token chileno queda idéntico al de siempre.
-      ...(["co", "pe"].includes(toText(pais).toLowerCase()) ? { pais: toText(pais).toLowerCase() } : {}),
+      // pais viaja cuando no es Chile (ficha pais-pago.js): payment-session
+      // cobra con la app MP del país sin ir a Zoho; el token chileno queda
+      // idéntico al de siempre.
+      ...(paisDeToken({ pais }) ? { pais: paisDeToken({ pais }) } : {}),
       exp: Date.now() + ttlMinutes * 60 * 1000,
     },
     "payment_session"
@@ -398,11 +398,18 @@ export default async function handler(req, res) {
     const onboardingReady = Boolean(isAcceptedLocked && onboardingUrl && onboardingToken);
     const mpConfig = getMercadoPagoConfig(req);
     const paymentsEnabled = Boolean(mpConfig.enabled);
-    // MX v1: SIN pago en línea (no hay app de MercadoPago México; el pago es
-    // por transferencia BANORTE, indicada en el PDF). Nunca se mintea un link
-    // de pago para una cotización MX — cobraría con la app chilena en CLP.
-    // CL/CO no cambian.
-    const needsPayment = isAcceptedLocked && !isPaid && paymentsEnabled && !onboardingReady && pais !== "mx";
+    // Un país sin su cuenta de Mercado Pago cargada (México hasta que exista
+    // MP_ACCESS_TOKEN_MX) no recibe link de pago: su camino es transferencia +
+    // comprobante por WhatsApp. Con la cuenta cargada, mismo camino que Chile.
+    let paisConPago = true;
+    if (pais !== "cl") {
+      try {
+        paisConPago = getMercadoPagoConfigForQuotePais(req, quote, config, pais).enabled === true;
+      } catch (_e) {
+        paisConPago = false; // carril de prueba sin sandbox: nunca producción
+      }
+    }
+    const needsPayment = isAcceptedLocked && !isPaid && paymentsEnabled && paisConPago && !onboardingReady;
     // Pagada SIN link de onboarding = alta por chat de Vicky (el post-pago no
     // genera wizard cuando el agente conduce el alta por WhatsApp). La página
     // lo dice así en vez de "estamos preparando tu enlace de onboarding".
@@ -421,14 +428,10 @@ export default async function handler(req, res) {
     // CO: pago único en COP con el IVA del hardware incluido (el resto son
     // precios finales; la Activación ya es el 1er mes).
     const pagoInicialClp = needsPayment
-      ? pais === "co"
-        ? computePaymentAmountsCO(items, descuentos).oneShotClp
-        : pais === "pe"
-        ? computePaymentAmountsPE(items, descuentos).oneShotClp
-        : computePaymentAmounts(items, descuentos, {
-            includeIva: mpConfig.includeIva,
-            includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
-          }).oneShotClp
+      ? computePaymentAmountsPais(pais, items, descuentos, {
+          includeIva: mpConfig.includeIva,
+          includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
+        }).oneShotClp
       : 0;
 
     sendJson(res, 200, {
@@ -526,7 +529,7 @@ export default async function handler(req, res) {
       totals: {
         ...computeTotals(items, descuentos),
         ...(pais === "co" ? { co: { ...computeTotalsCO(items, descuentos), mesesDescuento } } : {}),
-        ...(pais === "mx" ? { mx: computeTotalsMX(items) } : {}),
+        ...(pais === "mx" ? { mx: { ...computeTotalsMX(items, descuentos), mesesDescuento } } : {}),
         ...(pais === "pe" ? { pe: { ...computeTotalsPE(items, descuentos), mesesDescuento } } : {}),
       },
     });

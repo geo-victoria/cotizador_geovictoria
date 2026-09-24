@@ -23,16 +23,11 @@ const { secretoValido } = require("../_shared/secreto-vicky");
 const {
   sanitizeItems,
   clampDescuentoPct,
-  computePaymentAmounts,
-  computePaymentAmountsCO,
-  computePaymentAmountsPE,
+  computePaymentAmountsPais,
 } = require("../_shared/quote-pricing");
-const {
-  getMercadoPagoConfig,
-  getMercadoPagoConfigForQuoteCO,
-  getMercadoPagoConfigForQuotePE,
-} = require("../_shared/mercadopago-config");
-const { esCotizacionCO, esCotizacionPE } = require("../_shared/payment-session");
+const { getMercadoPagoConfig } = require("../_shared/mercadopago-config");
+const { resolverPaisCotizacion } = require("../_shared/payment-session");
+const { fichaPago } = require("../_shared/pais-pago");
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -43,7 +38,8 @@ function sendJson(res, status, payload) {
 
 function redondeoPais(pais, v) {
   const n = Number(v) || 0;
-  return pais === "pe" ? Math.round(n * 100) / 100 : Math.round(n);
+  // Soles y pesos mexicanos llevan centavos; CLP/COP son enteros (ficha).
+  return fichaPago(pais).decimales > 0 ? Math.round(n * 100) / 100 : Math.round(n);
 }
 
 module.exports = async function handler(req, res) {
@@ -57,36 +53,23 @@ module.exports = async function handler(req, res) {
     const quote = await getRecord(config.quoteModule, quoteId);
     if (!quote) return sendJson(res, 404, { ok: false, error: "cotización no encontrada" });
 
-    const pais = (await esCotizacionCO(quote, null, config))
-      ? "co"
-      : (await esCotizacionPE(quote, null, config))
-        ? "pe"
-        : "cl";
+    const pais = await resolverPaisCotizacion(quote, null, config);
     const items = sanitizeItems(quote?.[config.quoteItemsSubformField]);
     const descuentoPct = clampDescuentoPct(quote?.[config.quoteDiscountPctField]);
-
-    let amounts;
-    if (pais === "co") {
-      // Colombia tiene la escalera chilena del plan desde el 21-sep.
-      amounts = computePaymentAmountsCO(items, descuentoPct);
-    } else if (pais === "pe") {
-      // Perú tiene la escalera chilena del plan (10 → 20 %, 17-sep): sin el
-      // descuento el comprobante de un cliente con 10 % salía "insuficiente".
-      amounts = computePaymentAmountsPE(items, descuentoPct);
-    } else {
-      const mpConfig = getMercadoPagoConfig(req);
-      amounts = computePaymentAmounts(items, descuentoPct, {
-        includeIva: mpConfig.includeIva,
-        includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
-      });
-    }
+    const mpConfig = getMercadoPagoConfig(req);
+    // Misma fórmula que el checkout: el comprobante se compara contra lo que
+    // la página de pago pidió (con la escalera del plan y el primer mes).
+    const amounts = computePaymentAmountsPais(pais, items, descuentoPct, {
+      includeIva: mpConfig.includeIva,
+      includeFirstMonth: mpConfig.oneShotIncludeFirstMonth,
+    });
     return sendJson(res, 200, {
       ok: true,
       pais,
       quoteId,
       numero: toText(quote?.Numero_Cotizacion),
       estado: toText(quote?.Estado_Cotizacion),
-      // Soles llevan centavos (S/70.09); CLP/COP son enteros.
+      // Soles y MXN llevan centavos; CLP/COP son enteros.
       oneShotClp: redondeoPais(pais, amounts?.oneShotClp),
       firstMonthClp: redondeoPais(pais, amounts?.firstMonthClp),
       recurringClp: redondeoPais(pais, amounts?.recurringClp),
