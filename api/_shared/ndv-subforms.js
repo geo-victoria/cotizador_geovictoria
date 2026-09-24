@@ -456,9 +456,13 @@ async function completarBloqueEquipos({ creatorConfig, bloqueId, tipo, lineas, e
     return acc + unit * cant;
   }, 0);
   const faltaMonto = esArriendo && toNumber(bloque.Monto) <= 0 && montoMensual > 0;
+  // MontoHW también en la VENTA: la Referencia NDV (y el Monto_Total_HW de la
+  // IMP) suma los MontoHW de los bloques. Con el reloj vendido en 0 la
+  // referencia listaba solo el envío (caso ITALSE NDV-32260, 24-sep).
+  const faltaMontoHw = toNumber(bloque.MontoHW) <= 0 && montoHw > 0;
   const faltaPdf = glossRowVacio(bloque) && lineas.length > 0;
   const faltaFlag = toText(bloque.CAN_CREATE_PDF) !== "true";
-  if (!faltaMonto && !faltaPdf && !faltaFlag) {
+  if (!faltaMonto && !faltaMontoHw && !faltaPdf && !faltaFlag) {
     console.log(`[ndv-subforms] ${etiqueta} id=${bloqueId} completo por Creator (Monto=${bloque.Monto})`);
     return { verificado: true, completadoPorNosotros: false };
   }
@@ -502,10 +506,8 @@ async function completarBloqueEquipos({ creatorConfig, bloqueId, tipo, lineas, e
       OdooGlossRows: glossRow,
     });
   }
-  if (esArriendo) {
-    if (faltaMonto) data.Monto = Number(montoMensual.toFixed(5));
-    if (toNumber(bloque.MontoHW) <= 0 && montoHw > 0) data.MontoHW = Number(montoHw.toFixed(5));
-  }
+  if (esArriendo && faltaMonto) data.Monto = Number(montoMensual.toFixed(5));
+  if (faltaMontoHw) data.MontoHW = Number(montoHw.toFixed(5));
   const resp = await creatorApiFetch(rutaHardware(creatorConfig, bloqueId), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
