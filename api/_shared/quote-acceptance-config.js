@@ -128,6 +128,7 @@ function getAcceptanceConfig(req) {
     termsVersion: toText(process.env.QUOTE_TERMS_VERSION || "TYC-CL-2026-04"),
     termsVersionPE: toText(process.env.QUOTE_TERMS_VERSION_PE || "TYC-PE-2026-09"),
     termsVersionCO: toText(process.env.QUOTE_TERMS_VERSION_CO || "TYC-CO-2026-04"),
+    termsVersionMX: toText(process.env.QUOTE_TERMS_VERSION_MX || "TYC-MX-2026-09"),
     validityDays: toInt(process.env.QUOTE_ACCEPTANCE_VALIDITY_DAYS, 30),
     verificationCodeTtlMinutes: toInt(process.env.QUOTE_VERIFICATION_CODE_TTL_MINUTES, 10),
     verificationProofTtlMinutes: toInt(process.env.QUOTE_VERIFICATION_PROOF_TTL_MINUTES, 60),

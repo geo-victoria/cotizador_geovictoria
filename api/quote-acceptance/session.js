@@ -461,7 +461,7 @@ export default async function handler(req, res) {
         pagoInicialClp,
         quoteDate: toText(quote?.[config.quoteDateField]),
         pdfUrl,
-        termsVersion: pais === "pe" ? config.termsVersionPE || config.termsVersion : pais === "co" ? config.termsVersionCO || config.termsVersion : config.termsVersion,
+        termsVersion: pais === "pe" ? config.termsVersionPE || config.termsVersion : pais === "co" ? config.termsVersionCO || config.termsVersion : pais === "mx" ? config.termsVersionMX || config.termsVersion : config.termsVersion,
         expiresAt: new Date(payload.exp).toISOString(),
         isExpired: Date.now() >= Number(payload.exp),
         contactEmail: pickFirst(

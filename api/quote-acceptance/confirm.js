@@ -104,6 +104,7 @@ function termsVersionPara(config, pais) {
   const p = toText(pais).toLowerCase();
   if (p === "pe") return config.termsVersionPE || config.termsVersion;
   if (p === "co") return config.termsVersionCO || config.termsVersion;
+  if (p === "mx") return config.termsVersionMX || config.termsVersion;
   return config.termsVersion;
 }
 

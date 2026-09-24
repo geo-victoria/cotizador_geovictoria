@@ -310,7 +310,7 @@ function buildProposalHtmlMX({
     "El pago inicial —al aceptar esta cotización— incluye los conceptos de pago único (si aplica, equipos, envío e instalación) y el primer mes de servicio por adelantado. La mensualidad se factura desde el segundo mes.",
     "Valores en pesos mexicanos (MXN). Los montos no incluyen IVA (16 %), que se agrega donde se indica.",
     "La mensualidad está sujeta a la cantidad de usuarios de esta cotización: la variación de usuarios activos ajusta el cobro en la facturación del período siguiente.",
-    `Para los relojes en modalidad arriendo: el servicio incluye mantención y reposición por falla técnica. Los equipos son propiedad de GeoVictoria y al término del servicio deben devolverse en ${ORG_MX.direccion}, ${ORG_MX.ciudad}. Si terminas el servicio con menos de 6 mensualidades de arriendo pagadas y conservas los equipos, se cobra el equivalente a 6 mensualidades de arriendo ($2,100 MXN por reloj).`,
+    `Para los relojes en modalidad renta: el servicio incluye mantención y reposición por falla técnica. Los equipos son propiedad de GeoVictoria y al término del servicio deben devolverse en ${ORG_MX.direccion}, ${ORG_MX.ciudad}. Si terminas el servicio con menos de 6 mensualidades de renta pagadas y conservas los equipos, se cobra el equivalente a 6 mensualidades de renta ($2,100 MXN por reloj).`,
     "Los equipos en modalidad venta incluyen garantía de fábrica de 1 año bajo uso normal.",
     "Envío del equipo: incluido en renta; en venta se cobra por equipo según la zona (CDMX y Zona Metropolitana / resto del país), indicado en esta cotización. Instalación: la autoinstalación no tiene costo; la visita técnica es opcional, se cotiza como pago único según la zona y va incluida sin costo en renta dentro de CDMX y su Zona Metropolitana.",
     "Sin cláusula de permanencia: puedes terminar el servicio avisando con 30 días de anticipación.",
@@ -388,13 +388,13 @@ function buildProposalHtmlMX({
         <li>Revisa el detalle de tu cotización.</li>
         <li>Acepta los términos y condiciones.</li>
         <li>Realiza el pago inicial.</li>
-        <li>Comienza a usar GeoVictoria en 24 horas hábiles.</li>
+        <li>Nuestro equipo te contacta para activar tu cuenta.</li>
       </ol>
     </div>
     <div>
       <div class="tot">${totHtml}</div>
       <a class="cta-btn" href="${ctaHref}">Haz clic aquí para aceptar y comenzar…</a>
-      <p class="cta-sub">Acepta e inicia tu onboarding en solo 15 minutos.<br>Activaremos tu servicio en 24 horas hábiles.</p>
+      <p class="cta-sub">Acepta y paga en línea.<br>Nuestro equipo te contacta para activar tu servicio.</p>
     </div>
   </div>
 
