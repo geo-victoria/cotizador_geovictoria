@@ -10,6 +10,7 @@ const { createRecord, updateRecord, getRecord, getRecordWithFields, toText } = r
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
 const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, reservarDealPorFono, getLeadCandadoPorFono } = require("../_shared/idempotencia");
 const { nacerDealDesdeLead } = require("../_shared/lead-first");
+const { conEmbudoDeCampanas } = require("../_shared/embudo-zoho");
 const { zohoApiFetch } = require("../_shared/zoho-auth");
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
@@ -178,7 +179,7 @@ function splitFullName(fullName) {
 // Si la cuenta/contacto YA existen (dedup por nombre de Zoho), el convert
 // devuelve DUPLICATE_DATA con el id del duplicado: se reintenta UNA vez
 // apuntando a esos registros existentes (el lead se fusiona en ellos).
-async function convertLead(leadId, dealData, existingIds = {}) {
+async function convertLeadCrudo(leadId, dealData, existingIds = {}) {
   const path = `/crm/v3/Leads/${encodeURIComponent(leadId)}/actions/convert`;
   // dealData null → conversión SIN deal nuevo (candado cruzado: el deal ya
   // existe, nacido del hito de conversación — solo se necesita Account/Contact).
@@ -213,7 +214,7 @@ async function convertLead(leadId, dealData, existingIds = {}) {
           dupModule === "Contacts"
             ? { ...existingIds, contactId: dupId }
             : { ...existingIds, accountId: dupId };
-        return convertLead(leadId, dealData, retryIds);
+        return convertLeadCrudo(leadId, dealData, retryIds);
       }
     }
     throw new Error(`Zoho convert Lead failed (${response.status}): ${text.slice(0, 300)}`);
@@ -247,6 +248,9 @@ async function convertLead(leadId, dealData, existingIds = {}) {
     dealId: ids.dealId || recovered.dealId,
   };
 }
+// Embudo de campañas (David 24-sep): lead a Calificado → deal nace en
+// "1. Trato Creado" → avanza a su etapa. Ver api/_shared/embudo-zoho.js.
+const convertLead = conEmbudoDeCampanas(convertLeadCrudo);
 
 // LEAD VIVO por teléfono (escenario Lalo 04-ago: "Vicky creó un lead durante
 // la conversación y luego otro para convertirlo cuando hubo cotización").

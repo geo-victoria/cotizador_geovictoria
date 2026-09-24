@@ -10,6 +10,7 @@
 const { zohoApiFetch } = require("./zoho-auth");
 const { toText } = require("./zoho-crm");
 const { getLeadCandadoPorFono } = require("./idempotencia");
+const { conEmbudoDeCampanas } = require("./embudo-zoho");
 
 const OWNER_VICKY_ID = "3525045000484500876";
 // Dueños que NO son personas: un lead suyo es "sin dueño humano".
@@ -129,7 +130,7 @@ async function crearLeadParaConvertir(datos) {
  * DUPLICATE_DATA reintenta UNA vez apuntando al duplicado que Zoho reporta
  * (misma mecánica de convertLead de Chile).
  */
-async function convertirLeadEnDeal(leadId, dealData, existingIds = {}) {
+async function convertirLeadEnDealCrudo(leadId, dealData, existingIds = {}) {
   const path = `/crm/v3/Leads/${encodeURIComponent(leadId)}/actions/convert`;
   const payload = {
     overwrite: true,
@@ -155,7 +156,7 @@ async function convertirLeadEnDeal(leadId, dealData, existingIds = {}) {
         (dupModule === "Contacts" && !existingIds.contactId) || (dupModule !== "Contacts" && !existingIds.accountId);
       if (puedeReintentar) {
         const retryIds = dupModule === "Contacts" ? { ...existingIds, contactId: dupId } : { ...existingIds, accountId: dupId };
-        return convertirLeadEnDeal(leadId, dealData, retryIds);
+        return convertirLeadEnDealCrudo(leadId, dealData, retryIds);
       }
     }
     throw new Error(`Zoho convert Lead failed (${response.status}): ${text.slice(0, 300)}`);
@@ -172,6 +173,8 @@ async function convertirLeadEnDeal(leadId, dealData, existingIds = {}) {
     contactReusado: Boolean(existingIds.contactId),
   };
 }
+// Embudo de campañas (David 24-sep): ver api/_shared/embudo-zoho.js.
+const convertirLeadEnDeal = conEmbudoDeCampanas(convertirLeadEnDealCrudo);
 
 /** IDs de una conversión ya hecha ($converted_detail), para respuestas parciales. */
 async function recuperarIdsConvertidos(leadId) {

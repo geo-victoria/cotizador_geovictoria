@@ -86,6 +86,7 @@ const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono, getKvFlag } = require("../_shared/idempotencia");
 const { nacerDealDesdeLead } = require("../_shared/lead-first");
+const { conEmbudoDeCampanas } = require("../_shared/embudo-zoho");
 const { sendQuoteEmailViaZoho, buildEmailHtml } = require("./create-from-vicky");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
 const { linkCortoDeCotizacion } = require("../_shared/codigo-corto");
@@ -254,7 +255,7 @@ async function findLeadVivoCO(telefono) {
 // convertLeadCO: idéntico a convertLead de Chile (dedup DUPLICATE_DATA con
 // reintento fusionando, IDs en raíz o dentro de details). dealData null =
 // conversión SIN deal nuevo (reusa un deal ya creado por el hito).
-async function convertLeadCO(leadId, dealData, existingIds = {}) {
+async function convertLeadCOCrudo(leadId, dealData, existingIds = {}) {
   const path = `/crm/v3/Leads/${encodeURIComponent(leadId)}/actions/convert`;
   const payload = {
     overwrite: true,
@@ -284,7 +285,7 @@ async function convertLeadCO(leadId, dealData, existingIds = {}) {
           dupModule === "Contacts"
             ? { ...existingIds, contactId: dupId }
             : { ...existingIds, accountId: dupId };
-        return convertLeadCO(leadId, dealData, retryIds);
+        return convertLeadCOCrudo(leadId, dealData, retryIds);
       }
     }
     throw new Error(`Zoho convert Lead CO failed (${response.status}): ${text.slice(0, 300)}`);
@@ -304,6 +305,8 @@ async function convertLeadCO(leadId, dealData, existingIds = {}) {
     contactReusado: Boolean(existingIds.contactId),
   };
 }
+// Embudo de campañas (David 24-sep): ver api/_shared/embudo-zoho.js.
+const convertLeadCO = conEmbudoDeCampanas(convertLeadCOCrudo);
 
 // Recupera los IDs de una conversión previa desde $converted_detail (el lead
 // ya estaba convertido por el hito). Igual que recoverConvertedIds de Chile.
