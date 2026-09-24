@@ -2251,6 +2251,8 @@ module.exports = async function handler(req, res) {
       (async () => {
         // El correlativo Numero_Cotizacion (auto-número de Zoho) se genera al
         // crear el registro; lo leemos para mostrarlo en el PDF (sin "COT").
+        // Valor del trato al nacer (David 24-sep): misma fórmula del pase de limpieza.
+        await (async () => require("../_shared/valor-deal").estamparValorDeal({ quoteModule: config.quoteModule, quoteId, dealId, empleados: Number(cliente?.userCount) || 0 }))().catch(() => {});
         const numeroCotizacion = await getRecordWithFields(config.quoteModule, quoteId, ["Numero_Cotizacion"])
           .then((r) => toText(r?.Numero_Cotizacion))
           .catch(() => "");

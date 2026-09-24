@@ -1088,6 +1088,8 @@ module.exports = async function handler(req, res) {
     // ── PDF + correo en segundo plano ──
     waitUntil(
       (async () => {
+        // Valor del trato al nacer (David 24-sep): misma fórmula del pase de limpieza.
+        await (async () => require("../_shared/valor-deal").estamparValorDeal({ quoteModule: config.quoteModule, quoteId, dealId, empleados: Number(userCount) || 0 }))().catch(() => {});
         const numeroCotizacion = await getRecordWithFields(config.quoteModule, quoteId, ["Numero_Cotizacion"])
           .then((r) => toText(r?.Numero_Cotizacion))
           .catch(() => "");

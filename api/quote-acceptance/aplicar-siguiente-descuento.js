@@ -286,7 +286,7 @@ try {
 }
 
 
-module.exports = async function handler(req, res) {
+async function handlerBase(req, res) {
   if (req.method === "OPTIONS") {
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-vicky-secret");
@@ -522,4 +522,18 @@ module.exports = async function handler(req, res) {
       detail: String(error?.message || error).slice(0, 400),
     });
   }
+};
+
+// Valor del deal (David 24-sep): toda edición de la cotización re-estampa el
+// recurrente en el deal, con la misma fórmula del pase de limpieza.
+module.exports = async function handler(req, res) {
+  await handlerBase(req, res);
+  try {
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
+    const quoteId = String(body?.quoteId || "").trim();
+    if (res.statusCode === 200 && quoteId) {
+      const quoteModule = String(process.env.ZOHO_QUOTE_MODULE || "Cotizaciones_GeoVictoria").trim();
+      await require("../_shared/valor-deal").estamparValorDeal({ quoteModule, quoteId }).catch(() => {});
+    }
+  } catch { /* best-effort */ }
 };
