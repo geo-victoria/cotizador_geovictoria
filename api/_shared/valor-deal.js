@@ -12,14 +12,21 @@
 const { zohoApiFetch } = require("./zoho-auth");
 const { toText, getRecordWithFields } = require("./zoho-crm");
 
-function recurrenteNetoDesdeItems(items, pct) {
+function recurrenteNetoDesdeItems(items, pct, moneda) {
+  // CHILE EN UF (Lalo 25-sep, "para futuro en el deal para chile mantengamos
+  // todo en UF, valor y moneda"): en Chile el recurrente sale de Subtotal_UF
+  // con 2 decimales (el campo de Zoho no acepta más); fuera de Chile,
+  // Subtotal_CLP guarda la moneda del país (soles/COP/MXN) y va entero.
+  const enUf = moneda === "UF";
+  const campo = enUf ? "Subtotal_UF" : "Subtotal_CLP";
+  const redondear = (n) => (enUf ? Math.round(n * 100) / 100 : Math.round(n));
   const filas = Array.isArray(items) ? items : [];
   const anual = filas.find((i) => toText(i?.Codigo_Item) === "plan_anual");
-  if (anual && Number(anual.Subtotal_CLP) > 0) return Math.round(Number(anual.Subtotal_CLP) / 12);
+  if (anual && Number(anual[campo]) > 0) return redondear(Number(anual[campo]) / 12);
   const base = filas
     .filter((i) => i?.Es_Recurrente || ["asistencia", "plan_asistencia"].includes(toText(i?.Codigo_Item)))
-    .reduce((a, i) => a + (Number(i?.Subtotal_CLP) || 0), 0);
-  return Math.round(base * (1 - (Number(pct) || 0) / 100));
+    .reduce((a, i) => a + (Number(i?.[campo]) || 0), 0);
+  return redondear(base * (1 - (Number(pct) || 0) / 100));
 }
 
 // SOLO TRATOS DE VICKY (25-sep, reclamo de Christian/Juan Carlos: CASA SAL,
@@ -30,7 +37,7 @@ function recurrenteNetoDesdeItems(items, pct) {
 // deal no lo creó el usuario Vicky, no se toca nada.
 const VICKY_USER_ID = toText(process.env.VICKY_ZOHO_USER_ID) || "3525045000484500876";
 
-const MONEDA_POR_TERRITORIO = { Chile: "CLP", "Perú": "SOL", Peru: "SOL", Colombia: "COP", "México": "MXN", Mexico: "MXN" };
+const MONEDA_POR_TERRITORIO = { Chile: "UF", "Perú": "SOL", Peru: "SOL", Colombia: "COP", "México": "MXN", Mexico: "MXN" };
 
 async function estamparValorDeal({ quoteModule, quoteId, dealId, empleados }) {
   if (!quoteId) return { ok: false, motivo: "sin_ids" };
@@ -40,8 +47,6 @@ async function estamparValorDeal({ quoteModule, quoteId, dealId, empleados }) {
     // Ediciones (actualizar, descuento, anualidad) no traen el deal: sale de la cotización.
     dealId = dealId || toText(q?.Deal_Asociado?.id);
     if (!dealId) return { ok: false, motivo: "sin_deal" };
-    const valor = recurrenteNetoDesdeItems(q?.Detalle_Items_Cotizacion, q?.Descuento_Recurrente_Pct);
-    if (!(valor > 0)) return { ok: false, motivo: "sin_recurrente" };
     // MONEDA DEL TRATO junto con el valor (Victoria Luna + Dave 24-sep: el
     // trato nacía con "Moneda del trato" en UF por defecto y el valor en CLP →
     // 36.900 UF en el pipe/forecast hasta que el pase de limpieza de 6 h lo
@@ -50,7 +55,9 @@ async function estamparValorDeal({ quoteModule, quoteId, dealId, empleados }) {
     const deal = await getRecordWithFields("Deals", dealId, ["Territorio", "Created_By"]).catch(() => null);
     if (!deal) return { ok: false, motivo: "deal_ilegible" };
     if (toText(deal?.Created_By?.id) !== VICKY_USER_ID) return { ok: false, motivo: "deal_de_ejecutivo" };
-    const moneda = MONEDA_POR_TERRITORIO[toText(deal?.Territorio)] || "CLP";
+    const moneda = MONEDA_POR_TERRITORIO[toText(deal?.Territorio)] || "UF";
+    const valor = recurrenteNetoDesdeItems(q?.Detalle_Items_Cotizacion, q?.Descuento_Recurrente_Pct, moneda);
+    if (!(valor > 0)) return { ok: false, motivo: "sin_recurrente" };
     const data = { id: dealId, Valor_fijo_del_trato_Global: valor, Tipo_de_Cobro: "Mensual fijo", Monda_del_trato: moneda, Valor_por_usuario_Global: null };
     if (Number(empleados) > 0) data.N_Empleados_que_marcan = Number(empleados);
     const r = await zohoApiFetch(`/crm/v3/Deals`, {
@@ -67,4 +74,4 @@ async function estamparValorDeal({ quoteModule, quoteId, dealId, empleados }) {
   }
 }
 
-module.exports = { estamparValorDeal, recurrenteNetoDesdeItems };
+module.exports = { estamparValorDeal, recurrenteNetoDesdeItems, MONEDA_POR_TERRITORIO };

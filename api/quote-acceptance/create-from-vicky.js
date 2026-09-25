@@ -40,7 +40,10 @@ const VICKY_EJECUTIVO_NAME = toText(process.env.VICKY_EJECUTIVO_NAME) || "Vicky 
 const VICKY_TERRITORIO = toText(process.env.VICKY_TERRITORIO) || "Chile";
 // "Moneda del trato" del deal CL: CLP desde el 20-ago (convención de montos
 // de marketing — el recurrente del trato va en pesos; antes decía UF).
-const VICKY_MONEDA = toText(process.env.VICKY_MONEDA) || "CLP";
+// Chile en UF (Lalo 25-sep: "en el deal para chile mantengamos todo en UF,
+// valor y moneda"). Se ignora la env vieja VICKY_MONEDA (quedó en CLP por la
+// convención del 20-ago); override explícito solo con VICKY_MONEDA_CL.
+const VICKY_MONEDA = toText(process.env.VICKY_MONEDA_CL) || "UF";
 const VICKY_TOMBOLA = toText(process.env.VICKY_TOMBOLA) || "Mantener propietario";
 const VICKY_PRODUCTO_DEFAULT = toText(process.env.VICKY_PRODUCTO_DEFAULT) || "Control de Asistencia";
 const VICKY_SECTOR_FALLBACK = toText(process.env.VICKY_SECTOR_FALLBACK) || "19. Servicios";
