@@ -22,12 +22,21 @@ function recurrenteNetoDesdeItems(items, pct) {
   return Math.round(base * (1 - (Number(pct) || 0) / 100));
 }
 
+// SOLO TRATOS DE VICKY (25-sep, reclamo de Christian/Juan Carlos: CASA SAL,
+// trato de Aracelli trabajado por Grey en la convención del equipo — "Por
+// usuario" en UF —, quedó en "Mensual fijo" CLP porque Grey emitió desde la
+// cotizadora y este estampado corría para TODA emisión). La convención
+// CLP/Mensual fijo es la de Vicky: si la cotización es del canal ejecutivo o el
+// deal no lo creó el usuario Vicky, no se toca nada.
+const VICKY_USER_ID = toText(process.env.VICKY_ZOHO_USER_ID) || "3525045000484500876";
+
 const MONEDA_POR_TERRITORIO = { Chile: "CLP", "Perú": "SOL", Peru: "SOL", Colombia: "COP", "México": "MXN", Mexico: "MXN" };
 
 async function estamparValorDeal({ quoteModule, quoteId, dealId, empleados }) {
   if (!quoteId) return { ok: false, motivo: "sin_ids" };
   try {
-    const q = await getRecordWithFields(quoteModule, quoteId, ["Detalle_Items_Cotizacion", "Descuento_Recurrente_Pct", "Deal_Asociado"]);
+    const q = await getRecordWithFields(quoteModule, quoteId, ["Detalle_Items_Cotizacion", "Descuento_Recurrente_Pct", "Deal_Asociado", "Intervenci_n_Humana"]);
+    if (/intervenci/i.test(toText(q?.Intervenci_n_Humana))) return { ok: false, motivo: "canal_ejecutivo" };
     // Ediciones (actualizar, descuento, anualidad) no traen el deal: sale de la cotización.
     dealId = dealId || toText(q?.Deal_Asociado?.id);
     if (!dealId) return { ok: false, motivo: "sin_deal" };
@@ -38,7 +47,9 @@ async function estamparValorDeal({ quoteModule, quoteId, dealId, empleados }) {
     // 36.900 UF en el pipe/forecast hasta que el pase de limpieza de 6 h lo
     // corregía). Subtotal_CLP guarda la moneda del país (soles en PE, pesos en
     // CO/MX), así que la moneda sale del Territorio del deal.
-    const deal = await getRecordWithFields("Deals", dealId, ["Territorio"]).catch(() => null);
+    const deal = await getRecordWithFields("Deals", dealId, ["Territorio", "Created_By"]).catch(() => null);
+    if (!deal) return { ok: false, motivo: "deal_ilegible" };
+    if (toText(deal?.Created_By?.id) !== VICKY_USER_ID) return { ok: false, motivo: "deal_de_ejecutivo" };
     const moneda = MONEDA_POR_TERRITORIO[toText(deal?.Territorio)] || "CLP";
     const data = { id: dealId, Valor_fijo_del_trato_Global: valor, Tipo_de_Cobro: "Mensual fijo", Monda_del_trato: moneda, Valor_por_usuario_Global: null };
     if (Number(empleados) > 0) data.N_Empleados_que_marcan = Number(empleados);
