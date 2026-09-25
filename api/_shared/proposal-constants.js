@@ -153,23 +153,32 @@ function mesesDescuentoNormalizados(meses) {
   return Math.min(n, 120);
 }
 
-/** Frase de vigencia del descuento del plan. `meses` = 0 → indefinido. */
-function textoVigenciaDescuento(meses) {
+/** Frase de vigencia del descuento del plan. `meses` = 0 → indefinido.
+ * `opts.conInstalacion` (25-sep, regla global): la aclaración del descuento de
+ * instalación sale SOLO si la cotización lo trae. Antes se agregaba siempre y
+ * en México/Perú/Colombia —donde no existe descuento de instalación— hablaba
+ * de algo que el cliente no tiene. Sin el flag (llamadores viejos) se conserva
+ * el texto de siempre. */
+function textoVigenciaDescuento(meses, opts = {}) {
   const n = mesesDescuentoNormalizados(meses);
+  const conInst = opts.conInstalacion !== false;
   if (n === 0) {
-    return "El descuento sobre el plan mensual no tiene vencimiento: se mantiene mientras dure el servicio. El descuento de instalación, por ser cobro único, tampoco tiene limitación.";
+    return "El descuento sobre el plan mensual no tiene vencimiento: se mantiene mientras dure el servicio." +
+      (conInst ? " El descuento de instalación, por ser cobro único, tampoco tiene limitación." : "");
   }
+  const cola = conInst ? " El descuento de instalación, por ser cobro único, no tiene esta limitación." : "";
   if (n === 1) {
-    return "El descuento sobre el plan mensual aplica el primer mes; desde el mes 2 el plan vuelve a su tarifa normal. El descuento de instalación, por ser cobro único, no tiene esta limitación.";
+    return "El descuento sobre el plan mensual aplica el primer mes; desde el mes 2 el plan vuelve a su tarifa normal." + cola;
   }
-  return `El descuento sobre el plan mensual aplica durante los primeros ${n} meses; desde el mes ${n + 1} el plan vuelve a su tarifa normal. El descuento de instalación, por ser cobro único, no tiene esta limitación.`;
+  return `El descuento sobre el plan mensual aplica durante los primeros ${n} meses; desde el mes ${n + 1} el plan vuelve a su tarifa normal.` + cola;
 }
 
 /** Cotización ANUALIZADA (Lalo 02-sep, caso Patricio/COT1116): el descuento
  * no es "sobre el plan mensual" ni "sin vencimiento" — está incluido en el
  * pago anual y cubre exactamente los 12 meses pagados por adelantado. */
-function textoVigenciaDescuentoAnual() {
-  return "El descuento está incluido en el pago anual y cubre los 12 meses pagados por adelantado. El descuento de instalación, por ser cobro único, tampoco tiene limitación.";
+function textoVigenciaDescuentoAnual(opts = {}) {
+  return "El descuento está incluido en el pago anual y cubre los 12 meses pagados por adelantado." +
+    (opts.conInstalacion !== false ? " El descuento de instalación, por ser cobro único, tampoco tiene limitación." : "");
 }
 
 function textoVigenciaCortoAnual() {

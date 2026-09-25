@@ -653,7 +653,7 @@ function buildProposalHtml({
   // items (arriba). En los totales no se repiten: solo el precio final. Se mantiene
   // la condición temporal del descuento del plan como disclosure (sin repetir %).
   if (descRecPct > 0) {
-    totHtml += `<div style="margin-top:6px;font-size:8px;line-height:1.4;color:#646464">${escapeHtml(esAnual ? textoVigenciaDescuentoAnual() : textoVigenciaDescuento(descuentos?.mesesPlan))}</div>`;
+    totHtml += `<div style="margin-top:6px;font-size:8px;line-height:1.4;color:#646464">${escapeHtml(esAnual ? textoVigenciaDescuentoAnual({ conInstalacion: descInstRMPct > 0 || descInstRegionPct > 0 }) : textoVigenciaDescuento(descuentos?.mesesPlan, { conInstalacion: descInstRMPct > 0 || descInstRegionPct > 0 }))}</div>`;
   }
   // Condición discursiva (ej. "paga en 24h"). No tiene enforcement técnico.
   if (condicionDiscursiva) {

@@ -522,7 +522,10 @@ export default async function handler(req, res) {
           // aplica los primeros 6 meses" en cotizaciones a precio de lista,
           // que confunde y hace pensar en un descuento que nadie dio.
           aplica: Number(descuentos.recurrentePct || 0) > 0,
-          texto: esAnual ? textoVigenciaDescuentoAnual() : textoVigenciaDescuento(mesesDescuento),
+          texto: (() => {
+            const conInstalacion = Number(descuentos.instalacionRMPct || 0) > 0 || Number(descuentos.instalacionRegionPct || 0) > 0;
+            return esAnual ? textoVigenciaDescuentoAnual({ conInstalacion }) : textoVigenciaDescuento(mesesDescuento, { conInstalacion });
+          })(),
           textoCorto: esAnual ? textoVigenciaCortoAnual() : textoVigenciaCorto(mesesDescuento),
         };
       })(),
