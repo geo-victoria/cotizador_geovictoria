@@ -264,7 +264,13 @@ const VICKY_FROM_EMAIL = toText(process.env.VICKY_FROM_EMAIL) || "vicky@geovicto
 // Owner MX: Yahel Segura (usuario activo verificado en el doc de
 // tropicalización). Overrideable por env, como el owner CO.
 const VICKY_MX_OWNER_ID = toText(process.env.VICKY_MX_OWNER_ID) || "3525045000308323003";
-const OWNER_MX = { id: VICKY_MX_OWNER_ID };
+// TÓMBOLA GLOBAL (Lalo 25-sep, entradas México en "Deals 2026"): los registros
+// nacen con el usuario VICKY y los sortea el traspaso, igual que Chile, Perú y
+// Colombia. Con dueño humano de nacimiento el traspaso lo respetaba y México
+// nunca pasaba por la tómbola ni la venta autónoma llegaba a su gestora. El
+// dueño fijo (Yahel, env VICKY_MX_OWNER_ID) sigue con VICKY_MX_OWNER_FIJO=on.
+const MX_OWNER_FIJO = /^(on|1|true)$/i.test(toText(process.env.VICKY_MX_OWNER_FIJO));
+const OWNER_MX = MX_OWNER_FIJO ? { id: VICKY_MX_OWNER_ID } : { id: "3525045000484500876" };
 // SDR de México (Lalo 24-sep: "el único SDR en México es Pablo Rodríguez"; se
 // suma Miguel Guzmán, SDR fijo hasta ese día): su lead se convierte pero su
 // gestión NO se hereda al deal.
