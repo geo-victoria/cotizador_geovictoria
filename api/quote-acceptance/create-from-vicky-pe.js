@@ -117,6 +117,11 @@ function rucValido(rucRaw) {
   return dv === Number(ruc[10]);
 }
 
+// DNI peruano: 8 dígitos exactos (sin dígito verificador público).
+function esDniPE(docRaw) {
+  return /^\d{8}$/.test(String(docRaw || "").replace(/\D/g, ""));
+}
+
 function rucParaGuardar(ruc) {
   return String(ruc || "").replace(/\D/g, "");
 }
@@ -465,10 +470,16 @@ module.exports = async function handler(req, res) {
         error: "Faltan campos: empresa, contacto, ruc",
       });
     }
-    if (!rucValido(ruc)) {
+    // DNI (Lalo 26-sep): quien no tiene RUC o pide BOLETA cotiza con su DNI de
+    // 8 dígitos (el agente ya lo validó contra RENIEC). Va en los mismos campos
+    // del documento; la etiqueta ("DNI"/"RUC") se deduce del largo.
+    const tipoDocumento = String(body.tipoDocumento || "").toUpperCase() === "DNI" || esDniPE(ruc) ? "DNI" : "RUC";
+    if (tipoDocumento === "DNI" ? !esDniPE(ruc) : !rucValido(ruc)) {
       return sendJson(res, 400, {
         ok: false,
-        error: `El RUC '${ruc}' no es válido (11 dígitos con dígito verificador SUNAT). Pídele al cliente confirmarlo.`,
+        error: tipoDocumento === "DNI"
+          ? `El DNI '${ruc}' no es válido (8 dígitos). Pídele al cliente confirmarlo.`
+          : `El RUC '${ruc}' no es válido (11 dígitos con dígito verificador SUNAT). Pídele al cliente confirmarlo.`,
       });
     }
     if (!Array.isArray(body.items) || body.items.length === 0) {
@@ -562,7 +573,7 @@ module.exports = async function handler(req, res) {
           Account_Name: empresa,
           RUT_Empresa: rucParaGuardar(ruc),
           Phone: contactoTelefono || undefined,
-          Description: `Cuenta creada por Vicky PE (WhatsApp). RUC: ${ruc}`,
+          Description: `Cuenta creada por Vicky PE (WhatsApp). ${tipoDocumento}: ${ruc}`,
           Industry: VICKY_PE_SECTOR,
           Territorio: VICKY_PE_TERRITORIO,
           N_Empleados_dependientes: userCount,
@@ -907,3 +918,4 @@ module.exports = async function handler(req, res) {
 module.exports.buildSubformItemsPE = buildSubformItemsPE;
 module.exports.quitarActivacionPE = quitarActivacionPE;
 module.exports.rucValido = rucValido;
+module.exports.esDniPE = esDniPE;

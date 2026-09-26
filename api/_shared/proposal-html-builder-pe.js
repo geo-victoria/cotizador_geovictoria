@@ -135,6 +135,8 @@ function buildProposalHtmlPE({
   const empresa = escapeHtml(cliente.empresa || "EMPRESA");
   const contacto = escapeHtml(cliente.contacto || "");
   const ruc = escapeHtml(cliente.ruc || "");
+  // DNI (8 dígitos) para quien cotiza sin RUC / con boleta (Lalo 26-sep).
+  const etiquetaDoc = /^\d{8}$/.test(String(cliente.ruc || "").replace(/\D/g, "")) ? "DNI" : "RUC";
   const cotizNumero = escapeHtml(cotizacionId || "—");
 
   const hoy = new Date();
@@ -297,7 +299,7 @@ function buildProposalHtmlPE({
   <div class="meta">
     <div>
       <div class="row"><span class="l">Empresa:</span><span>${empresa}</span></div>
-      <div class="row"><span class="l">RUC:</span><span>${ruc}</span></div>
+      <div class="row"><span class="l">${etiquetaDoc}:</span><span>${ruc}</span></div>
       <div class="row"><span class="l">Contacto:</span><span>${contacto}</span></div>
     </div>
     <div>
