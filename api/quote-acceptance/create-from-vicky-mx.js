@@ -512,7 +512,7 @@ function buildSubformItemsMX(items) {
     const tipo = String(item.tipo || "").toLowerCase();
     const precioUnitario = round2(item.precioUnitarioMXN);
     const subtotal = round2(item.subtotalMXN);
-    return {
+    const row = {
       Nombre_Item: String(item.nombre || ""),
       Descripcion_Item: String(item.descripcion || "").trim(),
       Codigo_Item: String(item.id || ""),
@@ -528,6 +528,16 @@ function buildSubformItemsMX(items) {
       Categoria_Item: mapCategoriaToZoho(item),
       Unidad: mapUnidadToZoho(modalidadZoho, tipo),
     };
+    // Bonificación por línea (mismo contrato que Chile).
+    if (Number(item.descuentoPct) > 0) {
+      row.Descuento_Pct = Math.min(100, Number(item.descuentoPct));
+    }
+    // Ítem OCULTO (anualidad, 26-sep "igualemos a Chile"): queda en el subform
+    // en 0 y ni el PDF ni la aceptación lo pintan.
+    if (item.oculto === true) {
+      row.Metadata_Item_JSON = JSON.stringify({ oculto: true });
+    }
+    return row;
   });
 }
 

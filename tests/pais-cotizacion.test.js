@@ -221,3 +221,20 @@ test("computeTotalsPE vive (IGV 18 %): la constante IGV_RATE_PE se borró una ve
   assert.equal(m.pagoInicialPen, 103.84);
   assert.equal(m.mensualidadPen, 103.84);
 });
+
+test("anualidad MX (26-sep, igualemos a Chile): subform con oculto y el PDF habla de pago anual", () => {
+  const { buildSubformItemsPais } = require("../api/_shared/pais-cotizacion");
+  const { buildProposalHtmlMX } = require("../api/_shared/proposal-html-builder-mx");
+  const items = [
+    { tipo: "servicio", id: "plan_anual", nombre: "Plan anual — 12 meses anticipados (12 personas)", modalidad: "Cobro único", cantidad: 1, precioUnitarioMXN: 14400, subtotalMXN: 14400, esRecurrente: false, afectoIva: true },
+    { tipo: "plan", id: "plan_asistencia", nombre: "Control de Asistencia", modalidad: "Fijo", cantidad: 1, precioUnitarioMXN: 0, subtotalMXN: 0, esRecurrente: true, afectoIva: true, oculto: true },
+  ];
+  const rows = buildSubformItemsPais("mx", items);
+  assert.equal(rows.length, 2);
+  assert.equal(JSON.parse(rows[1].Metadata_Item_JSON).oculto, true);
+  assert.equal(rows[0].Metadata_Item_JSON, undefined);
+  const html = buildProposalHtmlMX({ items, cliente: {}, numeroCotizacion: "1", fecha: "26-09-2026", acceptanceUrl: "#" });
+  assert.match(html, /Pago anual — al aceptar \(12 meses anticipados\)/);
+  assert.doesNotMatch(html, /Primer mes del servicio/);
+  assert.doesNotMatch(html, /Control de Asistencia/);
+});

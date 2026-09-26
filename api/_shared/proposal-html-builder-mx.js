@@ -196,7 +196,11 @@ function buildProposalHtmlMX({
   // ── Filas de la tabla (una por item; NINGUNA línea fija del builder: la
   // capacitación cobrada viene garantizada en items por el endpoint) ──
   const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
-  const filas = (Array.isArray(items) ? items : []).map((item) => {
+  // Anualidad (26-sep, "igualemos a Chile"): las filas recurrentes quedan en 0
+  // y marcadas `oculto` — no se pintan; la fila plan_anual manda los rótulos.
+  const itemsVisibles = (Array.isArray(items) ? items : []).filter((it) => it && it.oculto !== true);
+  const esAnual = itemsVisibles.some((it) => String(it.id || it.codigo || "").toLowerCase() === "plan_anual");
+  const filas = itemsVisibles.map((item) => {
     const subtotalLista = round2(item.subtotalMXN);
     const afectoIva = item.afectoIva === true;
     const conDcto = pctPlan > 0 && item.esRecurrente === true && esFilaPlan(item);
@@ -270,9 +274,9 @@ function buildProposalHtmlMX({
   const iniNeto = round2(uniNeto + recNeto);
   const iniIva = round2(uniIva + recIva);
   const iniTot = round2(iniNeto + iniIva);
-  totHtml += `<div class="tot-h">Pago inicial — al aceptar${recTot > 0 ? " (incluye 1er mes)" : ""}</div>`;
+  totHtml += `<div class="tot-h">${esAnual ? "Pago anual — al aceptar (12 meses anticipados)" : `Pago inicial — al aceptar${recTot > 0 ? " (incluye 1er mes)" : ""}`}</div>`;
   if (uniNeto > 0 || recTot <= 0) {
-    totHtml += `<div class="tr"><span>Conceptos de pago único</span><span>${formatMXN(uniNeto)}</span></div>`;
+    totHtml += `<div class="tr"><span>${esAnual ? "Plan anual y conceptos de pago único" : "Conceptos de pago único"}</span><span>${formatMXN(uniNeto)}</span></div>`;
   }
   if (recTot > 0) {
     totHtml += `<div class="tr"><span>Primer mes del servicio (adelantado${descuentoPlanNeto > 0 ? ", con el descuento del plan" : ""})</span><span>${formatMXN(recNeto)}</span></div>`;
@@ -293,8 +297,11 @@ function buildProposalHtmlMX({
       totHtml += `<div class="tr"><span>Desde el mes ${mesesDcto + 1} (precio de lista)</span><span>${formatMXN(round2(recTot + descuentoPlanTotal))} MXN/mes</span></div>`;
     }
   }
-  totHtml +=
-    `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
+  totHtml += esAnual
+    ? `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
+      `El <b>Pago anual</b> se cobra al aceptar y cubre los 12 meses del servicio por adelantado${pctPlan > 0 ? ` (incluye el ${pctPlan} % de descuento del plan aplicado a la anualidad)` : ""}; no hay mensualidades del plan durante el a&ntilde;o.` +
+      `</div>`
+    : `<div style="margin-top:8px;font-size:8px;line-height:1.4;color:#646464">` +
     `El <b>Pago inicial</b> se cobra al aceptar e incluye los conceptos de pago &uacute;nico y el primer mes de servicio. ` +
     `La <b>mensualidad</b> es referencial, seg&uacute;n los usuarios de esta cotizaci&oacute;n; se factura mensualmente desde el segundo mes y la variaci&oacute;n de usuarios activos la ajusta en la facturaci&oacute;n del per&iacute;odo siguiente.` +
     `</div>`;
