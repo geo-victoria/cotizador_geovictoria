@@ -34,7 +34,8 @@ const HARDWARE_A_ARTICULO = {
   reloj_pe: {
     item: "304 - [PER] Reloj Gama Estándar FACIAL LAN WIFI",
     modelo: "Senseface 2A",
-    valorListaUF: 90,
+    // Venta US$150 + IGV con instalación incluida en Lima (Lalo 27-sep).
+    valorListaUF: 150,
     valorMensual: 20,
     moneda: "USD",
   },
