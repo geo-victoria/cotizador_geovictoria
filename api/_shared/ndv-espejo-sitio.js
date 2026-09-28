@@ -183,30 +183,15 @@ function planEnSitio({ serviciosEspejo, bloquesEspejo, deseado }) {
     }
   }
 
-  // (5) Bloque de hardware SOBRANTE (la venta ya no lleva equipos) → NEUTRALIZAR.
-  if (!deseado?.hayHardware) {
-    for (const b of bloques) {
-      const yaNeutro = num(b.Monto) === 0 && num(b.MontoHW) === 0 && b.CAN_CREATE_PDF !== true;
-      if (yaNeutro) continue;
-      acciones.push({
-        tipo: "neutralizar_bloque",
-        id: texto(b.ID),
-        servicio: texto(b.Servicio_Producto),
-        data: {
-          Monto: 0,
-          MontoHW: 0,
-          CAN_CREATE_PDF: false,
-          JsonPdf: JSON.stringify({
-            Name: texto(b.Servicio_Producto),
-            ProdCode: "",
-            Currency: texto(b.Moneda) || "UF",
-            Terms: "",
-            GlossRow: [],
-            OdooGlossRows: [],
-          }),
-        },
-      });
-    }
+  // (5) Bloque de hardware SOBRANTE (la venta ya no lleva equipos) → REGENERAR.
+  //     Neutralizarlo (Monto 0, fuera del PDF) NO alcanza: el bloque sigue en el
+  //     Form_Order y la nota convertida lleva el reloj en arriendo a costo cero y
+  //     el envío (28-sep, Patricio / Condominio Terrazas COT1202 → NDV-32383:
+  //     pasó de reloj a solo app y la nota salió con los dos bloques). Sacarlo
+  //     del Form_Order no se puede en sitio: se regenera el espejo desde los
+  //     ítems vigentes.
+  if (!deseado?.hayHardware && bloques.length > 0) {
+    motivos.push("el espejo tiene bloque de hardware y la venta ya no lleva equipos");
   }
 
   if (motivos.length > 0) return { modo: "regenerar", acciones: [], motivos };

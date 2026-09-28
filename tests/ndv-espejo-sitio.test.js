@@ -59,28 +59,15 @@ test("cambió el descuento → PATCH del pct, sin tocar la tabla", () => {
   assert.ok(!("Tabla_de_Cobro" in p.acciones[0].data));
 });
 
-test("bloque de hardware sobrante → se NEUTRALIZA, no se borra", () => {
-  const p = planEnSitio({
-    serviciosEspejo: [servicio()],
-    bloquesEspejo: [{ ID: "7001", Servicio_Producto: "Arriendo de Equipos", Monto: 0.35, MontoHW: 0.35, CAN_CREATE_PDF: true, Moneda: "UF" }],
-    deseado: deseado({ hayHardware: false }),
-  });
-  assert.equal(p.modo, "en_sitio");
-  const a = p.acciones.find((x) => x.tipo === "neutralizar_bloque");
-  assert.ok(a);
-  assert.equal(a.data.Monto, 0);
-  assert.equal(a.data.MontoHW, 0);
-  assert.equal(a.data.CAN_CREATE_PDF, false);
-  assert.deepEqual(JSON.parse(a.data.JsonPdf).GlossRow, []);
-});
-
-test("bloque ya neutralizado → no se vuelve a parchear", () => {
-  const p = planEnSitio({
-    serviciosEspejo: [servicio()],
-    bloquesEspejo: [{ ID: "7001", Servicio_Producto: "Arriendo de Equipos", Monto: 0, MontoHW: 0, CAN_CREATE_PDF: false }],
-    deseado: deseado({ hayHardware: false }),
-  });
-  assert.equal(p.modo, "ok");
+test("bloque de hardware sobrante (la venta ya no lleva equipos) → regenerar (caso Terrazas NDV-32383)", () => {
+  for (const b of [
+    { ID: "7001", Servicio_Producto: "Arriendo de Equipos", Monto: 0.35, MontoHW: 0.35, CAN_CREATE_PDF: true, Moneda: "UF" },
+    { ID: "7002", Servicio_Producto: "Arriendo de Equipos", Monto: 0, MontoHW: 0, CAN_CREATE_PDF: false },
+  ]) {
+    const p = planEnSitio({ serviciosEspejo: [servicio()], bloquesEspejo: [b], deseado: deseado({ hayHardware: false }) });
+    assert.equal(p.modo, "regenerar");
+    assert.match(p.motivos.join(" "), /ya no lleva equipos/);
+  }
 });
 
 test("la venta lleva equipos y el espejo no tiene bloque → regenerar", () => {
