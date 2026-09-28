@@ -12,7 +12,7 @@
 
 const { zohoApiFetch } = require("./zoho-auth");
 const { getRecordWithFields, toText, coqlQuery } = require("./zoho-crm");
-const { getMercadoPagoConfig } = require("./mercadopago-config");
+const { getMercadoPagoConfig, getMercadoPagoConfigPais } = require("./mercadopago-config");
 const { esCotizacionCO } = require("./payment-session");
 const { origenDeVenta } = require("./origen-venta");
 const {
@@ -224,11 +224,24 @@ function fmtClp(n) {
   return "$" + Math.round(v).toLocaleString("es-CL");
 }
 
+// Monto del comprobante en la moneda del país (PE con céntimos, CO/MX en su
+// formato; CL igual que siempre).
+const FMT_PAIS = {
+  cl: { tz: "America/Santiago", fmt: fmtClp },
+  pe: { tz: "America/Lima", fmt: (n) => (Number(n) ? "S/ " + Number(n).toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "") },
+  co: { tz: "America/Bogota", fmt: (n) => (Number(n) ? "$" + Math.round(Number(n)).toLocaleString("es-CO") : "") },
+  mx: { tz: "America/Mexico_City", fmt: (n) => (Number(n) ? "$" + Number(n).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "") },
+};
+
 // Detalle de los pagos APROBADOS en Mercado Pago para la cotización (best-effort,
 // para que el equipo reciba el comprobante sin entrar al panel de MP).
-async function detallePagosMP(quoteId) {
+// `pais` (cl/pe/co/mx) elige la CUENTA de MP del país: sin él, una venta
+// peruana se buscaba en la cuenta chilena y el correo salía sin comprobante
+// (caso Carlos / BLESSED CONSULTING, 28-sep).
+async function detallePagosMP(quoteId, pais = "cl") {
   try {
-    const mp = getMercadoPagoConfig();
+    const f = FMT_PAIS[pais] || FMT_PAIS.cl;
+    const mp = pais && pais !== "cl" ? getMercadoPagoConfigPais(null, pais) : getMercadoPagoConfig();
     if (!mp.enabled || !mp.accessToken) return [];
     const pagos = [];
     for (const kind of ["oneshot", "sub"]) {
@@ -240,9 +253,9 @@ async function detallePagosMP(quoteId) {
         if (String(p?.status) !== "approved") continue;
         pagos.push({
           operacion: toText(p.id),
-          monto: fmtClp(p.transaction_amount),
+          monto: f.fmt(p.transaction_amount),
           fecha: p.date_approved
-            ? new Date(p.date_approved).toLocaleString("es-CL", { timeZone: "America/Santiago" })
+            ? new Date(p.date_approved).toLocaleString("es-CL", { timeZone: f.tz })
             : "",
           metodo:
             toText(p.payment_method_id) +
@@ -551,8 +564,17 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false
       return;
     }
 
+    // Multi-país: en cotizaciones CO la ejecutiva es Laura (no Anderson);
+    // en cotizaciones MX es Yahel Segura. CL sigue con los destinatarios de
+    // siempre. Se resuelve ACÁ porque el comprobante de MP también depende
+    // del país (cada país tiene su cuenta de Mercado Pago).
+    const esCO = await esCotizacionCO(quote, null, config).catch(() => false);
+    const esMX = !esCO && (await esCotizacionMX(quote, config).catch(() => false));
+    const esPE = !esCO && !esMX && (await esCotizacionPEnotify(quote, config).catch(() => false));
+    const paisNotify = esCO ? "co" : esMX ? "mx" : esPE ? "pe" : "cl";
+
     // Comprobante MP: solo en el evento de pago (best-effort, nunca bloquea).
-    const pagosMp = evento === "pagada" ? await detallePagosMP(quoteId) : [];
+    const pagosMp = evento === "pagada" ? await detallePagosMP(quoteId, paisNotify) : [];
 
     // CANAL DE ORIGEN (Lalo 19-ago) + REEMISIÓN (08/09-sep) + PRECIO
     // MOSTRADO (caso GSL): regla única en origen-venta.js, la misma que decide
@@ -600,12 +622,6 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false
       }
     } catch (_e) { /* fila sin id */ }
     const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId, reemision });
-    // Multi-país: en cotizaciones CO la ejecutiva es Laura (no Anderson);
-    // en cotizaciones MX es Yahel Segura. CL sigue con los destinatarios de
-    // siempre.
-    const esCO = await esCotizacionCO(quote, null, config).catch(() => false);
-    const esMX = !esCO && (await esCotizacionMX(quote, config).catch(() => false));
-    const esPE = !esCO && !esMX && (await esCotizacionPEnotify(quote, config).catch(() => false));
     // PROPIETARIO del trato/cotización SIEMPRE copiado (Lalo 31-jul): primero
     // el Owner de la cotización; si no viene, el Owner del deal. Dedup contra
     // la base y jamás el robot Vicky.
