@@ -159,7 +159,6 @@ function construirFichas(env = process.env) {
       unidad: "UF",
     },
   });
-  cl.deal.tipoDeCobro = (n) => ((Number(n) || 1) <= 10 ? "Mensual fijo" : "Por usuario");
   cl.deal.amount = (cot) => cot.totalCLP || undefined;
   cl.deal.descripcionTotal = (cot) => `${cot.totalUF} UF / ${cot.totalCLP} CLP`;
   cl.sector.validos = SECTORES_VALIDOS_CL;
@@ -240,7 +239,6 @@ function construirFichas(env = process.env) {
       afecto: "afectoIgv",
     },
   });
-  pe.deal.tipoDeCobro = (n) => ((Number(n) || 1) <= 20 ? "Mensual fijo" : "Por usuario");
   pe.deal.amount = (cot) => Math.round(cot.totalPEN) || undefined;
   pe.deal.descripcionTotal = (cot) => `${Math.round(cot.totalPEN)} PEN`;
   pe.cuentas.esNoAdoptable = esCuentaInterna;
@@ -314,7 +312,6 @@ function construirFichas(env = process.env) {
       afecto: "afectoIva",
     },
   });
-  co.deal.tipoDeCobro = (n) => ((Number(n) || 1) <= 10 ? "Mensual fijo" : "Por usuario");
   co.deal.amount = (cot) => cot.totalCOP || undefined;
   co.deal.descripcionTotal = (cot) => `${cot.totalCOP} COP`;
   co.cuentas.esNoAdoptable = esCuentaInterna;
@@ -396,7 +393,6 @@ function construirFichas(env = process.env) {
       afecto: "afectoIva",
     },
   });
-  mx.deal.tipoDeCobro = () => "Mensual fijo";
   mx.deal.amount = () => undefined; // MX no escribe Amount
   mx.deal.descripcionTotal = (cot) => `${cot.totalMXN} MXN`;
   mx.cuentas.esNoAdoptable = esCuentaInterna;

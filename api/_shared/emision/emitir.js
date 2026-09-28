@@ -44,6 +44,13 @@ const { sendQuoteEmailViaZoho, subirArchivoZohoParaAdjunto } = require("./correo
 
 const waitUntil = cargarWaitUntil();
 
+// TIPO DE COBRO AL NACER = "Mensual fijo" en los cuatro países (decisión del
+// dueño, 28-sep): es además lo que valor-deal.js escribe después en todos. Es
+// parte COMÚN del proceso, no dato de la ficha. Diferencia aceptada respecto
+// del handler chileno de hoy (≤10 fijo / >10 por usuario), declarada en la
+// prueba de identidad.
+const TIPO_DE_COBRO_AL_NACER = "Mensual fijo";
+
 // ── Convert Lead → Account + Contact + Deal (copia de convertLeadCrudo CL) ──
 async function convertLeadCrudo(leadId, dealData, existingIds = {}) {
   const path = `/crm/v3/Leads/${encodeURIComponent(leadId)}/actions/convert`;
@@ -490,7 +497,7 @@ async function emitirCotizacion(req, res, { ficha, entrada, bodyCrudo }) {
           Monda_del_trato: ficha.monedaDeal,
           Sector: sectorParaZoho,
           N_Empleados_que_marcan: cliente.userCount,
-          Tipo_de_Cobro: ficha.deal.tipoDeCobro(cliente.userCount),
+          Tipo_de_Cobro: TIPO_DE_COBRO_AL_NACER,
           Producto_Soluci_n: ficha.deal.producto,
           Lead_Source: leadSourceDeal,
           Owner: ownerHeredadoRutSplit ? { id: ownerHeredadoRutSplit } : INTERINO,
@@ -784,7 +791,7 @@ async function emitirCotizacion(req, res, { ficha, entrada, bodyCrudo }) {
           Monda_del_trato: ficha.monedaDeal,
           Sector: sectorParaZoho,
           N_Empleados_que_marcan: cliente.userCount,
-          Tipo_de_Cobro: ficha.deal.tipoDeCobro(cliente.userCount),
+          Tipo_de_Cobro: TIPO_DE_COBRO_AL_NACER,
           Producto_Soluci_n: ficha.deal.producto,
           Owner: ownerHeredadoRutSplit ? { id: ownerHeredadoRutSplit } : INTERINO,
         };
@@ -1285,6 +1292,7 @@ function crearEndpointEmision(ficha, { normalizar } = {}) {
 
 module.exports = {
   emitirCotizacion,
+  TIPO_DE_COBRO_AL_NACER,
   crearEndpointEmision,
   // expuestas para tests
   convertLeadCrudo,

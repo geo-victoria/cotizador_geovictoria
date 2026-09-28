@@ -22,7 +22,7 @@ const FICHAS = { cl: FICHA_CL, pe: FICHA_PE, co: FICHA_CO, mx: FICHA_MX };
 const RUTAS = [
   "pais", "etiquetaLog", "secretEnvs", "territorio", "monedaDeal",
   "deal.etapaInicial", "deal.leadSourceDefault", "deal.tombola", "deal.producto", "deal.pipeline",
-  "deal.nombre", "deal.nombreDesdePlaceholder", "deal.tipoDeCobro", "deal.amount", "deal.descripcionTotal",
+  "deal.nombre", "deal.nombreDesdePlaceholder", "deal.amount", "deal.descripcionTotal",
   "sector.fallback", "sector.expansionRegional",
   "cuentas.internas", "cuentas.esNoAdoptable", "cuentas.esCompanyPlaceholder", "cuentas.esPlaceholderRegistro",
   "documento.etiqueta", "documento.variantes", "documento.paraCuenta", "documento.paraCotizacion",
@@ -131,15 +131,12 @@ test("token, Creator y correo por país", () => {
   for (const p of ["pe", "co", "mx"]) assert.strictEqual(FICHAS[p].correo.adjuntoPdf, false);
 });
 
-test("tipo de cobro al nacer y Amount = lo escrito hoy en cada endpoint", () => {
-  assert.strictEqual(FICHA_CL.deal.tipoDeCobro(10), "Mensual fijo");
-  assert.strictEqual(FICHA_CL.deal.tipoDeCobro(11), "Por usuario");
-  assert.ok(SRC.cl.includes('(Number(cliente.userCount) || 1) <= 10 ? "Mensual fijo" : "Por usuario"'));
-  assert.strictEqual(FICHA_PE.deal.tipoDeCobro(20), "Mensual fijo");
-  assert.strictEqual(FICHA_PE.deal.tipoDeCobro(21), "Por usuario");
-  assert.ok(SRC.pe.includes('(Number(userCount) || 1) <= 20 ? "Mensual fijo" : "Por usuario"'));
-  assert.strictEqual(FICHA_CO.deal.tipoDeCobro(11), "Por usuario");
-  assert.strictEqual(FICHA_MX.deal.tipoDeCobro(40), "Mensual fijo");
+test("tipo de cobro al nacer: COMÚN (\"Mensual fijo\"), no es dato de la ficha; Amount por país", () => {
+  const { TIPO_DE_COBRO_AL_NACER } = require("../../api/_shared/emision/emitir");
+  assert.strictEqual(TIPO_DE_COBRO_AL_NACER, "Mensual fijo");
+  for (const f of Object.values(FICHAS)) assert.strictEqual(f.deal.tipoDeCobro, undefined);
+  // Es también lo que valor-deal escribe después en los cuatro países.
+  assert.ok(require("fs").readFileSync(require("path").join(__dirname, "..", "..", "api", "_shared", "valor-deal.js"), "utf8").includes('Tipo_de_Cobro: "Mensual fijo"'));
   assert.strictEqual(FICHA_CL.deal.amount({ totalCLP: 38809 }), 38809);
   assert.strictEqual(FICHA_PE.deal.amount({ totalPEN: 118.4 }), 118);
   assert.strictEqual(FICHA_MX.deal.amount({ totalMXN: 1392 }), undefined);
