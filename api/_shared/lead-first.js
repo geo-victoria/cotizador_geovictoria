@@ -130,6 +130,34 @@ async function crearLeadParaConvertir(datos) {
  * DUPLICATE_DATA reintenta UNA vez apuntando al duplicado que Zoho reporta
  * (misma mecánica de convertLead de Chile).
  */
+// "Contact data doesn't match perfectly with the Lead data" (28-sep): en Perú y
+// México la emisión crea cuenta y contacto ANTES de convertir, y Zoho exige que
+// nombre, apellido y correo del lead calcen con el contacto al que se fusiona.
+// Blessed, ABL y Floraza (25-26 sep) nacieron sin lead convertido por esto.
+// Se iguala el lead con el contacto y se reintenta; si igual falla, se convierte
+// dejando que Zoho cree el contacto desde el lead (la regla de oro es que el
+// trato nazca de un lead convertido).
+async function igualarLeadConContacto(leadId, contactId) {
+  try {
+    const g = await zohoApiFetch(`/crm/v3/Contacts/${encodeURIComponent(contactId)}?fields=First_Name,Last_Name,Email`);
+    if (!g.ok) return false;
+    const c = ((await g.json())?.data || [])[0] || {};
+    const data = { id: leadId, Last_Name: toText(c.Last_Name) || "-" };
+    data.First_Name = toText(c.First_Name) || null;
+    data.Email = toText(c.Email) || null;
+    const put = await zohoApiFetch(`/crm/v3/Leads`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: [data], trigger: ["blueprint"], skip_feature_execution: [{ name: "assignment_rules" }] }),
+    });
+    const fila = ((await put.json().catch(() => ({})))?.data || [])[0] || {};
+    console.warn(`[lead-first] lead ${leadId} igualado con el contacto ${contactId} para convertir (${fila.code || put.status})`);
+    return put.ok && fila.code === "SUCCESS";
+  } catch {
+    return false;
+  }
+}
+
 async function convertirLeadEnDealCrudo(leadId, dealData, existingIds = {}) {
   const path = `/crm/v3/Leads/${encodeURIComponent(leadId)}/actions/convert`;
   const payload = {
@@ -139,7 +167,7 @@ async function convertirLeadEnDealCrudo(leadId, dealData, existingIds = {}) {
     ...(dealData ? { Deals: dealData } : {}),
   };
   if (existingIds.accountId) payload.Accounts = { id: existingIds.accountId };
-  if (existingIds.contactId) payload.Contacts = { id: existingIds.contactId };
+  if (existingIds.contactId && !existingIds._sinContacto) payload.Contacts = { id: existingIds.contactId };
   const response = await zohoApiFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -159,6 +187,14 @@ async function convertirLeadEnDealCrudo(leadId, dealData, existingIds = {}) {
         return convertirLeadEnDealCrudo(leadId, dealData, retryIds);
       }
     }
+    if (/doesn't match perfectly/i.test(text) && existingIds.contactId) {
+      if (!existingIds._leadIgualado && (await igualarLeadConContacto(leadId, existingIds.contactId))) {
+        return convertirLeadEnDealCrudo(leadId, dealData, { ...existingIds, _leadIgualado: true });
+      }
+      const { contactId: _omitido, ...sinContacto } = existingIds;
+      console.warn(`[lead-first] lead ${leadId}: el contacto ${existingIds.contactId} no calza; se convierte sin él (Zoho crea el contacto desde el lead)`);
+      return convertirLeadEnDealCrudo(leadId, dealData, { ...sinContacto, _leadIgualado: true, _sinContacto: true });
+    }
     throw new Error(`Zoho convert Lead failed (${response.status}): ${text.slice(0, 300)}`);
   }
   const result = JSON.parse(text)?.data?.[0];
@@ -170,7 +206,7 @@ async function convertirLeadEnDealCrudo(leadId, dealData, existingIds = {}) {
     contactId: idFrom(result.Contacts) || idFrom(det.Contacts),
     dealId: idFrom(result.Deals) || idFrom(det.Deals),
     accountReusada: Boolean(existingIds.accountId),
-    contactReusado: Boolean(existingIds.contactId),
+    contactReusado: Boolean(existingIds.contactId && !existingIds._sinContacto),
   };
 }
 // Embudo de campañas (David 24-sep): ver api/_shared/embudo-zoho.js.
