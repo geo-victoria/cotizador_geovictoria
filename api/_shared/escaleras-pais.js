@@ -139,4 +139,36 @@ function escalerasDefaultPorMoneda(moneda, rows) {
   return {};
 }
 
-module.exports = { ESCALERA_ASISTENCIA_PE, ESCALERA_ASISTENCIA_CO, ESCALERA_ASISTENCIA_CO_LEGADO, ESCALERA_ASISTENCIA_MX, cotizacionCOConTablaLegado, escaleraCOPara, monedaYPais, escalerasDefaultPorMoneda };
+/**
+ * La tabla de cobro de la nota de venta debe llevar el precio que el cliente
+ * PAGÓ, no el de la lista vigente (28-sep, Carlos/Blessed Consulting COT1735:
+ * se le honró S/55 y la NDV salió con la lista peruana de S/100). Ajusta el
+ * tramo que rige la fila del plan de la cotización:
+ *   - plan fijo (Cantidad 1) → el primer tramo "fijo" toma su subtotal;
+ *   - plan por usuario (Cantidad N) → el tramo por usuario que contiene N toma
+ *     su precio unitario.
+ * Los demás tramos quedan como la lista (sirven para crecer). Sin fila de plan
+ * legible, la escalera no se toca.
+ */
+function alinearEscaleraConCotizacion(escalera, rows) {
+  const filas = (Array.isArray(escalera) ? escalera : []).map((t) => ({ ...t }));
+  const plan = (Array.isArray(rows) ? rows : []).find((r) => {
+    const c = String(r?.Codigo_Item || r?.id || "").toLowerCase();
+    return c === "plan_asistencia" || c === "asistencia";
+  });
+  if (!plan || !filas.length) return filas;
+  const cant = Number(plan.Cantidad ?? plan.cantidad ?? 0);
+  const unit = Number(plan.Precio_Unitario_UF ?? plan.precioUnitario ?? 0);
+  const sub = Number(plan.Subtotal_UF ?? plan.subtotal ?? 0) || unit * cant;
+  if (!(cant > 0) || !(unit > 0)) return filas;
+  if (cant === 1) {
+    const i = filas.findIndex((t) => t.modalidad === "fijo");
+    if (i >= 0 && sub > 0 && Number(filas[i].precioUF) !== sub) filas[i].precioUF = sub;
+    return filas;
+  }
+  const j = filas.findIndex((t) => t.modalidad === "por_usuario" && cant >= t.desde && cant <= t.hasta);
+  if (j >= 0 && Number(filas[j].precioUF) !== unit) filas[j].precioUF = unit;
+  return filas;
+}
+
+module.exports = { alinearEscaleraConCotizacion, ESCALERA_ASISTENCIA_PE, ESCALERA_ASISTENCIA_CO, ESCALERA_ASISTENCIA_CO_LEGADO, ESCALERA_ASISTENCIA_MX, cotizacionCOConTablaLegado, escaleraCOPara, monedaYPais, escalerasDefaultPorMoneda };

@@ -62,3 +62,14 @@ test("Colombia (28-sep): 1-20 fijo $315.000, 21+ $13.700/usuario; la tabla anter
   // Plan fijo nuevo (cantidad 1) → vigente.
   assert.equal(escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 315000 }])[0].hasta, 20);
 });
+
+test("la NDV fuera de Chile cobra el precio de la cotización, no la lista (COT1735 S/55 vs lista S/100)", () => {
+  const { alinearEscaleraConCotizacion, ESCALERA_ASISTENCIA_PE } = require("../api/_shared/escaleras-pais");
+  const fijo = alinearEscaleraConCotizacion(ESCALERA_ASISTENCIA_PE, [{ Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 55, Subtotal_UF: 55 }]);
+  assert.equal(fijo[0].precioUF, 55);
+  assert.equal(fijo[1].precioUF, ESCALERA_ASISTENCIA_PE[1].precioUF);
+  const porU = alinearEscaleraConCotizacion(ESCALERA_ASISTENCIA_PE, [{ Codigo_Item: "plan_asistencia", Cantidad: 15, Precio_Unitario_UF: 7, Subtotal_UF: 105 }]);
+  assert.equal(porU[1].precioUF, 7);
+  assert.equal(porU[0].precioUF, ESCALERA_ASISTENCIA_PE[0].precioUF);
+  assert.deepEqual(alinearEscaleraConCotizacion(ESCALERA_ASISTENCIA_PE, []), ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t })));
+});

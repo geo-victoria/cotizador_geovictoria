@@ -871,6 +871,19 @@ async function buildNdvRecord({
     : escaleraForzada === "cl" || escaleraForzada === "none" ? {}
     : escalerasPrecio && Object.keys(escalerasPrecio).length > 0 ? escalerasPrecio : escalerasDefaultPorMoneda(moneda, quote?.[config.quoteItemsSubformField]);
   if (escaleraForzada) console.log(`[ndv-handoff] escalera forzada=${escaleraForzada} filas=${(escalerasEfectivas.asistencia || []).length}`);
+  // Fuera de Chile (PEN/COP/MXN) el tramo que rige toma el precio REAL de la
+  // cotización: un precio acordado con el cliente no puede facturarse a lista.
+  if (String(moneda || "").toUpperCase() !== "UF") {
+    const { alinearEscaleraConCotizacion } = require("./escaleras-pais");
+    const filasCot = quote?.[config.quoteItemsSubformField];
+    for (const k of ["plan_asistencia", "asistencia"]) {
+      if (Array.isArray(escalerasEfectivas[k])) {
+        const antes = JSON.stringify(escalerasEfectivas[k]);
+        escalerasEfectivas[k] = alinearEscaleraConCotizacion(escalerasEfectivas[k], filasCot);
+        if (antes !== JSON.stringify(escalerasEfectivas[k])) console.log(`[ndv-handoff] escalera ${k} alineada al precio de la cotización`);
+      }
+    }
+  }
 
   // La tabla se construye con la MISMA moneda que declara el registro: mandarla
   // en pesos con Moneda=UF es lo que inflaba el PDF ~39.000x.
