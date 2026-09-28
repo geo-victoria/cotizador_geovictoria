@@ -23,15 +23,45 @@ const ESCALERA_ASISTENCIA_PE = Object.freeze([
 ]);
 
 /** Escalera de asistencia CO en pesos colombianos (espejo de lib/paises/co/catalogo.ts
- * del agente, Lalo 09/10-jul: 1-10 $315.000 fijo · 11-50 $13.700 por usuario).
- * 23-sep: la rebaja "software a la mitad" se aplicó y se REVIRTIÓ el mismo día
- * (la definen Juanpa y Rodrigo); queda el tramo 11-20 separado del 21-50 para
- * poder cambiar solo el rango de Vicky cuando se decida. */
+ * del agente). REGLA DEL EQUIPO COLOMBIA (Lalo 28-sep, reclamo de María Fernanda
+ * Cely por COT1742): $315.000 FIJO de 1 a 20 personas; desde 21, $13.700 por
+ * usuario. La tabla del 09-jul (fijo solo hasta 10, 11-20 por usuario) dejaba
+ * 11-22 personas MÁS BARATAS que 10 — queda como ESCALERA_ASISTENCIA_CO_LEGADO
+ * solo para las cotizaciones que ya salieron con ella (Lalo: "no le cambiemos
+ * los precios a los que ya dimos precios"). */
 const ESCALERA_ASISTENCIA_CO = Object.freeze([
+  { desde: 1, hasta: 20, modalidad: "fijo", precioUF: 315000 },
+  { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 13700 },
+]);
+
+/** Tabla CO anterior al 28-sep: solo para cotizaciones que ya la mostraron. */
+const ESCALERA_ASISTENCIA_CO_LEGADO = Object.freeze([
   { desde: 1, hasta: 10, modalidad: "fijo", precioUF: 315000 },
   { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 13700 },
   { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 13700 },
 ]);
+
+/**
+ * ¿La cotización CO salió con la tabla anterior? Sí cuando la fila del plan
+ * cobra POR USUARIO con 11 a 20 personas (con la tabla vigente ese tramo es un
+ * fijo de cantidad 1). Así la nota de venta de una cotización vieja imprime la
+ * tabla que el cliente aceptó y no una que no calza con su precio.
+ */
+function cotizacionCOConTablaLegado(rows) {
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const codigo = String(r?.Codigo_Item || r?.id || "").toLowerCase();
+    if (codigo !== "plan_asistencia" && codigo !== "asistencia") continue;
+    const cant = Number(r?.Cantidad ?? r?.cantidad ?? 0);
+    const unit = Number(r?.Precio_Unitario_UF ?? r?.precioUnitarioCOP ?? 0);
+    if (cant >= 11 && cant <= 20 && unit > 0 && unit < 315000) return true;
+  }
+  return false;
+}
+
+/** Escalera CO que corresponde a una cotización (vigente o anterior). */
+function escaleraCOPara(rows) {
+  return (cotizacionCOConTablaLegado(rows) ? ESCALERA_ASISTENCIA_CO_LEGADO : ESCALERA_ASISTENCIA_CO).map((t) => ({ ...t }));
+}
 
 /** Escalera de asistencia MX en pesos mexicanos (espejo de lib/paises/mx/catalogo.ts
  * del agente, precio de Karen 24-sep: 1-15 $1,200 fijo · 16-20 $83 por usuario;
@@ -88,7 +118,7 @@ function monedaYPais({ overrides, quote, deal } = {}) {
  * cotización no es chilena (la chilena la completa ndv-charge-table desde
  * PRICING_TIERS; en soles esa escalera NO aplica).
  */
-function escalerasDefaultPorMoneda(moneda) {
+function escalerasDefaultPorMoneda(moneda, rows) {
   const m = normalizar(moneda);
   // El plan PE viaja en el subform como `plan_asistencia` (agente pe/tools.ts);
   // `asistencia` queda por simetría con Chile.
@@ -98,7 +128,7 @@ function escalerasDefaultPorMoneda(moneda) {
   }
   // Colombia (23-sep): el plan viaja en el subform como `plan_asistencia`.
   if (m === "cop") {
-    const filas = ESCALERA_ASISTENCIA_CO.map((t) => ({ ...t }));
+    const filas = escaleraCOPara(rows);
     return { plan_asistencia: filas, asistencia: filas.map((t) => ({ ...t })) };
   }
   // México (24-sep): mismo patrón, plan como `plan_asistencia`.
@@ -109,4 +139,4 @@ function escalerasDefaultPorMoneda(moneda) {
   return {};
 }
 
-module.exports = { ESCALERA_ASISTENCIA_PE, ESCALERA_ASISTENCIA_CO, ESCALERA_ASISTENCIA_MX, monedaYPais, escalerasDefaultPorMoneda };
+module.exports = { ESCALERA_ASISTENCIA_PE, ESCALERA_ASISTENCIA_CO, ESCALERA_ASISTENCIA_CO_LEGADO, ESCALERA_ASISTENCIA_MX, cotizacionCOConTablaLegado, escaleraCOPara, monedaYPais, escalerasDefaultPorMoneda };

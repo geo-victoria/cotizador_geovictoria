@@ -869,7 +869,7 @@ async function buildNdvRecord({
   const escalerasEfectivas =
     escaleraForzada === "pe" ? escalerasDefaultPorMoneda("PEN")
     : escaleraForzada === "cl" || escaleraForzada === "none" ? {}
-    : escalerasPrecio && Object.keys(escalerasPrecio).length > 0 ? escalerasPrecio : escalerasDefaultPorMoneda(moneda);
+    : escalerasPrecio && Object.keys(escalerasPrecio).length > 0 ? escalerasPrecio : escalerasDefaultPorMoneda(moneda, quote?.[config.quoteItemsSubformField]);
   if (escaleraForzada) console.log(`[ndv-handoff] escalera forzada=${escaleraForzada} filas=${(escalerasEfectivas.asistencia || []).length}`);
 
   // La tabla se construye con la MISMA moneda que declara el registro: mandarla

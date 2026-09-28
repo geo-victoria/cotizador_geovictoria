@@ -1154,15 +1154,18 @@ module.exports = async function handler(req, res) {
         // factura en pesos, no en una nota USD aparte como en Perú.
         try {
           const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
-          const { ESCALERA_ASISTENCIA_CO } = require("../_shared/escaleras-pais");
+          const { escaleraCOPara } = require("../_shared/escaleras-pais");
+          // Tabla vigente (1-20 fijo) o la anterior si esta cotización salió con
+          // ella (cliente al que ya le dimos precio, Lalo 28-sep).
+          const escaleraCO = escaleraCOPara(buildSubformItemsCO(items));
           await emitirCotizacionEnCreator({
             config,
             quoteId,
             dealId,
             acceptanceData: { companyRut: nit },
             escalerasPrecio: {
-              plan_asistencia: ESCALERA_ASISTENCIA_CO.map((t) => ({ ...t })),
-              asistencia: ESCALERA_ASISTENCIA_CO.map((t) => ({ ...t })),
+              plan_asistencia: escaleraCO,
+              asistencia: escaleraCO.map((t) => ({ ...t })),
             },
             userCount: Number(userCount) || 0,
             crmIncompleto,
