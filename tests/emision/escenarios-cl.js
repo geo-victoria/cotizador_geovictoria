@@ -3,7 +3,7 @@
  * de Zoho/kv, los pedidos y una verificación de que el camino que dice
  * cubrir SE CUBRIÓ de verdad (sobre la corrida del handler chileno).
  */
-const { IDS } = require("./harness");
+const { IDS, USUARIOS } = require("./harness");
 
 const FONO = "56912345678";
 const RUT = "76.543.210-3";
@@ -91,14 +91,30 @@ const ESCENARIOS = [
       t.ok(llamadas(r, "zoho", "GET", /users\//).length === 1, "lee teléfono del dueño");
     },
   },
-  {
-    nombre: "lead SDR (Aleydis) → hoy Chile hereda la SDR como dueña del deal",
-    zoho: { registros: { Leads: [lead("5000000000000000003", IDS.ALEYDIS)] } },
+  // DIFERENCIA ACEPTADA (decisión del dueño 28-sep): el lead de una SDR se
+  // convierte pero la SDR NO hereda el deal. Hoy el handler chileno sí lo
+  // hereda (lo verifica `verificar`). La emisión única debe tratarlo EXACTO
+  // como hoy Chile trata un lead de dueño ROBOT (GeoVictoria Admin): mismo
+  // lead, mismas llamadas, deal y cotización con el interino (Vicky).
+  ...[["Aleydis", IDS.ALEYDIS, "5000000000000000003"], ["Aracelli", IDS.ARACELLI, "5000000000000000006"]].map(([n, id, leadId]) => ({
+    nombre: `lead SDR (${n}) → la SDR NO hereda el deal (se trata como lead de dueño robot)`,
+    zoho: { registros: { Leads: [lead(leadId, id)] } },
     pedidos: [{ body: bodyBase() }],
+    equivalenteChile: () => ({
+      zoho: { registros: { Leads: [lead(leadId, IDS.ADMIN)] } },
+      pedidos: [{ body: bodyBase() }],
+    }),
     verificar: (r, t) => {
-      t.equal(r.respuestas[0].cuerpo.ejecutivo.email, "aaraque@geovictoria.com");
+      t.equal(r.respuestas[0].cuerpo.ejecutivo.email, USUARIOS[id].email, "hoy Chile hereda la SDR");
     },
-  },
+    verificarEmision: (r, t) => {
+      t.equal(r.respuestas[0].cuerpo.ejecutivo.email, "", "la SDR no quedó de dueña");
+      const c = r.log.find((x) => /actions\/convert/.test(x.ruta));
+      t.equal(c.cuerpo.data[0].Deals.Owner.id, IDS.VICKY);
+      const q = r.log.find((x) => x.metodo === "POST" && /Cotizaciones_GeoVictoria$/.test(x.ruta));
+      t.equal(q.cuerpo.data[0].Owner.id, IDS.VICKY);
+    },
+  })),
   {
     nombre: "lead ya convertido con deal vivo → se reusa todo",
     zoho: {

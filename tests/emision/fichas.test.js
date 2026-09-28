@@ -95,6 +95,18 @@ test("dueños: interino, adoptables y no heredables = los del código", () => {
   for (const f of Object.values(FICHAS)) assert.deepStrictEqual(f.owners.interinosLectura, [IDS.VICKY_USER_ID, IDS.GEOVICTORIA_ADMIN_ID]);
 });
 
+test("SDR no heredan el deal en NINGÚN país (decisión 28-sep)", () => {
+  const rutaAgente = "/home/user/geovictoria-whatsapp-agent/lib/paises/ficha-operativa.ts";
+  const ficha = require("fs").existsSync(rutaAgente) ? require("fs").readFileSync(rutaAgente, "utf8") : null;
+  assert.deepStrictEqual([...FICHA_CL.owners.noHeredables].sort(), [...IDS.SDR_CL_IDS].sort());
+  assert.deepStrictEqual([...FICHA_PE.owners.noHeredables].sort(), [...IDS.SDR_PE_IDS].sort());
+  assert.deepStrictEqual([...FICHA_CO.owners.noHeredables].sort(), [...IDS.SDR_CO_IDS].sort());
+  for (const f of Object.values(FICHAS)) assert.ok(f.owners.noHeredables && f.owners.noHeredables.size > 0, f.pais);
+  // Los ids de CL y PE son los rosters SDR de la ficha operativa del agente
+  // (solo si el repo del agente está al lado; si no, se omite este cruce).
+  if (ficha) for (const id of [...IDS.SDR_CL_IDS, ...IDS.SDR_PE_IDS]) assert.ok(ficha.includes(`"${id}"`), id);
+});
+
 test("dueño fijo opcional de CO y MX (VICKY_*_OWNER_FIJO)", () => {
   const f1 = construirFichas({ VICKY_CO_OWNER_FIJO: "on", VICKY_CO_OWNER_ID: "123", VICKY_MX_OWNER_FIJO: "1" });
   assert.strictEqual(f1.co.owners.interino.id, "123");

@@ -25,6 +25,9 @@ const handlerEmision = (req) => {
 // campo; todo lo demás debe ser idéntico.
 // 1) Tipo_de_Cobro del deal al nacer = "Mensual fijo" en todos los países
 //    (hoy Chile: ≤10 fijo / >10 por usuario).
+// 2) El lead de una SDR se convierte pero la SDR NO hereda el deal: ver los
+//    escenarios con `equivalenteChile` (comparan contra Chile con el mismo
+//    lead de dueño robot).
 function aceptarTipoDeCobroComun(valor) {
   if (Array.isArray(valor)) return valor.map(aceptarTipoDeCobroComun);
   if (valor && typeof valor === "object") {
@@ -37,15 +40,20 @@ function aceptarTipoDeCobroComun(valor) {
 
 for (const esc of ESCENARIOS) {
   test(`identidad CL: ${esc.nombre}`, async () => {
-    const a = await correr(esc, handlerChile);
-    const b = await correr(esc, handlerEmision);
-    // El escenario cubre lo que dice cubrir (sobre el handler chileno).
-    esc.verificar(a, {
+    const t = {
       ok: (v, m) => assert.ok(v, m),
       equal: (x, y, m) => assert.strictEqual(x, y, m),
       notEqual: (x, y, m) => assert.notStrictEqual(x, y, m),
       deepEqual: (x, y, m) => assert.deepStrictEqual(x, y, m),
-    });
+    };
+    const chileHoy = await correr(esc, handlerChile);
+    const b = await correr(esc, handlerEmision);
+    // El escenario cubre lo que dice cubrir (sobre el handler chileno de hoy).
+    esc.verificar(chileHoy, t);
+    if (esc.verificarEmision) esc.verificarEmision(b, t);
+    // 2) Diferencia aceptada "SDR no hereda": la referencia es el handler
+    //    chileno sobre el escenario equivalente (lead de dueño robot).
+    const a = esc.equivalenteChile ? await correr(esc.equivalenteChile(), handlerChile) : chileHoy;
     assert.ok(a.log.length > 0 || a.respuestas.every((r) => r.status !== 200), "hubo llamadas");
     a.log = aceptarTipoDeCobroComun(a.log);
     assert.deepStrictEqual(b.respuestas, a.respuestas, "misma respuesta HTTP");

@@ -35,6 +35,20 @@ const SECTORES_VALIDOS_CL = new Set([
   "19. Servicios", "20. Transporte", "21. Turismo, Hotelería y Gastronomía",
 ]);
 
+// SDR por país: su lead se CONVIERTE pero su gestión NO se hereda al deal
+// (decisión del dueño 28-sep, los cuatro países): el deal nace con el interino
+// (Vicky) y, si Vicky cierra sola, el agente lo reasigna tras el pago a la
+// gestora comercial del país (CL Aleydis, PE Cecilia Valverde, CO Gabriela
+// Linares, MX Andrea Fuentes). Ids = rosters `sdr` de la ficha operativa del
+// agente (lib/paises/ficha-operativa.ts).
+const SDR_CL_IDS = [
+  "3525045000583802005", // Aleydis Araque
+  "3525045000594735052", // Aracelli Sepúlveda
+];
+const SDR_PE_IDS = [
+  "3525045000299130001", // Ana Fiori
+  "3525045000576828001", // Priscila Quispe
+];
 // SDR de Colombia (create-from-vicky-co.js SDR_CO, Lalo 23-sep).
 const SDR_CO_IDS = [
   "3525045000613817111", // Eddy Galindo
@@ -163,6 +177,7 @@ function construirFichas(env = process.env) {
   cl.deal.descripcionTotal = (cot) => `${cot.totalUF} UF / ${cot.totalCLP} CLP`;
   cl.sector.validos = SECTORES_VALIDOS_CL;
   cl.owners.adoptables = new Set([VICKY_USER_ID, GORDILLO_ID, YAHEL_ID]);
+  cl.owners.noHeredables = new Set(listaDeEnv(env.VICKY_SDR_CL_IDS || SDR_CL_IDS.join(",")));
   cl.subform = {
     prepararItems: null,
     construir: (items, { ufActual, config }) => subform.buildSubformItemsCL(items, ufActual, config),
@@ -244,6 +259,7 @@ function construirFichas(env = process.env) {
   pe.cuentas.esNoAdoptable = esCuentaInterna;
   pe.owners.interino = { id: e("VICKY_PE_OWNER_INTERINO_ID") || VICKY_USER_ID };
   pe.owners.adoptables = new Set([VICKY_USER_ID, monicaId]);
+  pe.owners.noHeredables = new Set(listaDeEnv(env.VICKY_SDR_PE_IDS || SDR_PE_IDS.join(",")));
   pe.subform = {
     prepararItems: (items) => require("../quote-pricing").quitarFilaActivacion(items, "create-from-vicky-pe"),
     construir: (items) => subform.buildSubformItemsPE(items),
@@ -456,6 +472,6 @@ module.exports = {
   FICHA_PE: FICHAS.pe,
   FICHA_CO: FICHAS.co,
   FICHA_MX: FICHAS.mx,
-  IDS: { VICKY_USER_ID, GEOVICTORIA_ADMIN_ID, GORDILLO_ID, YAHEL_ID, MONICA_ID, SDR_CO_IDS },
+  IDS: { VICKY_USER_ID, GEOVICTORIA_ADMIN_ID, GORDILLO_ID, YAHEL_ID, MONICA_ID, SDR_CL_IDS, SDR_PE_IDS, SDR_CO_IDS },
   DOCS: { DOC_CERTIFICACION, DOC_FICHA_RELOJ, DOC_PRESENTACION },
 };
