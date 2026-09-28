@@ -77,3 +77,14 @@ test("filasAsistenciaVicky: el factor de descuento incorporado aplica al valor y
   assert.equal(t[0].Valor, 0.495);
   assert.equal(t[0].Valor_Usuario_Adicional, 0.0495);
 });
+
+test("precio negociado fuera de lista (AL GRANO NDV-31165, 0,525 fijo para 2): la fila que rige lleva el precio real, no el tramo de lista", () => {
+  const t = tabla(fija(0.525), 2);
+  assert.deepEqual(t, [
+    { Modalidad: "Rango Fijo", Desde: 1, Hasta: 2, Valor: 0.525, Valor_Usuario_Adicional: 0.3 },
+    { Modalidad: "Rango Fijo", Desde: 3, Hasta: 10, Valor: 0.55, Valor_Usuario_Adicional: 0.055 },
+  ]);
+  // Y con 7 personas a un fijo negociado de 0,5, la fila 1..10 cobra 0,5.
+  const t7 = tabla(fija(0.5), 7);
+  assert.deepEqual(t7, [{ Modalidad: "Rango Fijo", Desde: 1, Hasta: 10, Valor: 0.5, Valor_Usuario_Adicional: 0.055 }]);
+});

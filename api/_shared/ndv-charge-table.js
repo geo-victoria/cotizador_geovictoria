@@ -349,6 +349,13 @@ function filasAsistenciaVicky({ tiers, empleados, porUsuario, unitarioLista, pre
   // Tramo fijo contratado: primero por PRECIO (identifica el tramo aunque la
   // dotación venga mal), después por dotación, y si nada calza el primero.
   let i = fijos.findIndex((t) => precioListaFijo > 0 && Math.abs(t.precio - precioListaFijo) <= Math.max(1e-6, t.precio * 0.005));
+  // PRECIO NEGOCIADO (AL GRANO NDV-31165, 28-sep): la cotización del ejecutivo
+  // traía 0,525 UF fijo para 2 personas, que no es ningún tramo de la lista.
+  // Sin esta regla la fila que rige salía a 0,25 (el tramo de lista de 1-2) y la
+  // nota cobraba la mitad. La ESTRUCTURA sigue siendo la de la lista (la fila
+  // que cubre la dotación y las fijas que sigan, con su adicional de lista),
+  // pero el VALOR de la fila que rige es el precio real que el cliente aceptó.
+  const precioNegociado = i < 0 && precioListaFijo > 0 ? precioListaFijo : 0;
   if (i < 0) i = fijos.findIndex((t) => empleados >= t.desde && empleados <= t.hasta);
   if (i < 0) i = 0;
 
@@ -359,11 +366,12 @@ function filasAsistenciaVicky({ tiers, empleados, porUsuario, unitarioLista, pre
       : primerPorUsuario
         ? primerPorUsuario.precio
         : t.precio / t.hasta;
+    const valor = k === 0 && precioNegociado > 0 ? precioNegociado : t.precio;
     return {
       Modalidad: MODALIDAD_FIJA,
       Desde: k === 0 ? 1 : t.desde,
       Hasta: t.hasta,
-      Valor: redondear(t.precio * f),
+      Valor: redondear(valor * f),
       Valor_Usuario_Adicional: redondear(adicional * f),
     };
   });

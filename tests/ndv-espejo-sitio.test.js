@@ -107,3 +107,28 @@ test("sin hijos legibles el plan no inventa nada", () => {
   const p = planEnSitio({ serviciosEspejo: [], bloquesEspejo: [], deseado: deseado() });
   assert.equal(p.modo, "regenerar");
 });
+
+// VERIFICACIÓN del espejo contra la venta (28-sep, IDEA SPA NDV-32390): el
+// arreglo en sitio dejó 10 usuarios / 0,55 con la venta en 11 / 0,605.
+const { verificarPlanEnSitio } = require("../api/_shared/ndv-espejo-sitio");
+
+test("verificar: espejo con 10 usuarios y 0,55 contra venta de 11 y 0,605 → no calza (IDEA SPA)", () => {
+  const v = verificarPlanEnSitio({
+    serviciosEspejo: [servicio({ Cantidad_de_Usuarios: 10, Monto: 0.55 })],
+    deseado: { planMensual: 0.605, empleados: 11 },
+  });
+  assert.equal(v.ok, false);
+  assert.equal(v.motivos.length, 2);
+});
+
+test("verificar: Monto redondeado por Creator (0,61) contra 0,605 vendido → calza", () => {
+  const v = verificarPlanEnSitio({
+    serviciosEspejo: [servicio({ Cantidad_de_Usuarios: 11, Monto: 0.61 })],
+    deseado: { planMensual: 0.605, empleados: 11 },
+  });
+  assert.equal(v.ok, true);
+});
+
+test("verificar: sin hijos legibles no se da por bueno", () => {
+  assert.equal(verificarPlanEnSitio({ serviciosEspejo: [], deseado: { planMensual: 0.55, empleados: 5 } }).ok, false);
+});

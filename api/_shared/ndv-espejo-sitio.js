@@ -199,6 +199,39 @@ function planEnSitio({ serviciosEspejo, bloquesEspejo, deseado }) {
   return { modo: "en_sitio", acciones, motivos: [] };
 }
 
+/**
+ * VERIFICACIÓN del espejo contra la venta (28-sep, IDEA SPA NDV-32390): el
+ * arreglo en sitio corrigió la tabla de cobro y dejó Cantidad_de_Usuarios en 10
+ * y Monto en 0,55 cuando la cotización ya decía 11 y 0,605; nadie lo releyó y
+ * la nota se confirmó descuadrada. Esta función es PURA y se corre sobre los
+ * hijos RELEÍDOS, tanto después del parche como justo antes de convertir.
+ *
+ *   deseado.planMensual  = Σ subtotal (lista) de las líneas recurrentes SIN
+ *                          equipos de la cotización — lo que los hijos
+ *                          Servicio_Recurrente deben sumar en `Monto`.
+ *   deseado.empleados    = dotación vendida (la lleva el servicio principal).
+ *
+ * Tolerancia 0,0051: Creator guarda `Monto` con 2 decimales (0,605 → 0,61).
+ */
+const TOLERANCIA_PLAN = 0.0051;
+function verificarPlanEnSitio({ serviciosEspejo, deseado }) {
+  const servicios = Array.isArray(serviciosEspejo) ? serviciosEspejo : [];
+  const motivos = [];
+  if (!servicios.length) return { ok: false, motivos: ["el espejo no tiene servicios legibles"], totalEspejo: 0 };
+  const totalEspejo = Number(servicios.reduce((acc, s) => acc + num(s?.Monto), 0).toFixed(5));
+  const plan = num(deseado?.planMensual);
+  if (plan > 0 && Math.abs(totalEspejo - plan) > TOLERANCIA_PLAN) {
+    motivos.push(`el plan del espejo suma ${totalEspejo} y la venta ${plan}`);
+  }
+  const empleados = num(deseado?.empleados);
+  if (empleados > 0) {
+    const principal = servicios.reduce((a, b) => (num(b?.Cantidad_de_Usuarios) > num(a?.Cantidad_de_Usuarios) ? b : a), servicios[0]);
+    const enEspejo = num(principal?.Cantidad_de_Usuarios);
+    if (enEspejo > 0 && enEspejo !== empleados) motivos.push(`el espejo dice ${enEspejo} usuarios y la venta ${empleados}`);
+  }
+  return { ok: motivos.length === 0, motivos, totalEspejo };
+}
+
 /** Aplica el plan. Un solo PATCH por acción, sobre campos que el puente ya
  * escribe al crear. Devuelve el resultado de cada uno: si CUALQUIERA falla, el
  * llamador cae al camino probado (anular + regenerar). */
@@ -232,4 +265,6 @@ module.exports = {
   tablasIguales,
   planEnSitio,
   aplicarPlanEnSitio,
+  verificarPlanEnSitio,
+  TOLERANCIA_PLAN,
 };

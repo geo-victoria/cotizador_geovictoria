@@ -110,6 +110,31 @@ function mensualVendidoUF(quote, config) {
   return Number(rec.reduce((acc, x) => acc + (Number(x?.Subtotal_UF) || 0), 0).toFixed(5));
 }
 
+/** Σ lista de las líneas recurrentes SIN equipos: lo que los hijos
+ *  Servicio_Recurrente del espejo deben sumar en `Monto` (28-sep, IDEA SPA). */
+function planVendidoUF(quote, config) {
+  const items = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
+  const rec = items.filter(
+    (x) => (x?.Es_Recurrente === true || texto(x?.Es_Recurrente) === "true") && !esLineaDeEquipo(x),
+  );
+  if (!rec.length) return null;
+  return Number(rec.reduce((acc, x) => acc + (Number(x?.Subtotal_UF) || 0), 0).toFixed(5));
+}
+
+/**
+ * Relee los servicios del espejo y los compara con la venta (plan y dotación).
+ * Solo lectura. Devuelve {ok, motivos, totalEspejo, planVendido}.
+ */
+async function verificarEspejoContraVenta(cfg, cotId, quote, config) {
+  const { serviciosDelEspejo, verificarPlanEnSitio } = require("../_shared/ndv-espejo-sitio");
+  const { inferCommittedEmployees } = require("../_shared/ndv-handoff");
+  const servicios = await serviciosDelEspejo(cfg, cotId);
+  const planVendido = planVendidoUF(quote, config);
+  const empleados = inferCommittedEmployees(quote, null, undefined);
+  const v = verificarPlanEnSitio({ serviciosEspejo: servicios, deseado: { planMensual: planVendido, empleados } });
+  return { ...v, planVendido, empleados };
+}
+
 function tsCreator(v) {
   const m = /^(\d{2})-(\d{2})-(\d{4}) (\d{2}):(\d{2}):(\d{2})$/.exec(texto(v));
   return m ? Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4] + 3, +m[5], +m[6]) : 0;
@@ -296,13 +321,23 @@ async function intentarArregloEnSitio(cfg, cotId, quote, config) {
       console.log(`[ndv-alta-chat] espejo ${cotId}: en sitio NO alcanza (${plan.motivos.join("; ")})`);
       return null;
     }
-    if (plan.modo === "ok") return { modo: "ok", acciones: [] };
-    const aplicado = await aplicarPlanEnSitio(cfg, plan);
-    if (!aplicado.ok) return null;
-    console.log(
-      `[ndv-alta-chat] espejo ${cotId} ARREGLADO EN SITIO (${plan.acciones.map((a) => a.tipo).join(", ")}) — sin quemar correlativo`,
-    );
-    return { modo: "en_sitio", acciones: aplicado.resultados };
+    if (plan.modo !== "ok") {
+      const aplicado = await aplicarPlanEnSitio(cfg, plan);
+      if (!aplicado.ok) return null;
+      console.log(
+        `[ndv-alta-chat] espejo ${cotId} ARREGLADO EN SITIO (${plan.acciones.map((a) => a.tipo).join(", ")}) — se verifica releyendo`,
+      );
+    }
+    // VERIFICACIÓN (28-sep, IDEA SPA): el parche corrigió la tabla y dejó 10
+    // usuarios / 0,55 con la venta en 11 / 0,605. Se relee y se compara; si
+    // no calza, el llamador regenera (camino probado). Nunca se convierte
+    // sobre la palabra del PATCH.
+    const chequeo = await verificarEspejoContraVenta(cfg, cotId, quote, config);
+    if (!chequeo.ok) {
+      console.warn(`[ndv-alta-chat] espejo ${cotId}: el arreglo en sitio NO dejó la venta (${chequeo.motivos.join("; ")}) — se regenera`);
+      return null;
+    }
+    return { modo: plan.modo === "ok" ? "ok" : "en_sitio", acciones: plan.modo === "ok" ? [] : plan.acciones.map((a) => a.tipo), verificado: chequeo };
   } catch (e) {
     console.warn(`[ndv-alta-chat] arreglo en sitio falló (${String(e?.message || e).slice(0, 120)}) — se regenera`);
     return null;
@@ -628,6 +663,24 @@ module.exports = async function handler(req, res) {
           error: "la cotización figura convertida pero no se localiza su nota (revisar en Creator)",
         });
       }
+      // ÚLTIMA VERIFICACIÓN ANTES DE CONVERTIR (28-sep): pase lo que pase
+      // arriba, el espejo que se convierte tiene que sumar el plan vendido y
+      // llevar la dotación vendida. Si no, se regenera y la pasada siguiente
+      // convierte el fresco. Con `cotId` forzado el admin ya eligió: se informa,
+      // no se frena.
+      if (paisAlta === "cl") {
+        paso = "verificar_espejo";
+        const chequeo = await verificarEspejoContraVenta(cfg, cotId, quote, config).catch((e) => ({ ok: true, motivos: [], error: e?.message }));
+        pasos.push({ verificarEspejo: chequeo });
+        if (!chequeo.ok && !cotForzado) {
+          paso = "regenerar_espejo";
+          const anulado = await anularEspejo(cfg, cotId);
+          const nuevo = queda() > 20_000 ? await regenerarEspejo(quoteId, Math.max(15_000, queda() - 8_000), overridesRegen) : { ok: false, error: "sin presupuesto" };
+          pasos.push({ regenerarEspejo: { motivos: chequeo.motivos, viejoAnulado: anulado, nuevo } });
+          console.warn(`[ndv-alta-chat] espejo ${cotId} NO calza con la venta antes de convertir (${chequeo.motivos.join("; ")}) → regenerado ${nuevo.ok ? nuevo.ndvId : `pendiente: ${nuevo.error}`}`);
+          return sendJson(res, 200, { ok: true, listo: false, reintentable: true, pendiente: "espejo_regenerado", cotId, espejoNuevo: nuevo.ndvId || undefined, pasos });
+        }
+      }
       if (queda() < 20_000) {
         return sendJson(res, 200, { ok: true, listo: false, reintentable: true, pendiente: "convertir", cotId, pasos });
       }
@@ -647,6 +700,24 @@ module.exports = async function handler(req, res) {
         });
       }
       nota = (await leerRegistro(cfg, conv.ndvId)) || { ID: conv.ndvId };
+      // La nota recién nacida se juzga ANTES de confirmarla: si su total mensual
+      // no es el plan vendido, se anula (el cron de pendientes la confirmaría
+      // igual si quedara viva) y se regenera el espejo. Cero notas
+      // confirmadas con descuadre.
+      if (paisAlta === "cl" && !cotForzado) {
+        const totalNota = Number(texto(nota.TOTAL_SERVICIOS_MENSUALES)) || 0;
+        const planVendido = planVendidoUF(quote, config);
+        const { TOLERANCIA_PLAN } = require("../_shared/ndv-espejo-sitio");
+        if (totalNota > 0 && planVendido !== null && Math.abs(totalNota - planVendido) > TOLERANCIA_PLAN) {
+          paso = "nota_descuadrada";
+          const notaAnulada = await anularEspejo(cfg, texto(nota.ID));
+          const espejoAnulado = await anularEspejo(cfg, cotId);
+          const nuevo = queda() > 20_000 ? await regenerarEspejo(quoteId, Math.max(15_000, queda() - 8_000), overridesRegen) : { ok: false, error: "sin presupuesto" };
+          pasos.push({ notaDescuadrada: { ndvId: texto(nota.ID), totalNota, planVendido, notaAnulada, espejoAnulado, nuevo } });
+          console.error(`[ndv-alta-chat] nota ${texto(nota.ID_NDV) || texto(nota.ID)} nació con ${totalNota} y la venta es ${planVendido}: anulada sin confirmar; espejo regenerado ${nuevo.ok ? nuevo.ndvId : `pendiente: ${nuevo.error}`}`);
+          return sendJson(res, 200, { ok: true, listo: false, reintentable: true, pendiente: "espejo_regenerado", cotId, espejoNuevo: nuevo.ndvId || undefined, pasos });
+        }
+      }
     }
     const ndvId = texto(nota.ID);
     let estado = texto(nota.STATUS);
