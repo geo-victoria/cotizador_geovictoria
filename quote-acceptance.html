@@ -2560,9 +2560,9 @@
         var rutInput = document.getElementById("companyRut");
         if (rutInput) rutInput.placeholder = "Ej: 20605842055 (o DNI de 8 dígitos)";
         var comunaLabel = document.querySelector('label[for="companyComuna"]');
-        if (comunaLabel) comunaLabel.textContent = "Distrito / Provincia *";
+        if (comunaLabel) comunaLabel.textContent = "Distrito / Provincia (opcional)";
         var comunaInput = document.getElementById("companyComuna");
-        if (comunaInput) comunaInput.placeholder = "Escribe tu distrito o provincia";
+        if (comunaInput) comunaInput.placeholder = "Escribe tu distrito (ej. La Molina)";
         var giroLabel = document.querySelector('label[for="companyGiro"]');
         if (giroLabel) giroLabel.textContent = "Actividad económica *";
         var giroInput = document.getElementById("companyGiro");
@@ -2987,7 +2987,10 @@
           // (catálogo SII con códigos): SOLO Chile. En CO/MX esos catálogos no
           // aplican (22-jul: un cliente MX veía comunas de Chile y giros SII
           // bajo etiquetas mexicanas) — sus campos quedan como texto libre.
-          if (!esCO && !esMX) loadFormCatalogs();
+          // PERÚ (28-sep, caso Carlos/Blessed Consulting): cargaba la lista de
+          // comunas chilenas y al escribir "La Molina" salía "Sin coincidencias";
+          // el cliente creyó que no podía pagar. Texto libre, como CO/MX.
+          if (!esCO && !esMX && !esPE) loadFormCatalogs();
           document.getElementById("qName").textContent = q.name || q.id || "-";
           document.getElementById("qExpiry").textContent = q.expiresAt
             ? new Date(q.expiresAt).toLocaleString(esMX ? "es-MX" : "es-CL")
