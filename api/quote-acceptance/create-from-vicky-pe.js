@@ -59,6 +59,7 @@ const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-c
 const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
 const { ESCALERA_ASISTENCIA_PE } = require("../_shared/escaleras-pais");
 const { nacerDealDesdeLead } = require("../_shared/lead-first");
+const { nombreTratoConRuc } = require("../_shared/nombre-trato-ruc");
 
 let waitUntil;
 try {
@@ -654,7 +655,7 @@ module.exports = async function handler(req, res) {
       // ── Deal (Territorio Perú + obligatorios del layout) ──
       if (!dealId) {
         const dealDataPE = {
-          Deal_Name: `${empresa} - Cotización Vicky`,
+          Deal_Name: nombreTratoConRuc(`${empresa} - Cotización Vicky`, rucParaGuardar(ruc)),
           Stage: VICKY_PE_DEAL_STAGE,
           Pipeline: "Standard (Standard)",
           Lead_Source: VICKY_PE_LEAD_SOURCE,
@@ -710,6 +711,23 @@ module.exports = async function handler(req, res) {
       );
     }
     if (!accountId || !dealId) crmIncompleto = true;
+
+    // RUC en el nombre del trato (convención del equipo de Perú, Lalo 28-sep):
+    // también para el trato que ya existía (nacido en un hito antes de que el
+    // cliente diera el RUC, o adoptado por lead-first). Best-effort.
+    if (dealId && ruc) {
+      try {
+        const deal = await getRecordWithFields("Deals", dealId, ["Deal_Name"]);
+        const actual = toText(deal?.Deal_Name);
+        const nuevo = nombreTratoConRuc(actual, rucParaGuardar(ruc));
+        if (actual && nuevo !== actual) {
+          await updateRecord("Deals", dealId, { Deal_Name: nuevo });
+          console.log(`[create-from-vicky-pe] trato ${dealId} renombrado con RUC: "${nuevo}"`);
+        }
+      } catch (e) {
+        console.warn(`[create-from-vicky-pe] no se pudo poner el RUC en el trato ${dealId}: ${toText(e?.message || e).slice(0, 160)}`);
+      }
+    }
 
     // El lead vivo del contacto (derivación/calificación) sale de la cola de
     // Mónica convirtiéndose a la cuenta/contacto del deal. Best-effort.
