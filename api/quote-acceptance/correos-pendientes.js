@@ -65,6 +65,14 @@ async function yaLeSalioCorreo(quoteModule, quoteId, email) {
   );
 }
 
+const { paisDeCotizacion } = require("../_shared/pais-cotizacion");
+const WA_LINEA_PAIS = {
+  cl: "https://wa.me/56967308227",
+  pe: "https://wa.me/51922067167",
+  co: "https://wa.me/573181070737",
+  mx: "https://wa.me/5215659778486",
+};
+
 module.exports = async function handler(req, res) {
   if (!authorized(req)) return sendJson(res, 401, { ok: false, error: "Unauthorized" });
   const inicio = Date.now();
@@ -114,9 +122,12 @@ module.exports = async function handler(req, res) {
           "Cuenta_Asociada",
           "Contacto_Asociado",
           "Owner",
+          config.quoteAcceptanceUrlField,
         ]);
         if (!quote) { errores.push(`${numero}: no encontrada`); continue; }
-        const r = await enviarCorreoPropioDeCotizacion({ config, quote, quoteId, email });
+        // Los 4 países (28-sep): el botón de WhatsApp va a la línea del país.
+        const pais = paisDeCotizacion(quote, config);
+        const r = await enviarCorreoPropioDeCotizacion({ config, quote, quoteId, email, waLink: WA_LINEA_PAIS[pais] });
         if (r.ok) enviadas.push(`${numero} → ${email}`);
         else errores.push(`${numero}: ${r.error}`);
       } catch (e) {

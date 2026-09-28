@@ -26,7 +26,8 @@ const _chatOnboardingCache = new Map();
  */
 async function onboardingPorChat(acceptanceConfig, quoteId, pais) {
   try {
-    if (toText(pais).toLowerCase() && toText(pais).toLowerCase() !== "cl") return false;
+    // Los 4 países (28-sep): el agente ya hace el alta por chat en CL/PE/CO/MX.
+    if (toText(pais).toLowerCase() && !["cl", "pe", "co", "mx"].includes(toText(pais).toLowerCase())) return false;
     if (!VICKY_SHARED_SECRET) return false;
     const key = toText(quoteId);
     if (_chatOnboardingCache.has(key)) return _chatOnboardingCache.get(key);
@@ -37,7 +38,7 @@ async function onboardingPorChat(acceptanceConfig, quoteId, pais) {
     // clientes (pregunta de Lalo 05-sep) y sin wizard se quedarían sin nada.
     if (/intervenci/i.test(toText(q?.Intervenci_n_Humana))) { _chatOnboardingCache.set(key, false); return false; }
     const fono = toText(q?.Tel_fono_Contacto).replace(/\D/g, "");
-    if (!/^569\d{8}$/.test(fono)) { _chatOnboardingCache.set(key, false); return false; }
+    if (!/^(569\d{8}|51\d{9}|57\d{10}|52\d{10,11})$/.test(fono)) { _chatOnboardingCache.set(key, false); return false; }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
     const res = await fetch(`${VICKY_AGENT_BASE}/api/vic-onboarding-activo?contact=${fono}`, {

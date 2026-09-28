@@ -937,6 +937,10 @@ module.exports = async function handler(req, res) {
       ...(accountId ? { Cuenta_Asociada: { id: accountId } } : {}),
       CRM_Incompleto: crmIncompleto,
       [config.quoteDateField]: new Date().toISOString().slice(0, 10),
+      // Etiqueta de canal (28-sep, Lalo "agrega esa etiqueta"): la misma de
+      // Chile. Con ella esta cotización entra al reenvío de correos pendientes,
+      // a la medición de origen de la venta y al alta por chat.
+      Intervenci_n_Humana: "100% Vicky",
       [config.quoteStatusField]: "Borrador",
       [config.contactEmailField]: contactoEmail || undefined,
       [config.contactPhoneField]: contactoTelefono || undefined,
