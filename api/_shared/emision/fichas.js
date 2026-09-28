@@ -117,6 +117,8 @@ function construirFichas(env = process.env) {
       tombola: comun.tombola,
       producto: comun.producto,
       pipeline: "Standard (Standard)",
+      // Firma en las descripciones de deal y cuenta ("Deal creado por Vicky PE…").
+      firma: { cl: "Vicky", pe: "Vicky PE", co: "Vicky CO", mx: "Vicky MX" }[pais],
       nombre: (empresa) => `${empresa} - Cotización Vicky`,
       nombreDesdePlaceholder: (empresa) => `${empresa} (Control de Asistencia)`,
     },
@@ -366,7 +368,7 @@ function construirFichas(env = process.env) {
   };
   co.token = { pais: "co" };
   co.mensajes = { faltanCampos: "Faltan campos: empresa, contacto, nit", itemsRequerido: "items requerido (no vacío)" };
-  co.respuesta = { linkCortoEnReintento: true, extras: null };
+  co.respuesta = { linkCortoEnReintento: true, extras: ({ reuse }) => ({ accountReused: Boolean(reuse.accountReused) }) };
   // Camino A (convertir el lead vivo primero) GATEADO en CO: env o kv
   // co_convert_first=on (apagado por defecto).
   co.flags.convertFirst = async () => {

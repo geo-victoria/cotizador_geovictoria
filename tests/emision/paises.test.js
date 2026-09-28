@@ -35,6 +35,7 @@ test("normalizadores: contrato de país → contrato de Chile", () => {
   assert.strictEqual(pe.cotizacion.items.length, 2, "sin fila de Activación");
   assert.strictEqual(Math.round(pe.cotizacion.totalPEN * 100) / 100, 236, "(120+80)×1,18");
   assert.deepStrictEqual(pe.extras, { tipoCambio: 3.4, tipoCambioFuente: "SUNAT" });
+  assert.deepStrictEqual(normalizarPE(bodyPais("PEN", "20605842055", "ruc", "afectoIgv"), FICHA_PE).extras, { tipoCambio: undefined, tipoCambioFuente: "" });
   const co = normalizarCO(bodyPais("COP", "900.624.654-1", "nit", "afectoIva"), FICHA_CO);
   assert.strictEqual(co.cotizacion.totalCOP, 120 + 80 * 1.19);
   const mx = normalizarMX(bodyPais("MXN", "GEO200101AB1", "rfc", "afectoIva", { raiz: { cc: ["x@y.z"], escalonDescuento: 9 } }), FICHA_MX);

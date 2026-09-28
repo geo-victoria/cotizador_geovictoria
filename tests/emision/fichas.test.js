@@ -179,3 +179,10 @@ test("sectores válidos de Chile = SECTORES_VALIDOS del endpoint", () => {
   assert.strictEqual(FICHA_CL.sector.validos.size, 22);
   for (const p of ["pe", "co", "mx"]) assert.strictEqual(FICHAS[p].sector.validos, null);
 });
+
+test("etiqueta de canal \"100% Vicky\" en los 4 países (común desde c827413)", () => {
+  for (const [p, f] of Object.entries(FICHAS)) {
+    assert.strictEqual(f.cotizacion.marcarIntervencionHumana, true, p);
+    assert.ok(SRC[p].includes('"100% Vicky"'), p);
+  }
+});

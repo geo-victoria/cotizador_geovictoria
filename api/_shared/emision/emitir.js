@@ -536,7 +536,7 @@ async function emitirCotizacion(req, res, { ficha, entrada, bodyCrudo }) {
             N_Empleados_que_marcan: cliente.userCount,
             Producto_Soluci_n: ficha.deal.producto,
             Lead_Source: leadSourceDeal,
-            Description: `Deal creado por Vicky desde Lead convertido.\nUsuarios: ${cliente.userCount}\nTotal: ${ficha.deal.descripcionTotal(cotizacion)}\nSector: ${sectorParaZoho}`,
+            Description: `Deal creado por ${ficha.deal.firma} desde Lead convertido.\nUsuarios: ${cliente.userCount}\nTotal: ${ficha.deal.descripcionTotal(cotizacion)}\nSector: ${sectorParaZoho}`,
           }, true);
         } else {
           await updateRecord("Deals", dealId, {
@@ -641,7 +641,7 @@ async function emitirCotizacion(req, res, { ficha, entrada, bodyCrudo }) {
           Billing_Street: cliente.direccionEmpresa || undefined,
           Billing_City: cliente.comunaEmpresa || undefined,
           Billing_State: cliente.regionEmpresa || undefined,
-          Description: `Cuenta creada por Vicky (WhatsApp). ${ficha.documento.etiqueta}: ${cliente.rutEmpresa}`,
+          Description: `Cuenta creada por ${ficha.deal.firma} (WhatsApp). ${ficha.documento.etiqueta}: ${cliente.rutEmpresa}`,
           Industry: sectorParaZoho,
           Territorio: ficha.territorio,
           N_Empleados_dependientes: cliente.userCount,
@@ -785,7 +785,7 @@ async function emitirCotizacion(req, res, { ficha, entrada, bodyCrudo }) {
           Pipeline: ficha.deal.pipeline,
           Lead_Source: leadSourceEmision,
           Amount: ficha.deal.amount(cotizacion),
-          Description: `Deal creado por Vicky para cotización WhatsApp.\nUsuarios: ${cliente.userCount}\nTotal: ${ficha.deal.descripcionTotal(cotizacion)}\nSector: ${sectorParaZoho}`,
+          Description: `Deal creado por ${ficha.deal.firma} para cotización WhatsApp.\nUsuarios: ${cliente.userCount}\nTotal: ${ficha.deal.descripcionTotal(cotizacion)}\nSector: ${sectorParaZoho}`,
           Territorio: ficha.territorio,
           Tombola: ficha.deal.tombola,
           Monda_del_trato: ficha.monedaDeal,
@@ -1160,8 +1160,8 @@ async function emitirCotizacion(req, res, { ficha, entrada, bodyCrudo }) {
             replyToEmail: quoteOwnerEmail || ficha.correo.ccPais[0] || "",
             ccEmail: quoteOwnerEmail,
             ccEmails: [
-              ...ficha.correo.ccFijos,
               ...ficha.correo.ccPais,
+              ...ficha.correo.ccFijos,
               ...(ficha.correo.incluirBodyCc && Array.isArray(body.cc) ? body.cc : []),
             ].filter(Boolean),
             toEmail: cliente.contactoEmail,

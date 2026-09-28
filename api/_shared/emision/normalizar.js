@@ -61,9 +61,10 @@ function crearNormalizadorPais({ campoDocumento, redondearTotal = (n) => n }) {
       existing: {},
       escalonDescuento: escalonAcotado(body.escalonDescuento),
       ...(Array.isArray(body.cc) ? { cc: body.cc } : {}),
+      // Mismo tratamiento que el endpoint PE: número > 0 o undefined; fuente como texto.
       extras: {
-        ...(Number(body.tipoCambio) > 0 ? { tipoCambio: Number(body.tipoCambio) } : {}),
-        ...(toText(body.tipoCambioFuente) ? { tipoCambioFuente: toText(body.tipoCambioFuente) } : {}),
+        tipoCambio: Number(body.tipoCambio) > 0 ? Number(body.tipoCambio) : undefined,
+        tipoCambioFuente: toText(body.tipoCambioFuente),
       },
     };
   };
