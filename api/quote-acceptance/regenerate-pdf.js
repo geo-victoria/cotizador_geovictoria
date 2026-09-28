@@ -22,6 +22,7 @@ const {
   updateRecord,
   toText,
 } = require("../_shared/zoho-crm");
+const { programarSyncEspejo } = require("../_shared/espejo-sync");
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { secretoValido } = require("../_shared/secreto-vicky");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
@@ -237,6 +238,7 @@ module.exports = async function handler(req, res) {
         [config.quotePdfUrlField]: pdfUrlPais,
       }, true);
       await actualizarPunteroPdf(quoteId, pdfUrlPais);
+      programarSyncEspejo(quoteId, paisQuote, "regenerate-pdf");
       return sendJson(res, 200, { ok: true, version: versionNuevaPais, link_pdf: pdfUrlPais, pais: paisQuote });
     }
 
@@ -316,6 +318,7 @@ module.exports = async function handler(req, res) {
     );
     // Propaga al puntero de Supabase (principio Lalo 07-ago: el PDF nuevo en TODOS lados)
     await actualizarPunteroPdf(quoteId, pdfUrl);
+    programarSyncEspejo(quoteId, "cl", "regenerate-pdf");
 
     return sendJson(res, 200, {
       ok: true,

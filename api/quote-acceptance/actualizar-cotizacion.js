@@ -54,6 +54,7 @@ const EJEC_EMAIL = process.env.VICKY_EJECUTIVO_EMAIL || EJECUTIVO_CL_DEFAULT.ema
 const EJEC_TELEFONO = process.env.VICKY_EJECUTIVO_TELEFONO || EJECUTIVO_CL_DEFAULT.telefono;
 const VICKY_FROM_EMAIL = process.env.VICKY_FROM_EMAIL || "vicky@geovictoria.com";
 
+const { dispararSyncEspejo } = require("../_shared/espejo-sync");
 let waitUntil;
 try {
   ({ waitUntil } = require("@vercel/functions"));
@@ -158,6 +159,7 @@ async function actualizarEnSitioPais({ pais, config, quote, quoteId, items, body
     })().catch((bgErr) => console.error(`[actualizar-cotizacion] pais=${pais} PDF/correo en segundo plano falló:`, bgErr?.message || bgErr)),
   );
 
+  waitUntil(dispararSyncEspejo(quoteId, pais, "actualizar-cotizacion"));
   return sendJson(res, 200, {
     ok: true,
     version: versionNueva,
@@ -399,6 +401,7 @@ async function handlerBase(req, res) {
       ),
     );
 
+    waitUntil(dispararSyncEspejo(quoteId, "cl", "actualizar-cotizacion"));
     return sendJson(res, 200, {
       ok: true,
       version: versionNueva,

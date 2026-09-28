@@ -180,6 +180,29 @@ async function diagnosticoEspejo(cfg, cot, quote, config) {
       motivos.push("envío bonificado cobrado a lista");
     }
   }
+  // (e) DESCUENTO DISTINTO (28-sep): el descuento del ejecutivo o la escalera
+  //     aplicados después de nacer el espejo no tocan los ítems, así que (a)-(d)
+  //     no los veían y la nota salía a precio de lista.
+  //     Solo cuenta si el espejo es ANTERIOR a la última edición de la
+  //     cotización: un espejo recién regenerado nunca vuelve a disparar (sin
+  //     esto, un servicio con el descuento incorporado al precio —campo en 0—
+  //     regeneraría en cada pasada).
+  const pctQuote = Number(quote?.[config.quoteDiscountPctField]);
+  const editadaQuote = Date.parse(String(quote?.Modified_Time || "")) || 0;
+  if (Number.isFinite(pctQuote) && nacido && editadaQuote > nacido + 60 * 1000) {
+    try {
+      const { serviciosDelEspejo } = require("../_shared/ndv-espejo-sitio");
+      const servicios = await serviciosDelEspejo(cfg, texto(cot.ID));
+      if (servicios.length) {
+        const pctEspejo = servicios.reduce((m, sv) => Math.max(m, Number(sv?.Descuento_Ejecutivo) || 0), 0);
+        if (Math.abs(pctEspejo - Math.max(0, pctQuote)) > 0.01) {
+          motivos.push(`descuento distinto (espejo ${pctEspejo}% · cotización ${pctQuote}%)`);
+        }
+      }
+    } catch {
+      /* sin servicios legibles: no se juzga */
+    }
+  }
   return { regenerar: motivos.length > 0, motivos };
 }
 
@@ -528,6 +551,10 @@ module.exports = async function handler(req, res) {
     // soloEspejo=true: ubica/diagnostica/regenera el espejo SIN convertir nada
     // (para preparar la nota antes del alta, o para inspección admin).
     if (body.soloEspejo === true) {
+      // Un espejo ya convertido no se toca desde acá: su nota manda.
+      if (texto(cot.ESTADO_COT) === "Convertida a NDV") {
+        return sendJson(res, 200, { ok: true, soloEspejo: true, cotId, yaConvertido: true, pasos });
+      }
       const diag = await diagnosticoEspejo(cfg, cot, quote, config);
       if (diag.regenerar && !cotForzado) {
         const anulado = await anularEspejo(cfg, cotId);

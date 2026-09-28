@@ -36,6 +36,7 @@ const {
   updateRecord,
   toText,
 } = require("../_shared/zoho-crm");
+const { programarSyncEspejo } = require("../_shared/espejo-sync");
 const { actualizarPunteroPdf, marcarPdfPendiente } = require("../_shared/pointer-sync");
 const { secretoValido } = require("../_shared/secreto-vicky");
 const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
@@ -367,6 +368,7 @@ async function handlerBase(req, res) {
       true,
     );
     await actualizarPunteroPdf(quoteId, pdfUrl);
+    programarSyncEspejo(quoteId, paisQuote, "descuento-ejecutivo");
 
     return sendJson(res, 200, {
       ok: true,

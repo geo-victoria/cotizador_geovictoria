@@ -276,6 +276,7 @@ const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
 
 // waitUntil: corre trabajo en segundo plano DESPUÉS de responder, dentro de la
 // misma invocación. La cotización nueva en Creator no debe hacer esperar a Vicky.
+const { programarSyncEspejo } = require("../_shared/espejo-sync");
 let waitUntil;
 try {
   ({ waitUntil } = require("@vercel/functions"));
@@ -497,6 +498,9 @@ async function handlerBase(req, res) {
     );
 
     const topeAlcanzado = !hayEscalonDespues(quote, config, targetIdx);
+    // Borrador de Creator al día con el descuento recién comiteado. CL y PE ya
+    // emiten un espejo nuevo arriba; CO y MX lo corrigen por el diagnóstico.
+    if (pais === "co" || pais === "mx") programarSyncEspejo(quoteId, pais, "aplicar-siguiente-descuento");
 
     return sendJson(res, 200, {
       ok: true,
