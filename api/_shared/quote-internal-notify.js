@@ -65,7 +65,7 @@ const ROSTER_TLMK_DEFAULT = [
   "dgalvez@geovictoria.com:3525045000124240013:Daniela Gálvez",
   "gmelendez@geovictoria.com:3525045000146108001:Grey Meléndez",
 ].join(",");
-function rosterTlmk() {
+function rosterTlmkLocal() {
   return (process.env.QUOTE_NOTIFY_TLMK_ROSTER || ROSTER_TLMK_DEFAULT)
     .split(",")
     .map((s) => s.trim())
@@ -75,6 +75,51 @@ function rosterTlmk() {
       return { email: toText(email).toLowerCase(), id: toText(id), nombre: nombre.join(":").trim(), sesion: toText(email).toLowerCase().split("@")[0] };
     })
     .filter((r) => r.email && r.id);
+}
+
+/** ROSTER DE LOS 4 PAÍSES desde la FICHA OPERATIVA del agente (28-sep, caso
+ * CERCA: la primera venta mexicana salió "100% AUTÓNOMA" porque la lista de
+ * arriba solo conoce a Chile — Yahel, Laura y Mónica no existían para este
+ * clasificador). El agente expone `vic-roster-tlmk`; acá se lee con caché de
+ * 10 min y, si no responde, se cae a la lista local (Chile). La env
+ * QUOTE_NOTIFY_TLMK_ROSTER sigue mandando sobre todo (override sin deploy).
+ * Devuelve también la gestora de ventas autónomas por país para la copia
+ * del correo de PAGADA. */
+let rosterRemotoCache = { at: 0, data: null };
+async function rosterRemoto() {
+  if (Date.now() - rosterRemotoCache.at < 10 * 60 * 1000 && rosterRemotoCache.data) return rosterRemotoCache.data;
+  const base = toText(process.env.VICKY_AGENT_NOTIFY_URL);
+  const secret = toText(process.env.VICKY_AGENT_CRON_SECRET);
+  if (!base || !secret) return null;
+  try {
+    const origin = new URL(base).origin;
+    const r = await fetch(`${origin}/api/vic-roster-tlmk`, { headers: { "x-cron-secret": secret }, signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    if (!j?.ok || !Array.isArray(j.telemarketing)) return null;
+    rosterRemotoCache = { at: Date.now(), data: j };
+    return j;
+  } catch (_e) {
+    return null;
+  }
+}
+async function rosterTlmk() {
+  if (toText(process.env.QUOTE_NOTIFY_TLMK_ROSTER)) return rosterTlmkLocal();
+  const remoto = await rosterRemoto();
+  const lista = (remoto?.telemarketing || [])
+    .map((p) => ({ email: toText(p.email).toLowerCase(), id: toText(p.zohoId), nombre: toText(p.nombre), sesion: toText(p.sesion) || toText(p.email).toLowerCase().split("@")[0], pais: toText(p.pais) }))
+    .filter((r) => r.email && r.id);
+  return lista.length ? lista : rosterTlmkLocal();
+}
+/** Gestora de ventas autónomas del país (copia del correo de PAGADA y texto
+ * de la fila "Venta"). Fallbacks = lo que había escrito a mano. */
+async function gestoraVentaAutonoma(pais) {
+  const remoto = await rosterRemoto();
+  const p = remoto?.paises?.[pais]?.ventaAutonoma;
+  if (p?.email) return { email: toText(p.email).toLowerCase(), nombre: toText(p.nombre) };
+  if (pais === "cl") return { email: NOTIFY_CC_PAGADA_CL[0] || "", nombre: "Aleydis Araque" };
+  if (pais === "co") return { email: NOTIFY_CC_PAGADA_CO[0] || "", nombre: "Gabriela Linares" };
+  return null;
 }
 function sinTildes(s) {
   return toText(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -94,7 +139,7 @@ async function hayGestionEjecutivoEnDeal(dealId) {
     );
     if (!r.ok || r.status === 204) return false;
     const notas = ((await r.json().catch(() => ({})))?.data) || [];
-    const roster = rosterTlmk();
+    const roster = await rosterTlmk();
     const ids = new Set(roster.map((x) => x.id));
     return notas.some((n) => {
       const titulo = toText(n?.Note_Title);
@@ -273,7 +318,7 @@ async function detallePagosMP(quoteId, pais = "cl") {
   }
 }
 
-function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId, reemision }) {
+function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId, reemision, gestora }) {
   const titulo = evento === "pagada" ? "💰 Cotización PAGADA" : "✅ Cotización ACEPTADA";
   const dealLink = dealId
     ? `<a href="${DEAL_URL_BASE}${encodeURIComponent(dealId)}">Ver el Deal en Zoho</a>`
@@ -291,7 +336,7 @@ function buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId
   // AUTÓNOMA vs ASISTIDA (Lalo 24-ago): solo en el pago de ventas de Vicky.
   const filaVenta =
     venta === "autonoma"
-      ? `<tr><td><b>Venta</b></td><td>🤖 <b>100% AUTÓNOMA</b> — sin gestión del ejecutivo registrada en el deal; el acompañamiento post-venta pasa al dueño de ventas autónomas</td></tr>`
+      ? `<tr><td><b>Venta</b></td><td>🤖 <b>100% AUTÓNOMA</b> — sin gestión de telemarketing registrada en el deal${gestora ? `; el acompañamiento post-venta pasa a ${gestora}` : ""}</td></tr>`
       : venta === "asistida"
         ? `<tr><td><b>Venta</b></td><td>🤝 <b>ASISTIDA</b> — el ejecutivo registró gestión en el deal (nota o WhatsApp espejado)</td></tr>`
         : "";
@@ -597,6 +642,10 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false
     if (evento === "pagada" && canal === "vicky") {
       venta = (await hayGestionEjecutivoEnDeal(dealId)) ? "asistida" : "autonoma";
     }
+    // Gestora de ventas autónomas del PAÍS (ficha operativa del agente; 28-sep:
+    // Perú y México no tenían copia y el texto hablaba de un "dueño" que en
+    // esos países no existe). Va como copia del PAGADA y nombrada en la fila.
+    const gestoraPais = evento === "pagada" ? await gestoraVentaAutonoma(paisNotify).catch(() => null) : null;
     const sufijoCanal =
       (canal === "ejecutivo"
         ? " · Canal: EJECUTIVO (cotizadora)"
@@ -621,7 +670,7 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false
         creatorId = toText(fresco?.[campoNdv]);
       }
     } catch (_e) { /* fila sin id */ }
-    const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId, reemision });
+    const htmlBody = buildHtml({ evento, empresa, numero, clientEmail, rut, montoClp, dealId, pagosMp, canal, venta, creatorId, reemision, gestora: gestoraPais?.nombre || "" });
     // PROPIETARIO del trato/cotización SIEMPRE copiado (Lalo 31-jul): primero
     // el Owner de la cotización; si no viene, el Owner del deal. Dedup contra
     // la base y jamás el robot Vicky.
@@ -648,7 +697,9 @@ async function notifyQuoteEvent({ config, quote, quoteId, evento, forzar = false
     // Copia a la dueña del acompañamiento autónomo en TODO pago CL (Lalo
     // 24-ago) — se entera tanto de las autónomas (suyas) como de las
     // asistidas (contexto).
-    const ccPagada = evento === "pagada" ? (esCO ? NOTIFY_CC_PAGADA_CO : !esMX && !esPE ? NOTIFY_CC_PAGADA_CL : []) : [];
+    // Copia a la gestora de ventas autónomas del PAÍS (ficha operativa del
+    // agente; 28-sep: Perú y México no tenían copia, Colombia y Chile a mano).
+    const ccPagada = gestoraPais?.email ? [gestoraPais.email] : [];
     const vistos = new Set();
     const recipients = [...base, ownerEmail, ...ccPagada].filter((e) => {
       const low = String(e || "").trim().toLowerCase();
