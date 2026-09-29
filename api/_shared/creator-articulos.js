@@ -183,6 +183,15 @@ const ALIAS_CODIGO = {
   // Promo del Senseface 2A: es el MISMO equipo, cambia solo la tarifa.
   senseface_2a_promocion: "senseface_2a",
   senseface_2a_promo: "senseface_2a",
+  // El slot `senseface_2a` ES el Senseface 4A desde el 23-sep (artículo 006.11).
+  // La cotizadora de ejecutivos y la calculadora comercial emiten el código
+  // `senseface_4a` a secas: sin este alias la línea del reloj quedaba sin
+  // artículo → bloque de arriendo con Monto=0 → el diagnóstico del espejo lo
+  // regeneraba en cada pasada del job (GASTRONOMICA LA FUENTE, 28→29-sep: 199
+  // espejos anulados en 21 horas).
+  senseface_4a: "senseface_2a",
+  senseface_4a_promocion: "senseface_2a",
+  senseface_4a_promo: "senseface_2a",
   huellero_uru4500: "uru4500",
   uru_4500: "uru4500",
   // Accesorios y kit QR: ids de la calculadora comercial y variantes.
