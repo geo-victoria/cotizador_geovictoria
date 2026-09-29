@@ -1585,6 +1585,10 @@ async function runNdvHandoffFromDraft({
     // respeta (misma secuencia que creator-meta usa para las COT atascadas).
     fecha_uf_usd: ndvRecord.fecha_uf_usd,
     dontUpdateUfDate: true,
+    // Sin `UpdateCheckbox` el workflow DenyEditions de Creator cancela la
+    // edición en silencio (verificado 29-sep: el PATCH sin él dejó la fecha
+    // del día; el mismo PATCH con él la cambió). Mismo patrón que ndv-diag.
+    UpdateCheckbox: true,
   };
   const draftUpdatePath = buildCreatorUpdatePath(creatorConfig, ndvCreatorId);
   const draftUpdateResp = await creatorApiFetch(draftUpdatePath, {
