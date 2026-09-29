@@ -1,0 +1,305 @@
+{
+ "salida": {
+  "status": 200,
+  "json": {
+   "ok": true,
+   "quoteId": "cotizaciones_geovictoria-3",
+   "dealId": "deal-kv",
+   "accountId": "accounts-1",
+   "contactId": "contacts-2",
+   "acceptanceUrl": {
+    "base": "https://cotizador.test/quote-acceptance.html",
+    "token": {
+     "quoteId": "cotizaciones_geovictoria-3",
+     "dealId": "deal-kv",
+     "pais": "mx",
+     "iat": 1790683200000,
+     "exp": 1793275200000,
+     "v": 1
+    }
+   },
+   "linkCorto": "https://cotizador.test/q/3-290a4716e4",
+   "pdfUrl": "",
+   "pdfPendiente": true,
+   "accountReused": false,
+   "descuentoPlanPct": 0,
+   "expiresAt": "2026-10-29T12:00:00.000Z"
+  }
+ },
+ "calls": [
+  {
+   "tipo": "getIdempotente",
+   "clave": "idem:df1f2dfc034ee3a4"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/Leads/search?phone=5290000007777&converted=both&per_page=3",
+   "method": "GET",
+   "body": null
+  },
+  {
+   "tipo": "getDealPorFono",
+   "fono": "5290000007777"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/coql",
+   "method": "POST",
+   "body": {
+    "select_query": "select id, Account_Name from Accounts where RUT_Empresa in ('PVM200528AB1') limit 10"
+   }
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Accounts",
+   "payload": {
+    "Account_Name": "PRUEBA VICKY MX SA DE CV",
+    "RUT_Empresa": "PVM200528AB1",
+    "Phone": "5290000007777",
+    "Description": "Cuenta creada por Vicky MX (WhatsApp). RFC: PVM200528AB1",
+    "Industry": "19. Servicios",
+    "Territorio": "México",
+    "N_Empleados_dependientes": 8,
+    "Tiene_potencial_de_expansi_n_Regional": "No",
+    "Owner": {
+     "id": "3525045000484500876"
+    }
+   },
+   "silent": true
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Contacts",
+   "payload": {
+    "First_Name": "Ana",
+    "Last_Name": "Prueba",
+    "Phone": "5290000007777",
+    "Account_Name": {
+     "id": "accounts-1"
+    },
+    "Lead_Source": "SEO",
+    "Territorio": "México",
+    "Owner": {
+     "id": "3525045000484500876"
+    }
+   },
+   "silent": true
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/Leads/search?phone=5290000007777&converted=both&per_page=3",
+   "method": "GET",
+   "body": null
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "payload": {
+    "Name": "Cotización PRUEBA VICKY MX SA DE CV - 2026-09-29",
+    "Owner": {
+     "id": "3525045000484500876"
+    },
+    "Deal_Asociado": {
+     "id": "deal-kv"
+    },
+    "Contacto_Asociado": {
+     "id": "contacts-2"
+    },
+    "Cuenta_Asociada": {
+     "id": "accounts-1"
+    },
+    "CRM_Incompleto": false,
+    "Fecha_Cotizacion": "2026-09-29",
+    "Intervenci_n_Humana": "100% Vicky",
+    "Estado_Cotizacion": "Borrador",
+    "Telefono_Cliente": "5290000007777",
+    "RUT_Cliente": "PVM200528AB1",
+    "Detalle_Items_Cotizacion": [
+     {
+      "Nombre_Item": "Plan Asistencia (8 personas)",
+      "Descripcion_Item": "",
+      "Codigo_Item": "plan_asistencia",
+      "Cantidad": 1,
+      "Precio_Unitario_UF": 1200,
+      "Precio_Unitario_CLP": 1200,
+      "Subtotal_UF": 1200,
+      "Subtotal_CLP": 1200,
+      "Modalidad": "Único",
+      "Es_Recurrente": true,
+      "Afecto_IVA": true,
+      "Orden": 1,
+      "Categoria_Item": "Plataforma Asistencia",
+      "Unidad": "Servicio"
+     },
+     {
+      "Nombre_Item": "Capacitación online",
+      "Descripcion_Item": "Capacitación online al equipo administrador — incluida sin costo.",
+      "Codigo_Item": "capacitacion_online",
+      "Cantidad": 1,
+      "Precio_Unitario_UF": 0,
+      "Precio_Unitario_CLP": 0,
+      "Subtotal_UF": 0,
+      "Subtotal_CLP": 0,
+      "Modalidad": "Venta",
+      "Es_Recurrente": false,
+      "Afecto_IVA": true,
+      "Orden": 2,
+      "Categoria_Item": "Otro",
+      "Unidad": "Unidad"
+     }
+    ],
+    "Version_PDF": 1
+   },
+   "silent": true
+  },
+  {
+   "tipo": "setIdempotente",
+   "clave": "idem:df1f2dfc034ee3a4",
+   "ids": {
+    "quoteId": "cotizaciones_geovictoria-3",
+    "dealId": "deal-kv",
+    "accountId": "accounts-1",
+    "contactId": "contacts-2"
+   }
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-3",
+   "payload": {
+    "URL_Aceptacion_Web": {
+     "base": "https://cotizador.test/quote-acceptance.html",
+     "token": {
+      "quoteId": "cotizaciones_geovictoria-3",
+      "dealId": "deal-kv",
+      "pais": "mx",
+      "iat": 1790683200000,
+      "exp": 1793275200000,
+      "v": 1
+     }
+    },
+    "Estado_Cotizacion": "Enviada"
+   },
+   "silent": true
+  },
+  {
+   "tipo": "estamparValorDeal",
+   "args": {
+    "quoteModule": "Cotizaciones_GeoVictoria",
+    "quoteId": "cotizaciones_geovictoria-3",
+    "dealId": "deal-kv",
+    "empleados": 8
+   }
+  },
+  {
+   "tipo": "getRecordWithFields",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-3",
+   "fields": [
+    "Numero_Cotizacion"
+   ]
+  },
+  {
+   "tipo": "firmanteDeDeal",
+   "dealId": "deal-kv"
+  },
+  {
+   "tipo": "htmlToPdfBuffer",
+   "htmlSha": "aec888295b71c734fe9a0c41d35be1db617471d8",
+   "opts": {
+    "format": "Letter",
+    "margin": "0"
+   }
+  },
+  {
+   "tipo": "uploadPdfToSupabase",
+   "quoteId": "cotizaciones_geovictoria-3",
+   "empresa": "PRUEBA VICKY MX SA DE CV"
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-3",
+   "payload": {
+    "PDF_URL": "https://pdf.test/cotizaciones_geovictoria-3.pdf"
+   },
+   "silent": true
+  },
+  {
+   "tipo": "actualizarPunteroPdf",
+   "quoteId": "cotizaciones_geovictoria-3",
+   "pdfUrl": "https://pdf.test/cotizaciones_geovictoria-3.pdf"
+  },
+  {
+   "tipo": "emitirCotizacionEnCreator",
+   "args": {
+    "quoteId": "cotizaciones_geovictoria-3",
+    "dealId": "deal-kv",
+    "acceptanceData": {
+     "companyRut": "PVM200528AB1"
+    },
+    "escalerasPrecio": {
+     "plan_asistencia": [
+      {
+       "desde": 1,
+       "hasta": 15,
+       "modalidad": "fijo",
+       "precioUF": 1200
+      },
+      {
+       "desde": 16,
+       "hasta": 20,
+       "modalidad": "por_usuario",
+       "precioUF": 83
+      },
+      {
+       "desde": 21,
+       "hasta": 30,
+       "modalidad": "por_usuario",
+       "precioUF": 79
+      },
+      {
+       "desde": 31,
+       "hasta": 50,
+       "modalidad": "por_usuario",
+       "precioUF": 75
+      }
+     ],
+     "asistencia": [
+      {
+       "desde": 1,
+       "hasta": 15,
+       "modalidad": "fijo",
+       "precioUF": 1200
+      },
+      {
+       "desde": 16,
+       "hasta": 20,
+       "modalidad": "por_usuario",
+       "precioUF": 83
+      },
+      {
+       "desde": 21,
+       "hasta": 30,
+       "modalidad": "por_usuario",
+       "precioUF": 79
+      },
+      {
+       "desde": 31,
+       "hasta": 50,
+       "modalidad": "por_usuario",
+       "precioUF": 75
+      }
+     ]
+    },
+    "userCount": 8,
+    "crmIncompleto": false,
+    "motivo": "emision-mx",
+    "creatorOverrides": {
+     "moneda": "MXN",
+     "pais": "México"
+    }
+   }
+  }
+ ]
+}

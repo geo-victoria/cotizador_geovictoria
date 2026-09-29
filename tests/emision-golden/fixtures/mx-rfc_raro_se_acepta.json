@@ -1,0 +1,353 @@
+{
+ "salida": {
+  "status": 200,
+  "json": {
+   "ok": true,
+   "quoteId": "cotizaciones_geovictoria-4",
+   "dealId": "deal-3",
+   "accountId": "accounts-1",
+   "contactId": "contacts-2",
+   "acceptanceUrl": {
+    "base": "https://cotizador.test/quote-acceptance.html",
+    "token": {
+     "quoteId": "cotizaciones_geovictoria-4",
+     "dealId": "deal-3",
+     "pais": "mx",
+     "iat": 1790683200000,
+     "exp": 1793275200000,
+     "v": 1
+    }
+   },
+   "linkCorto": "https://cotizador.test/q/4-b0b0427c05",
+   "pdfUrl": "",
+   "pdfPendiente": true,
+   "accountReused": false,
+   "descuentoPlanPct": 0,
+   "expiresAt": "2026-10-29T12:00:00.000Z"
+  }
+ },
+ "calls": [
+  {
+   "tipo": "getIdempotente",
+   "clave": "idem:8deb087a402a7993"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/Leads/search?phone=5290000007777&converted=both&per_page=3",
+   "method": "GET",
+   "body": null
+  },
+  {
+   "tipo": "getDealPorFono",
+   "fono": "5290000007777"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/coql",
+   "method": "POST",
+   "body": {
+    "select_query": "select id, Account_Name from Accounts where RUT_Empresa in ('XX') limit 10"
+   }
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Accounts",
+   "payload": {
+    "Account_Name": "PRUEBA VICKY MX SA DE CV",
+    "RUT_Empresa": "XX",
+    "Phone": "5290000007777",
+    "Description": "Cuenta creada por Vicky MX (WhatsApp). RFC: XX",
+    "Industry": "19. Servicios",
+    "Territorio": "México",
+    "N_Empleados_dependientes": 8,
+    "Tiene_potencial_de_expansi_n_Regional": "No",
+    "Owner": {
+     "id": "3525045000484500876"
+    }
+   },
+   "silent": true
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Contacts",
+   "payload": {
+    "First_Name": "Ana",
+    "Last_Name": "Prueba",
+    "Phone": "5290000007777",
+    "Account_Name": {
+     "id": "accounts-1"
+    },
+    "Lead_Source": "SEO",
+    "Territorio": "México",
+    "Owner": {
+     "id": "3525045000484500876"
+    }
+   },
+   "silent": true
+  },
+  {
+   "tipo": "nacerDealDesdeLead",
+   "args": {
+    "telefono": "5290000007777",
+    "contacto": "Ana Prueba",
+    "empresa": "PRUEBA VICKY MX SA DE CV",
+    "email": "",
+    "territorio": "México",
+    "leadSource": "SEO",
+    "empleados": 8,
+    "documento": "XX",
+    "ownerDefault": {
+     "id": "3525045000484500876"
+    },
+    "noHeredables": [
+     "3525045000391904256",
+     "3525045000434395001"
+    ],
+    "existingIds": {
+     "accountId": "accounts-1",
+     "contactId": "contacts-2"
+    },
+    "etiqueta": "create-from-vicky-mx",
+    "dealData": {
+     "Deal_Name": "PRUEBA VICKY MX SA DE CV - Cotización Vicky",
+     "Stage": "4. Propuesta Enviada / En Negociación",
+     "Pipeline": "Standard (Standard)",
+     "Lead_Source": "SEO",
+     "Description": "Deal creado por Vicky MX para cotización WhatsApp.\nUsuarios: 8\nTotal: 1392 MXN",
+     "Territorio": "México",
+     "Tombola": "Mantener propietario",
+     "Monda_del_trato": "MXN",
+     "Sector": "19. Servicios",
+     "N_Empleados_que_marcan": 8,
+     "Tipo_de_Cobro": "Mensual fijo",
+     "Producto_Soluci_n": "Control de Asistencia",
+     "Owner": {
+      "id": "3525045000484500876"
+     }
+    }
+   }
+  },
+  {
+   "tipo": "setDealPorFono",
+   "fono": "5290000007777",
+   "dealId": "deal-3",
+   "origen": "cotizacion"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/Leads/search?phone=5290000007777&converted=both&per_page=3",
+   "method": "GET",
+   "body": null
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "payload": {
+    "Name": "Cotización PRUEBA VICKY MX SA DE CV - 2026-09-29",
+    "Owner": {
+     "id": "3525045000484500876"
+    },
+    "Deal_Asociado": {
+     "id": "deal-3"
+    },
+    "Contacto_Asociado": {
+     "id": "contacts-2"
+    },
+    "Cuenta_Asociada": {
+     "id": "accounts-1"
+    },
+    "CRM_Incompleto": false,
+    "Fecha_Cotizacion": "2026-09-29",
+    "Intervenci_n_Humana": "100% Vicky",
+    "Estado_Cotizacion": "Borrador",
+    "Telefono_Cliente": "5290000007777",
+    "RUT_Cliente": "XX",
+    "Detalle_Items_Cotizacion": [
+     {
+      "Nombre_Item": "Plan Asistencia (8 personas)",
+      "Descripcion_Item": "",
+      "Codigo_Item": "plan_asistencia",
+      "Cantidad": 1,
+      "Precio_Unitario_UF": 1200,
+      "Precio_Unitario_CLP": 1200,
+      "Subtotal_UF": 1200,
+      "Subtotal_CLP": 1200,
+      "Modalidad": "Único",
+      "Es_Recurrente": true,
+      "Afecto_IVA": true,
+      "Orden": 1,
+      "Categoria_Item": "Plataforma Asistencia",
+      "Unidad": "Servicio"
+     },
+     {
+      "Nombre_Item": "Capacitación online",
+      "Descripcion_Item": "Capacitación online al equipo administrador — incluida sin costo.",
+      "Codigo_Item": "capacitacion_online",
+      "Cantidad": 1,
+      "Precio_Unitario_UF": 0,
+      "Precio_Unitario_CLP": 0,
+      "Subtotal_UF": 0,
+      "Subtotal_CLP": 0,
+      "Modalidad": "Venta",
+      "Es_Recurrente": false,
+      "Afecto_IVA": true,
+      "Orden": 2,
+      "Categoria_Item": "Otro",
+      "Unidad": "Unidad"
+     }
+    ],
+    "Version_PDF": 1
+   },
+   "silent": true
+  },
+  {
+   "tipo": "setIdempotente",
+   "clave": "idem:8deb087a402a7993",
+   "ids": {
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "accountId": "accounts-1",
+    "contactId": "contacts-2"
+   }
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "payload": {
+    "URL_Aceptacion_Web": {
+     "base": "https://cotizador.test/quote-acceptance.html",
+     "token": {
+      "quoteId": "cotizaciones_geovictoria-4",
+      "dealId": "deal-3",
+      "pais": "mx",
+      "iat": 1790683200000,
+      "exp": 1793275200000,
+      "v": 1
+     }
+    },
+    "Estado_Cotizacion": "Enviada"
+   },
+   "silent": true
+  },
+  {
+   "tipo": "estamparValorDeal",
+   "args": {
+    "quoteModule": "Cotizaciones_GeoVictoria",
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "empleados": 8
+   }
+  },
+  {
+   "tipo": "getRecordWithFields",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "fields": [
+    "Numero_Cotizacion"
+   ]
+  },
+  {
+   "tipo": "firmanteDeDeal",
+   "dealId": "deal-3"
+  },
+  {
+   "tipo": "htmlToPdfBuffer",
+   "htmlSha": "3de527d27ee663157b6e9ef4de53d8cab612112e",
+   "opts": {
+    "format": "Letter",
+    "margin": "0"
+   }
+  },
+  {
+   "tipo": "uploadPdfToSupabase",
+   "quoteId": "cotizaciones_geovictoria-4",
+   "empresa": "PRUEBA VICKY MX SA DE CV"
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "payload": {
+    "PDF_URL": "https://pdf.test/cotizaciones_geovictoria-4.pdf"
+   },
+   "silent": true
+  },
+  {
+   "tipo": "actualizarPunteroPdf",
+   "quoteId": "cotizaciones_geovictoria-4",
+   "pdfUrl": "https://pdf.test/cotizaciones_geovictoria-4.pdf"
+  },
+  {
+   "tipo": "emitirCotizacionEnCreator",
+   "args": {
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "acceptanceData": {
+     "companyRut": "XX"
+    },
+    "escalerasPrecio": {
+     "plan_asistencia": [
+      {
+       "desde": 1,
+       "hasta": 15,
+       "modalidad": "fijo",
+       "precioUF": 1200
+      },
+      {
+       "desde": 16,
+       "hasta": 20,
+       "modalidad": "por_usuario",
+       "precioUF": 83
+      },
+      {
+       "desde": 21,
+       "hasta": 30,
+       "modalidad": "por_usuario",
+       "precioUF": 79
+      },
+      {
+       "desde": 31,
+       "hasta": 50,
+       "modalidad": "por_usuario",
+       "precioUF": 75
+      }
+     ],
+     "asistencia": [
+      {
+       "desde": 1,
+       "hasta": 15,
+       "modalidad": "fijo",
+       "precioUF": 1200
+      },
+      {
+       "desde": 16,
+       "hasta": 20,
+       "modalidad": "por_usuario",
+       "precioUF": 83
+      },
+      {
+       "desde": 21,
+       "hasta": 30,
+       "modalidad": "por_usuario",
+       "precioUF": 79
+      },
+      {
+       "desde": 31,
+       "hasta": 50,
+       "modalidad": "por_usuario",
+       "precioUF": 75
+      }
+     ]
+    },
+    "userCount": 8,
+    "crmIncompleto": false,
+    "motivo": "emision-mx",
+    "creatorOverrides": {
+     "moneda": "MXN",
+     "pais": "México"
+    }
+   }
+  }
+ ]
+}

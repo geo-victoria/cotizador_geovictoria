@@ -1,0 +1,412 @@
+{
+ "salida": {
+  "status": 200,
+  "json": {
+   "ok": true,
+   "quoteId": "cotizaciones_geovictoria-4",
+   "dealId": "deal-3",
+   "accountId": "accounts-1",
+   "contactId": "contacts-2",
+   "acceptanceUrl": {
+    "base": "https://cotizador.test/quote-acceptance.html",
+    "token": {
+     "quoteId": "cotizaciones_geovictoria-4",
+     "dealId": "deal-3",
+     "pais": "mx",
+     "iat": 1790683200000,
+     "exp": 1793275200000,
+     "v": 1
+    }
+   },
+   "linkCorto": "https://cotizador.test/q/4-b0b0427c05",
+   "pdfUrl": "",
+   "pdfPendiente": true,
+   "accountReused": false,
+   "descuentoPlanPct": 10,
+   "expiresAt": "2026-10-29T12:00:00.000Z"
+  }
+ },
+ "calls": [
+  {
+   "tipo": "getIdempotente",
+   "clave": "idem:c7dc5b1c9afb972a"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/Leads/search?phone=5290000007777&converted=both&per_page=3",
+   "method": "GET",
+   "body": null
+  },
+  {
+   "tipo": "getDealPorFono",
+   "fono": "5290000007777"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/coql",
+   "method": "POST",
+   "body": {
+    "select_query": "select id, Account_Name from Accounts where RUT_Empresa in ('PVM200528AB1') limit 10"
+   }
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Accounts",
+   "payload": {
+    "Account_Name": "PRUEBA VICKY MX SA DE CV",
+    "RUT_Empresa": "PVM200528AB1",
+    "Phone": "5290000007777",
+    "Description": "Cuenta creada por Vicky MX (WhatsApp). RFC: PVM200528AB1",
+    "Industry": "19. Servicios",
+    "Territorio": "México",
+    "N_Empleados_dependientes": 8,
+    "Tiene_potencial_de_expansi_n_Regional": "No",
+    "Owner": {
+     "id": "3525045000484500876"
+    }
+   },
+   "silent": true
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Contacts",
+   "payload": {
+    "First_Name": "Ana",
+    "Last_Name": "Prueba",
+    "Email": "cliente@prueba.test",
+    "Phone": "5290000007777",
+    "Account_Name": {
+     "id": "accounts-1"
+    },
+    "Lead_Source": "SEO",
+    "Territorio": "México",
+    "Owner": {
+     "id": "3525045000484500876"
+    }
+   },
+   "silent": true
+  },
+  {
+   "tipo": "nacerDealDesdeLead",
+   "args": {
+    "telefono": "5290000007777",
+    "contacto": "Ana Prueba",
+    "empresa": "PRUEBA VICKY MX SA DE CV",
+    "email": "cliente@prueba.test",
+    "territorio": "México",
+    "leadSource": "SEO",
+    "empleados": 8,
+    "documento": "PVM200528AB1",
+    "ownerDefault": {
+     "id": "3525045000484500876"
+    },
+    "noHeredables": [
+     "3525045000391904256",
+     "3525045000434395001"
+    ],
+    "existingIds": {
+     "accountId": "accounts-1",
+     "contactId": "contacts-2"
+    },
+    "etiqueta": "create-from-vicky-mx",
+    "dealData": {
+     "Deal_Name": "PRUEBA VICKY MX SA DE CV - Cotización Vicky",
+     "Stage": "4. Propuesta Enviada / En Negociación",
+     "Pipeline": "Standard (Standard)",
+     "Lead_Source": "SEO",
+     "Description": "Deal creado por Vicky MX para cotización WhatsApp.\nUsuarios: 8\nTotal: 1798 MXN",
+     "Territorio": "México",
+     "Tombola": "Mantener propietario",
+     "Monda_del_trato": "MXN",
+     "Sector": "19. Servicios",
+     "N_Empleados_que_marcan": 8,
+     "Tipo_de_Cobro": "Mensual fijo",
+     "Producto_Soluci_n": "Control de Asistencia",
+     "Owner": {
+      "id": "3525045000484500876"
+     }
+    }
+   }
+  },
+  {
+   "tipo": "setDealPorFono",
+   "fono": "5290000007777",
+   "dealId": "deal-3",
+   "origen": "cotizacion"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/Leads/search?phone=5290000007777&converted=both&per_page=3",
+   "method": "GET",
+   "body": null
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "payload": {
+    "Name": "Cotización PRUEBA VICKY MX SA DE CV - 2026-09-29",
+    "Owner": {
+     "id": "3525045000484500876"
+    },
+    "Deal_Asociado": {
+     "id": "deal-3"
+    },
+    "Contacto_Asociado": {
+     "id": "contacts-2"
+    },
+    "Cuenta_Asociada": {
+     "id": "accounts-1"
+    },
+    "CRM_Incompleto": false,
+    "Fecha_Cotizacion": "2026-09-29",
+    "Intervenci_n_Humana": "100% Vicky",
+    "Estado_Cotizacion": "Borrador",
+    "Email_Cliente": "cliente@prueba.test",
+    "Telefono_Cliente": "5290000007777",
+    "RUT_Cliente": "PVM200528AB1",
+    "Detalle_Items_Cotizacion": [
+     {
+      "Nombre_Item": "Plan Asistencia (8 personas)",
+      "Descripcion_Item": "",
+      "Codigo_Item": "plan_asistencia",
+      "Cantidad": 1,
+      "Precio_Unitario_UF": 1200,
+      "Precio_Unitario_CLP": 1200,
+      "Subtotal_UF": 1200,
+      "Subtotal_CLP": 1200,
+      "Modalidad": "Único",
+      "Es_Recurrente": true,
+      "Afecto_IVA": true,
+      "Orden": 1,
+      "Categoria_Item": "Plataforma Asistencia",
+      "Unidad": "Servicio"
+     },
+     {
+      "Nombre_Item": "Reloj checador (renta)",
+      "Descripcion_Item": "",
+      "Codigo_Item": "reloj_renta",
+      "Cantidad": 1,
+      "Precio_Unitario_UF": 350,
+      "Precio_Unitario_CLP": 350,
+      "Subtotal_UF": 350,
+      "Subtotal_CLP": 350,
+      "Modalidad": "Arriendo",
+      "Es_Recurrente": true,
+      "Afecto_IVA": true,
+      "Orden": 2,
+      "Categoria_Item": "Equipos Biometricos",
+      "Unidad": "Dispositivo"
+     },
+     {
+      "Nombre_Item": "Envío (CDMX)",
+      "Descripcion_Item": "",
+      "Codigo_Item": "envio_reloj",
+      "Cantidad": 1,
+      "Precio_Unitario_UF": 0,
+      "Precio_Unitario_CLP": 0,
+      "Subtotal_UF": 0,
+      "Subtotal_CLP": 0,
+      "Modalidad": "Venta",
+      "Es_Recurrente": false,
+      "Afecto_IVA": true,
+      "Orden": 3,
+      "Categoria_Item": "Otro",
+      "Unidad": "Unidad",
+      "Zona_Tarifa": "base"
+     },
+     {
+      "Nombre_Item": "Capacitación online",
+      "Descripcion_Item": "Capacitación online al equipo administrador — incluida sin costo.",
+      "Codigo_Item": "capacitacion_online",
+      "Cantidad": 1,
+      "Precio_Unitario_UF": 0,
+      "Precio_Unitario_CLP": 0,
+      "Subtotal_UF": 0,
+      "Subtotal_CLP": 0,
+      "Modalidad": "Venta",
+      "Es_Recurrente": false,
+      "Afecto_IVA": true,
+      "Orden": 4,
+      "Categoria_Item": "Otro",
+      "Unidad": "Unidad"
+     }
+    ],
+    "Version_PDF": 1,
+    "Escalon_Descuento": 1,
+    "Escalon_Negociacion": 1,
+    "Descuento_Desbloqueado": true,
+    "Descuento_Recurrente_Pct": 10,
+    "Descuento_Instalacion_RM_Pct": 0,
+    "Descuento_Instalacion_Region_Pct": 0
+   },
+   "silent": true
+  },
+  {
+   "tipo": "setIdempotente",
+   "clave": "idem:c7dc5b1c9afb972a",
+   "ids": {
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "accountId": "accounts-1",
+    "contactId": "contacts-2"
+   }
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "payload": {
+    "URL_Aceptacion_Web": {
+     "base": "https://cotizador.test/quote-acceptance.html",
+     "token": {
+      "quoteId": "cotizaciones_geovictoria-4",
+      "dealId": "deal-3",
+      "pais": "mx",
+      "iat": 1790683200000,
+      "exp": 1793275200000,
+      "v": 1
+     }
+    },
+    "Estado_Cotizacion": "Enviada"
+   },
+   "silent": true
+  },
+  {
+   "tipo": "estamparValorDeal",
+   "args": {
+    "quoteModule": "Cotizaciones_GeoVictoria",
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "empleados": 8
+   }
+  },
+  {
+   "tipo": "getRecordWithFields",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "fields": [
+    "Numero_Cotizacion"
+   ]
+  },
+  {
+   "tipo": "firmanteDeDeal",
+   "dealId": "deal-3"
+  },
+  {
+   "tipo": "htmlToPdfBuffer",
+   "htmlSha": "905de2b8ba910bf8ac867cc565433c21d3293dbf",
+   "opts": {
+    "format": "Letter",
+    "margin": "0"
+   }
+  },
+  {
+   "tipo": "uploadPdfToSupabase",
+   "quoteId": "cotizaciones_geovictoria-4",
+   "empresa": "PRUEBA VICKY MX SA DE CV"
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "payload": {
+    "PDF_URL": "https://pdf.test/cotizaciones_geovictoria-4.pdf"
+   },
+   "silent": true
+  },
+  {
+   "tipo": "actualizarPunteroPdf",
+   "quoteId": "cotizaciones_geovictoria-4",
+   "pdfUrl": "https://pdf.test/cotizaciones_geovictoria-4.pdf"
+  },
+  {
+   "tipo": "sendQuoteEmailViaZoho",
+   "args": {
+    "quoteModule": "Cotizaciones_GeoVictoria",
+    "quoteId": "cotizaciones_geovictoria-4",
+    "fromEmail": "vicky@geovictoria.com",
+    "replyToEmail": "ysegura@geovictoria.com",
+    "ccEmail": "ysegura@geovictoria.com",
+    "ccEmails": [
+     "egomez@geovictoria.com",
+     "rlewit@geovictoria.com"
+    ],
+    "toEmail": "cliente@prueba.test",
+    "toName": "Ana Prueba",
+    "subject": "Tu cotización GeoVictoria — PRUEBA VICKY MX SA DE CV",
+    "htmlBody": "<!DOCTYPE html>\n<html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Tu cotización GeoVictoria</title></head>\n<body style=\"margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;color:#2d3748;\">\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f6f9;padding:24px 0;\"><tr><td align=\"center\">\n  <table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 2px 14px rgba(13,71,161,0.08);\">\n    <tr><td style=\"background:linear-gradient(135deg,#0d47a1 0%,#1a73e8 100%);padding:28px 32px;\">\n      <table role=\"presentation\" width=\"100%\"><tr><td style=\"color:#ffffff;font-size:22px;font-weight:700;\">GeoVictoria</td><td align=\"right\" style=\"color:#bbdefb;font-size:12px;\">Control de Asistencia</td></tr></table>\n    </td></tr>\n    <tr><td style=\"padding:36px 32px 8px 32px;\">\n      <p style=\"margin:0 0 6px 0;font-size:14px;color:#1a73e8;font-weight:600;\">Hola Ana 👋</p>\n      <h1 style=\"margin:0 0 12px 0;font-size:24px;line-height:1.3;color:#1a202c;\">Tu cotización para <span style=\"color:#0d47a1;\">PRUEBA VICKY MX SA DE CV</span> está lista</h1>\n      <p style=\"margin:0;font-size:15px;line-height:1.6;color:#4a5568;\">Preparé tu propuesta de Control de Asistencia. Ábrela en el PDF y, desde ahí mismo, puedes aceptarla en línea cuando quieras.</p>\n    </td></tr>\n    <tr><td align=\"center\" style=\"padding:28px 32px 8px 32px;\">\n      <a href=\"https://pdf.test/cotizaciones_geovictoria-4.pdf\" style=\"display:inline-block;background:#1a73e8;color:#ffffff;padding:14px 30px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;\">📄 Ver tu cotización (PDF)</a>\n      <p style=\"margin:12px 0 0 0;font-size:12px;color:#a0aec0;\">Dentro del PDF encuentras el botón para aceptarla en línea.</p>\n    </td></tr>\n    <tr><td style=\"padding:28px 32px 0 32px;\">\n      <h3 style=\"margin:0 0 14px 0;font-size:15px;color:#1a202c;\">Cómo seguimos 🚀</h3>\n      <table role=\"presentation\" width=\"100%\">\n        <tr><td width=\"32\" valign=\"top\" style=\"font-size:15px;font-weight:700;color:#1a73e8;\">1.</td><td style=\"font-size:14px;color:#4a5568;line-height:1.55;padding-bottom:10px;\">Abres el PDF y revisas tu cotización.</td></tr>\n        <tr><td width=\"32\" valign=\"top\" style=\"font-size:15px;font-weight:700;color:#1a73e8;\">2.</td><td style=\"font-size:14px;color:#4a5568;line-height:1.55;padding-bottom:10px;\">Desde el mismo PDF la aceptas en línea y coordinamos el pago inicial.</td></tr>\n        <tr><td width=\"32\" valign=\"top\" style=\"font-size:15px;font-weight:700;color:#1a73e8;\">3.</td><td style=\"font-size:14px;color:#4a5568;line-height:1.55;\">Iniciamos tu onboarding y activamos tu servicio en 24 horas hábiles.</td></tr>\n      </table>\n    </td></tr>\n    <tr><td style=\"padding:28px 32px 0 32px;\">\n      <h3 style=\"margin:0 0 12px 0;font-size:15px;color:#1a202c;\">Documentos para ti 📎</h3>\n      <table role=\"presentation\" width=\"100%\">\n        <tr><td style=\"padding:11px 16px;background:#f7f9fc;border:1px solid #e2e8f0;border-radius:8px;\">\n    <a href=\"https://cotizacion.geovictoria.com/pdf/assets/ficha-reloj-senseface.pdf\" style=\"color:#1a73e8;text-decoration:none;font-size:14px;font-weight:600;\">🕐 Ficha Técnica del Reloj Checador</a> <span style=\"color:#a0aec0;font-size:12px;\">(tu cotización lleva reloj)</span>\n  </td></tr><tr><td style=\"height:8px;\"></td></tr>\n        <tr><td style=\"padding:11px 16px;background:#f7f9fc;border:1px solid #e2e8f0;border-radius:8px;\">\n    <a href=\"https://cotizacion.geovictoria.com/pdf/assets/presentacion-comercial.pdf\" style=\"color:#1a73e8;text-decoration:none;font-size:14px;font-weight:600;\">📊 Presentación Comercial GeoVictoria</a>\n  </td></tr><tr><td style=\"height:8px;\"></td></tr>\n      </table>\n    </td></tr>\n    <tr><td style=\"padding:28px 32px 0 32px;\">\n      <h3 style=\"margin:0 0 8px 0;font-size:15px;color:#1a202c;\">Sigo aquí contigo 💬</h3>\n      <p style=\"margin:0 0 16px 0;font-size:14px;color:#4a5568;line-height:1.6;\">Cualquier duda o ajuste que necesites, <strong>responde este correo o escríbeme por WhatsApp</strong> — sigo acompañándote hasta dejarlo andando. 😊</p>\n      <table role=\"presentation\" width=\"100%\" style=\"background:#f7f9fc;border:1px solid #e2e8f0;border-radius:10px;\"><tr><td style=\"padding:16px 20px;\">\n        <p style=\"margin:0 0 4px 0;font-size:14px;color:#1a202c;font-weight:600;\">Vicky — Equipo Comercial</p>\n        <p style=\"margin:0 0 8px 0;font-size:13px;color:#718096;\">Asistente Comercial · GeoVictoria</p>\n        <p style=\"margin:0;font-size:13px;color:#718096;\">✉️ <a href=\"mailto:vicky@geovictoria.com\" style=\"color:#1a73e8;text-decoration:none;\">vicky@geovictoria.com</a> &nbsp;·&nbsp; 📱 +52 1 56 5977 8486</p>\n      </td></tr></table>\n    </td></tr>\n    <tr><td style=\"padding:28px 32px 30px 32px;\">\n      <p style=\"margin:0;font-size:11px;color:#a0aec0;line-height:1.5;\">GeoVictoria — Especialistas en Control de Asistencia y Accesos, presentes en 40+ países.<br><a href=\"https://geovictoria.com\" style=\"color:#a0aec0;\">geovictoria.com</a></p>\n    </td></tr>\n  </table>\n  <p style=\"font-size:11px;color:#b8c0cc;margin:16px 0 0 0;\">Este es un correo automático de tu cotización. Si no la solicitaste, ignóralo.</p>\n</td></tr></table>\n</body></html>"
+   }
+  },
+  {
+   "tipo": "emitirCotizacionEnCreator",
+   "args": {
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "acceptanceData": {
+     "companyRut": "PVM200528AB1"
+    },
+    "escalerasPrecio": {
+     "plan_asistencia": [
+      {
+       "desde": 1,
+       "hasta": 15,
+       "modalidad": "fijo",
+       "precioUF": 1200
+      },
+      {
+       "desde": 16,
+       "hasta": 20,
+       "modalidad": "por_usuario",
+       "precioUF": 83
+      },
+      {
+       "desde": 21,
+       "hasta": 30,
+       "modalidad": "por_usuario",
+       "precioUF": 79
+      },
+      {
+       "desde": 31,
+       "hasta": 50,
+       "modalidad": "por_usuario",
+       "precioUF": 75
+      }
+     ],
+     "asistencia": [
+      {
+       "desde": 1,
+       "hasta": 15,
+       "modalidad": "fijo",
+       "precioUF": 1200
+      },
+      {
+       "desde": 16,
+       "hasta": 20,
+       "modalidad": "por_usuario",
+       "precioUF": 83
+      },
+      {
+       "desde": 21,
+       "hasta": 30,
+       "modalidad": "por_usuario",
+       "precioUF": 79
+      },
+      {
+       "desde": 31,
+       "hasta": 50,
+       "modalidad": "por_usuario",
+       "precioUF": 75
+      }
+     ]
+    },
+    "userCount": 8,
+    "crmIncompleto": false,
+    "motivo": "emision-mx",
+    "creatorOverrides": {
+     "moneda": "MXN",
+     "pais": "México"
+    }
+   }
+  }
+ ]
+}

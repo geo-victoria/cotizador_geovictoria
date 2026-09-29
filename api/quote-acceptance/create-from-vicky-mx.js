@@ -1,209 +1,25 @@
 /**
  * POST /api/quote-acceptance/create-from-vicky-mx — Cotización formal MÉXICO.
  *
- * Espejo de create-from-vicky-co.js (Colombia), con las reglas del documento
- * de tropicalización MX. Diferencias vs CO:
- *   - Moneda MXN directa (sin UF), formato $1,000 MXN. IVA 16% POR LÍNEA según
- *     afectoIva (en MX el IVA aplica en general a servicios Y hardware; el
- *     agente marca las líneas gravadas — a diferencia de CO donde solo el
- *     hardware es afecto).
- *   - Identificador tributario: RFC (12-13 caracteres). Se guarda en los
- *     MISMOS campos que CO usa para el NIT: RUT_Empresa (Accounts, convención
- *     "documento tributario del país") y RUT_Cliente (cabecera cotización).
- *   - SIN fila de Activación (no existe en la tropicalización MX). En su lugar
- *     se garantiza SIEMPRE la fila de "Capacitación online" incluida sin costo
- *     pago único) — sin la leyenda de regalo/100 % dcto de CL/CO.
- *   - CON correo al cliente (tuteo, espejo del diseño chileno adaptado y sin
- *     regalos falsos), asunto "Tu cotización GeoVictoria — {empresa}".
- *   - Owner por defecto: Yahel Segura (zohoUserId 3525045000308323003), donde
- *     CO deja el owner por env (VICKY_CO_OWNER_ID / Alejandro Gordillo).
+ * PERFIL de la emisión única (api/_shared/emision-pais.js, 29-sep): acá viven
+ * solo los DATOS mexicanos — RFC, pesos con IVA 16 % en todo, la capacitación
+ * de regalo, dueños, PDF, correo propio y la nota de Creator en MXN. El flujo
+ * (lead-first, dedup, deal, cotización, token, PDF, correo) es el compartido.
  *
- * Los items vienen YA calculados por el motor de precios MX del agente (misma
- * confianza que CL/CO). Tarifario MX (fuente de verdad del doc de
- * tropicalización, expuesto acá como TARIFAS_MX para tests/validación):
- *   - Plan asistencia: 1-10 usuarios tarifa FIJA $1,000 MXN/mes;
- *     11-20 $83/usuario; 21-30 $79; 31-50 $75.
- *   - Reloj: venta $2,100 pago único; arriendo $350/mes.
- *   - Envío: venta $400 por punto (no descontable); arriendo $0.
- *   - Instalación: $700 por punto SOLO zona "cdmx_metro". En zona "resto" (o
- *     auto-instalada) el payload simplemente NO trae el ítem de instalación y
- *     el PDF no lo muestra — este endpoint no agrega ni exige ese ítem.
- *   - Capacitación online: incluida sin costo (ítem siempre presente; Lalo 13-ago).
- *   - Descuento = CHILE (Lalo 24-sep): el agente manda el ESCALÓN aceptado
- *     (1 = 10 %, 2 = 20 %, sobre el plan, 6 meses) y los ítems a LISTA; acá se
- *     estampa en la cotización para que sesión, PDF y aceptación lo apliquen
- *     SOLO al plan (misma forma que create-from-vicky CL y PE).
- *
- * Auth: header `x-vicky-secret` (mismo esquema que CL/CO). Se valida contra
- * VICKY_COTIZADORA_SECRET_MX y, si esa env no existe, contra
- * VICKY_COTIZADORA_SECRET (espejo del fallback CO).
- *
- * ── CONTRATO DEL BODY (JSON) ────────────────────────────────────────────────
- * {
- *   "empresa":          string  (requerido) — razón social / nombre de la empresa
- *   "contacto":         string  (requerido) — nombre completo del contacto
- *   "contactoEmail":    string  (OPCIONAL, como en CL/PE/CO — 24-sep)
- *   "rfc":              string  (requerido) — RFC, ej "CEC2005286R4"
- *   "contactoTelefono": string  (opcional)
- *   "userCount":        number  (opcional) — usuarios que marcan (para el Deal)
- *   "cc":               string[] (opcional) — correos en copia del correo al cliente
- *   "items": [          (requerido, no vacío)
- *     {
- *       "tipo":              "plan" | "modulo" | "hardware" | "servicio",
- *       "id":                string,   // ej "plan_asistencia", "reloj_arriendo",
- *                                      //    "reloj_venta", "envio_reloj",
- *                                      //    "instalacion_reloj", "capacitacion_online"
- *       "nombre":            string,   // como se muestra al cliente
- *       "descripcion":       string?,  // opcional; si viene se muestra en el PDF
- *       "modalidad":         "Por usuario" | "Fijo" | "Arriendo mensual" | "Venta única" | "Cobro único",
- *       "cantidad":          number >= 1,
- *       "precioUnitarioMXN": number,   // MXN neto (los afectos suman IVA 16% aparte)
- *       "subtotalMXN":       number,   // MXN neto = precioUnitarioMXN * cantidad
- *       "esRecurrente":      boolean,  // true = se factura mes a mes
- *       "afectoIva":         boolean   // true = la línea lleva IVA 16%
- *     }
- *   ]
- * }
- *
- * Respuesta 200: { ok, quoteId, dealId, accountId, contactId, acceptanceUrl,
- *                  pdfUrl, pdfPendiente, expiresAt } — igual que CO, el PDF (y
- * el correo) se generan EN SEGUNDO PLANO (waitUntil): pdfUrl llega "" con
- * pdfPendiente=true y queda escrito en PDF_URL al terminar el render.
- *
- * ── CONVENCIONES ZOHO (mismas de COLOMBIA.md, con MXN donde CO pone COP) ───
- *   - Account: dedup por RFC en RUT_Empresa. Homónimos con RFC distinto se
- *     crean desambiguados como "Empresa (RFC)".
- *   - Subform Detalle_Items_Cotizacion: Precio_Unitario_UF / Subtotal_UF
- *     guardan el valor en MXN (convención "unidad de pricing del país") y
- *     Precio_Unitario_CLP / Subtotal_CLP el MISMO valor MXN. Afecto_IVA por
- *     línea tal cual viene del agente. Montos con centavos (2 decimales).
- *   - RUT_Cliente (cabecera) = RFC. Estado "Enviada". Version_PDF 1.
- *   - El token de aceptación se firma con pais:"mx" (como CO con "co"):
- *     session.js y los flujos posteriores lo usan para distinguir la
- *     cotización mexicana sin campos nuevos en Zoho (respaldo: Territorio del
- *     Deal = "México").
- *   - Deal: Monda_del_trato por env VICKY_MONEDA_MX, default "MXN". Amount =
- *     total de la cotización (netos + IVA 16% de las líneas afectas).
+ * Contrato del agente: {empresa, contacto, contactoEmail?, rfc,
+ * contactoTelefono, userCount, escalonDescuento?, cc?,
+ * items[{precioUnitarioMXN, subtotalMXN, afectoIva, …}]}.
  */
-
-const crypto = require("crypto");
-const { signAcceptancePayload } = require("../_shared/acceptance-token");
-const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
-const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono } = require("../_shared/idempotencia");
-const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
-const { getAcceptanceConfig } = require("../_shared/quote-acceptance-config");
-const { zohoApiFetch } = require("../_shared/zoho-auth");
-
-// LEAD-FIRST (Lalo 30-jul): si el contacto ya tiene un lead CONVERTIDO (la
-// sincronización de hitos convierte al ver el preform), la formal se cuelga
-// de ESE deal — no se crea otro (patrón Odalisca). Descarta Cierre Perdido.
-// Dueños "del bot" en MX: usuario Vicky + interina Yahel. Solo estos leads se
-// convierten como huérfanos (un lead de dueño humano no se toca).
-const OWNERS_BOT_MX = new Set([
-  "3525045000484500876", // Vicky GeoVictoria
-  "3525045000308323003", // Yahel Segura (interina MX)
-]);
-
-/**
- * Cierra el LEAD HUÉRFANO del flujo SDR (mismo parche que CO, caso Globe Air
- * Fuel / Juan 04-ago): la emisión MX crea el deal sin convertir el lead vivo
- * del contacto, dejándolo en la cola del SDR mientras Vicky ya tiene el deal.
- * Se convierte el lead a la cuenta/contacto ya creados (sin deal nuevo): sale
- * de la cola sin duplicar. Best-effort.
- */
-async function cerrarLeadHuerfanoMX(telefono, accountId, contactId) {
-  const fono = String(telefono || "").replace(/\D/g, "");
-  if (!fono || (!accountId && !contactId)) return;
-  try {
-    const r = await zohoApiFetch(
-      `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
-    );
-    if (!r.ok || r.status === 204) return;
-    const leads = (await r.json())?.data || [];
-    const vivo = leads.find(
-      (l) =>
-        !(
-          l?.Converted_Deal?.id ||
-          l?.Converted_Account?.id ||
-          l?.Converted_Contact?.id ||
-          l?.["$converted_detail"]?.deal
-        ) && OWNERS_BOT_MX.has(toText(l?.Owner?.id)),
-    );
-    if (!vivo?.id) return;
-    const payload = { overwrite: false, notify_lead_owner: false, notify_new_entity_owner: false };
-    if (accountId) payload.Accounts = { id: accountId };
-    if (contactId) payload.Contacts = { id: contactId };
-    await zohoApiFetch(`/crm/v3/Leads/${encodeURIComponent(vivo.id)}/actions/convert`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: [payload] }),
-    });
-    console.warn(`[create-from-vicky-mx] lead huérfano ${vivo.id} convertido a la cuenta/contacto del deal.`);
-  } catch (e) {
-    console.warn(`[create-from-vicky-mx] cerrarLeadHuerfano falló: ${toText(e?.message || e).slice(0, 120)}`);
-  }
-}
-
-async function findConvertedIdsByPhone(telefono) {
-  const fono = toText(telefono).replace(/\D/g, "");
-  if (!fono) return {};
-  try {
-    const res = await zohoApiFetch(
-      `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
-    );
-    if (!res.ok || res.status === 204) return {};
-    // Solo leads del PAÍS del número (29-sep): la búsqueda de Zoho compara los
-    // últimos dígitos y un chileno y un peruano pueden compartirlos.
-    const lead = leadsDelPaisDeFono(fono, (await res.json())?.data || []).find(
-      (l) => l?.["$converted_detail"]?.deal || l?.Converted_Deal?.id || l?.Converted_Account?.id,
-    );
-    if (!lead) return {};
-    const detail = lead["$converted_detail"] || {};
-    const ids = {
-      accountId: toText(detail.account || (lead.Converted_Account && lead.Converted_Account.id)),
-      contactId: toText(detail.contact || (lead.Converted_Contact && lead.Converted_Contact.id)),
-      dealId: toText(detail.deal || (lead.Converted_Deal && lead.Converted_Deal.id)),
-    };
-    if (ids.dealId) {
-      // Dedup de procesos ABIERTOS (Lalo 31-jul): Cierre Perdido y
-      // 8. Facturando son negociaciones cerradas — ciclo nuevo con deal
-      // propio; cuenta y contacto sí se reusan.
-      const r = await zohoApiFetch(`/crm/v3/Deals/${ids.dealId}?fields=Stage`);
-      const stageDeal = r.ok ? toText((await r.json())?.data?.[0]?.Stage) : "";
-      if (["Cierre Perdido", "8. Facturando"].includes(stageDeal)) ids.dealId = "";
-    }
-    if (ids.accountId || ids.contactId || ids.dealId) {
-      console.warn(`[lead-first] contacto ${fono} ya convertido — se reusa account=${ids.accountId || "-"} contact=${ids.contactId || "-"} deal=${ids.dealId || "-"}`);
-    }
-    return ids;
-  } catch {
-    return {};
-  }
-}
-
-
-const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
-const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
+const { toText } = require("../_shared/zoho-crm");
 const { buildProposalHtmlMX } = require("../_shared/proposal-html-builder-mx");
-const { firmanteDeDeal, firmaParaPdf } = require("../_shared/ejecutivo-firma");
+const { firmaParaPdf } = require("../_shared/ejecutivo-firma");
 const { IVA_RATE_MX } = require("../_shared/quote-pricing");
-// Reuso del envío de correo vía Zoho send_mail del endpoint chileno (misma
-// función que usa el cron backfill-pdf): una sola implementación.
-const { sendQuoteEmailViaZoho } = require("./create-from-vicky");
-const { linkCortoDeCotizacion } = require("../_shared/codigo-corto");
-const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
-const { nacerDealDesdeLead, leadsDelPaisDeFono } = require("../_shared/lead-first");
-
-// waitUntil: corre trabajo en segundo plano DESPUÉS de responder (mismo patrón
-// que CL/CO). Fallback best-effort si el paquete no está disponible.
-let waitUntil;
-try {
-  ({ waitUntil } = require("@vercel/functions"));
-} catch (_e) {
-  waitUntil = (p) => {
-    Promise.resolve(p).catch(() => {});
-  };
-}
+const {
+  crearHandlerEmision,
+  buildSubformItemsPais,
+  redondeoCentavos,
+  OWNER_VICKY_ID,
+} = require("../_shared/emision-pais");
 
 // ── Tarifario MX (fuente de verdad del doc de tropicalización) ──
 // El agente manda los items ya calculados; esta tabla queda acá como
@@ -253,89 +69,29 @@ function tarifaPlanAsistenciaMX(usuarios) {
   };
 }
 
-// Defaults MX (mismos nombres de env que CL/CO con sufijo _MX donde difieren).
-const VICKY_MX_DEAL_STAGE = toText(process.env.VICKY_DEAL_STAGE_INICIAL) || "4. Propuesta Enviada / En Negociación";
-const VICKY_MX_LEAD_SOURCE = toText(process.env.VICKY_LEAD_SOURCE) || "SEO";
+
 const VICKY_MX_TERRITORIO = toText(process.env.VICKY_TERRITORIO_MX) || "México";
 const VICKY_MX_MONEDA = toText(process.env.VICKY_MONEDA_MX) || "MXN";
-const VICKY_MX_TOMBOLA = toText(process.env.VICKY_TOMBOLA) || "Mantener propietario";
-const VICKY_MX_PRODUCTO = toText(process.env.VICKY_PRODUCTO_DEFAULT) || "Control de Asistencia";
-const VICKY_MX_SECTOR = toText(process.env.VICKY_SECTOR_FALLBACK) || "19. Servicios";
-const VICKY_MX_EXPANSION = toText(process.env.VICKY_EXPANSION_REGIONAL) || "No";
-const VICKY_FROM_EMAIL = toText(process.env.VICKY_FROM_EMAIL) || "vicky@geovictoria.com";
 
-// Owner MX: Yahel Segura (usuario activo verificado en el doc de
-// tropicalización). Overrideable por env, como el owner CO.
+// Owner MX: Yahel Segura (interina histórica). Overrideable por env.
 const VICKY_MX_OWNER_ID = toText(process.env.VICKY_MX_OWNER_ID) || "3525045000308323003";
 // TÓMBOLA GLOBAL (Lalo 25-sep, entradas México en "Deals 2026"): los registros
 // nacen con el usuario VICKY y los sortea el traspaso, igual que Chile, Perú y
-// Colombia. Con dueño humano de nacimiento el traspaso lo respetaba y México
-// nunca pasaba por la tómbola ni la venta autónoma llegaba a su gestora. El
-// dueño fijo (Yahel, env VICKY_MX_OWNER_ID) sigue con VICKY_MX_OWNER_FIJO=on.
+// Colombia. El dueño fijo (Yahel) sigue con VICKY_MX_OWNER_FIJO=on.
 const MX_OWNER_FIJO = /^(on|1|true)$/i.test(toText(process.env.VICKY_MX_OWNER_FIJO));
-const OWNER_MX = MX_OWNER_FIJO ? { id: VICKY_MX_OWNER_ID } : { id: "3525045000484500876" };
-// SDR de México (Lalo 24-sep: "el único SDR en México es Pablo Rodríguez"; se
-// suma Miguel Guzmán, SDR fijo hasta ese día): su lead se convierte pero su
-// gestión NO se hereda al deal.
+const OWNER_MX = MX_OWNER_FIJO ? { id: VICKY_MX_OWNER_ID } : { id: OWNER_VICKY_ID };
+// SDR de México (Pablo Rodríguez y Miguel Guzmán): su lead se convierte pero
+// su gestión NO se hereda al deal.
 const SDR_MX = new Set(
   (process.env.VICKY_SDR_MX_IDS || "3525045000391904256,3525045000434395001").split(",").map((s) => s.trim()).filter(Boolean),
 );
+// Dueños "del bot" en MX: solo sus leads huérfanos se adoptan.
+const OWNERS_BOT_MX = new Set([OWNER_VICKY_ID, "3525045000308323003"]);
 
 // Documentos hosteados para el correo (los mismos genéricos del chileno; la
 // certificación de la Dirección del Trabajo es SOLO Chile y NO se incluye).
 const DOC_FICHA_RELOJ = "https://cotizacion.geovictoria.com/pdf/assets/ficha-reloj-senseface.pdf";
 const DOC_PRESENTACION = "https://cotizacion.geovictoria.com/pdf/assets/presentacion-comercial.pdf";
-
-// Cuentas internas que NUNCA deben reusarse al deduplicar por RFC (mismo
-// riesgo real que en CL/CO).
-const INTERNAL_ACCOUNT_NAMES = (process.env.VICKY_INTERNAL_ACCOUNT_NAMES || "GeoVictoria")
-  .split(",")
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean);
-
-// ── CORS (espejo de CL/CO) ──
-function setCors(req, res) {
-  const origin = req.headers.origin || "";
-  const allowedList = (process.env.ALLOWED_UPLOAD_ORIGINS || "")
-    .split(",").map(v => v.trim()).filter(Boolean);
-  const allowedByRule =
-    /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin) ||
-    origin === "https://cotizacion.geovictoria.com" ||
-    origin === "http://localhost:3000";
-  const allowed = !origin || allowedByRule || allowedList.includes(origin);
-  if (origin && allowed) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-  }
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-vicky-secret");
-  return allowed;
-}
-
-function sendJson(res, status, payload) {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.end(JSON.stringify(payload));
-}
-
-function parseBody(req) {
-  if (!req?.body) return {};
-  if (typeof req.body === "string") {
-    try { return JSON.parse(req.body || "{}"); } catch { return {}; }
-  }
-  return typeof req.body === "object" ? req.body : {};
-}
-
-function splitFullName(fullName) {
-  const clean = (fullName || "").trim();
-  if (!clean) return { firstName: "Cliente", lastName: "Vicky" };
-  const parts = clean.split(/\s+/);
-  if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] };
-  return {
-    firstName: parts.slice(0, -1).join(" "),
-    lastName: parts.slice(-1).join(" "),
-  };
-}
 
 // ── Variantes de RFC ──
 // El RFC no lleva dígito verificador con guion (a diferencia del RUT/NIT), así
@@ -358,106 +114,6 @@ function rfcPareceValido(rfc) {
   return /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(compact);
 }
 
-async function executeCoqlQuery(selectQuery) {
-  try {
-    const response = await zohoApiFetch("/crm/v3/coql", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ select_query: selectQuery }),
-    });
-    if (response.status === 204) return [];
-    const text = await response.text();
-    if (!response.ok) {
-      console.warn(`[create-from-vicky-mx] coql error ${response.status}: ${text.slice(0, 150)}`);
-      return [];
-    }
-    const parsed = JSON.parse(text);
-    return parsed?.data || [];
-  } catch (err) {
-    console.warn(`[create-from-vicky-mx] coql excepción: ${err.message?.slice(0, 150)}`);
-    return [];
-  }
-}
-
-// Dedup de Account por RFC en RUT_Empresa (convención "documento tributario
-// del país", la misma que CO usa para el NIT). Descarta cuentas internas; con
-// RFC repetido en varias cuentas prefiere la que coincide en nombre.
-async function findAccountIdByRfc(rfc, empresaName) {
-  const variants = getRfcVariants(rfc);
-  if (variants.length === 0) return null;
-  const escaped = variants.map((v) => `'${v.replace(/'/g, "''")}'`).join(",");
-  const query = `select id, Account_Name from Accounts where RUT_Empresa in (${escaped}) limit 10`;
-  const rows = await executeCoqlQuery(query);
-  if (!rows.length) return null;
-  const esInterna = (name) =>
-    INTERNAL_ACCOUNT_NAMES.includes(String(name || "").trim().toLowerCase());
-  const externas = rows.filter((r) => !esInterna(r.Account_Name));
-  if (!externas.length) {
-    console.warn(
-      `[create-from-vicky-mx] dedup por RFC '${rfc}' solo matcheó cuenta(s) interna(s); se ignora.`,
-    );
-    return null;
-  }
-  if (empresaName) {
-    const norm = (s) => String(s || "").trim().toLowerCase();
-    const target = norm(empresaName);
-    const byName = externas.find((r) => norm(r.Account_Name) === target);
-    if (byName) return toText(byName.id);
-  }
-  return toText(externas[0]?.id) || null;
-}
-
-async function findContactIdByEmail(email) {
-  if (!email) return null;
-  const emailNorm = String(email).trim().toLowerCase();
-  if (!emailNorm) return null;
-  const query = `select id from Contacts where Email = '${emailNorm.replace(/'/g, "''")}' limit 1`;
-  const rows = await executeCoqlQuery(query);
-  return toText(rows[0]?.id) || null;
-}
-
-// "duplicate data" de Zoho al crear (campo UNIQUE ya existente). Mismo
-// tratamiento que CL/CO, incluida la variante "multiple errors".
-function isDuplicateDataError(error) {
-  if (!error) return false;
-  const message = String(error.message || error || "").toLowerCase();
-  return (
-    message.includes("duplicate data") ||
-    message.includes("duplicate_data") ||
-    message.includes("multiple errors")
-  );
-}
-
-// ── Mapeos al subform (mismos picklists de Zoho que CL/CO) ──
-// "Único" en Zoho NO significa "pago único": es el reference_value del display
-// "Fijo" (tarifa fija mensual — el plan MX de 1-10 usuarios). Los pagos únicos
-// reales van a "Venta".
-function mapModalidadToZoho(modalidadVicky) {
-  const m = String(modalidadVicky || "").toLowerCase().trim();
-  if (m.startsWith("por usuario")) return "Recurrente";
-  if (m.startsWith("fijo")) return "Único";
-  if (m.startsWith("arriendo")) return "Arriendo";
-  if (m.startsWith("venta")) return "Venta";
-  if (m.includes("único") || m.includes("unico") || m.includes("única") || m.includes("unica")) {
-    return "Venta";
-  }
-  return "Recurrente";
-}
-
-function mapCategoriaToZoho(item) {
-  const tipo = String(item.tipo || "").toLowerCase();
-  if (tipo === "hardware") return "Equipos Biometricos";
-  if (tipo === "plan") return "Plataforma Asistencia";
-  if (tipo === "modulo") return "Modulos Adicionales";
-  return "Otro";
-}
-
-function mapUnidadToZoho(modalidadZoho, tipo) {
-  if (tipo === "hardware") return "Dispositivo";
-  if (modalidadZoho === "Recurrente") return "Usuario";
-  if (modalidadZoho === "Único") return "Servicio";
-  return "Unidad";
-}
 
 // ¿El item ya es la fila de capacitación? (por id o nombre).
 function esItemCapacitacion(item) {
@@ -496,78 +152,29 @@ function ensureCapacitacion(items) {
   ];
 }
 
-// Redondeo MX: a centavos (2 decimales). Ver nota en computeTotalsMX
-// (quote-pricing.js): el MXN usa centavos y el redondeo a peso entero de
-// CL/CO descontaría el IVA exacto (ej: $1,540.48).
-function round2(n) {
-  return Math.round(Number(n || 0) * 100) / 100;
-}
 
-/**
- * Convierte los items del contrato MX al subform Detalle_Items_Cotizacion.
- * Convención espejo de COLOMBIA.md: los campos *_UF guardan el valor en MXN
- * ("unidad de pricing del país") y los *_CLP el MISMO valor MXN. Afecto_IVA
- * por línea tal cual viene del agente.
- */
+// Redondeo MX: a centavos (2 decimales). El MXN usa centavos y el redondeo a
+// peso entero de CL/CO descontaría el IVA exacto (ej: $1,540.48).
+const round2 = redondeoCentavos;
+
+const ITEMS_MX = {
+  claves: { unitario: "precioUnitarioMXN", subtotal: "subtotalMXN", afecto: "afectoIva" },
+  redondeo: round2,
+  // La fila de Capacitación online (de regalo) va SIEMPRE: Zoho, PDF y
+  // aceptación muestran los mismos números.
+  preparar: ensureCapacitacion,
+  // Total: netos + IVA 16 % de las líneas afectas.
+  total: (items) => round2(items.reduce((acc, it) => {
+    const subtotal = Number(it.subtotalMXN || 0);
+    return acc + subtotal + (it.afectoIva === true ? subtotal * IVA_RATE_MX : 0);
+  }, 0)),
+  totalTexto: (t) => String(t),
+  // México no informa Amount en el deal (convención del 24-sep).
+};
+
+/** Subform con la convención MXN en campos UF/CLP (centavos). */
 function buildSubformItemsMX(items) {
-  return items.map((item, index) => {
-    const modalidadZoho = mapModalidadToZoho(item.modalidad);
-    const tipo = String(item.tipo || "").toLowerCase();
-    const precioUnitario = round2(item.precioUnitarioMXN);
-    const subtotal = round2(item.subtotalMXN);
-    const row = {
-      Nombre_Item: String(item.nombre || ""),
-      Descripcion_Item: String(item.descripcion || "").trim(),
-      Codigo_Item: String(item.id || ""),
-      Cantidad: Number(item.cantidad || 0),
-      Precio_Unitario_UF: precioUnitario,
-      Precio_Unitario_CLP: precioUnitario,
-      Subtotal_UF: subtotal,
-      Subtotal_CLP: subtotal,
-      Modalidad: modalidadZoho,
-      Es_Recurrente: item.esRecurrente === true,
-      Afecto_IVA: item.afectoIva === true,
-      Orden: index + 1,
-      Categoria_Item: mapCategoriaToZoho(item),
-      Unidad: mapUnidadToZoho(modalidadZoho, tipo),
-    };
-    // Bonificación por línea (mismo contrato que Chile).
-    if (Number(item.descuentoPct) > 0) {
-      row.Descuento_Pct = Math.min(100, Number(item.descuentoPct));
-    }
-    // Zona tarifaria del punto (base | intermedia | resto, 29-sep): con ella
-    // la nota de venta elige el artículo de servicio del país (instalación
-    // Lima vs provincia, Bogotá vs regiones, envío CDMX vs paquetería).
-    const zonaTarifa = String(item.zonaTarifa || "").trim().toLowerCase();
-    if (/^(base|intermedia|resto)$/.test(zonaTarifa)) row.Zona_Tarifa = zonaTarifa;
-    // Ítem OCULTO (anualidad, 26-sep "igualemos a Chile"): queda en el subform
-    // en 0 y ni el PDF ni la aceptación lo pintan.
-    if (item.oculto === true) {
-      row.Metadata_Item_JSON = JSON.stringify({ oculto: true });
-    }
-    return row;
-  });
-}
-
-// Número de cotización a mostrar en el PDF: correlativo de Zoho sin el
-// prefijo "COT" (espejo de CL/CO).
-function numeroParaPdf(numeroCotizacion, quoteId) {
-  const sinPrefijo = String(numeroCotizacion || "").replace(/^\s*COT[\s_-]*/i, "").trim();
-  if (sinPrefijo) return sinPrefijo;
-  return String(quoteId || "").slice(-8).toUpperCase();
-}
-
-// Valida un item del contrato. Devuelve un string de error o null.
-function validarItem(item, index) {
-  if (!item || typeof item !== "object") return `items[${index}] no es un objeto`;
-  if (!toText(item.nombre)) return `items[${index}].nombre requerido`;
-  const cantidad = Number(item.cantidad);
-  if (!Number.isFinite(cantidad) || cantidad < 1) return `items[${index}].cantidad debe ser >= 1`;
-  if (!Number.isFinite(Number(item.precioUnitarioMXN))) return `items[${index}].precioUnitarioMXN debe ser numérico`;
-  if (!Number.isFinite(Number(item.subtotalMXN))) return `items[${index}].subtotalMXN debe ser numérico`;
-  if (typeof item.esRecurrente !== "boolean") return `items[${index}].esRecurrente debe ser boolean`;
-  if (typeof item.afectoIva !== "boolean") return `items[${index}].afectoIva debe ser boolean`;
-  return null;
+  return buildSubformItemsPais(items, ITEMS_MX);
 }
 
 // ── Correo al cliente MX ──
@@ -651,484 +258,79 @@ function buildEmailHtmlMX({ contacto, empresa, pdfUrl, tieneReloj, ejecutivo }) 
 </body></html>`;
 }
 
-// ── Handler principal ──
-module.exports = async function handler(req, res) {
-  const corsAllowed = setCors(req, res);
-  if (req.method === "OPTIONS") {
-    res.statusCode = corsAllowed ? 204 : 403; res.end(); return;
-  }
-  if (req.method !== "POST") {
-    return sendJson(res, 405, { ok: false, error: "Método no permitido" });
-  }
 
-  // Auth: secreto MX dedicado con fallback al secreto compartido de Vicky
-  // (mismo esquema x-vicky-secret que CL/CO).
-  const expectedSecret =
-    toText(process.env.VICKY_COTIZADORA_SECRET_MX) || toText(process.env.VICKY_COTIZADORA_SECRET);
-  const providedSecret = toText(req.headers["x-vicky-secret"]);
-  if (expectedSecret && expectedSecret !== providedSecret) {
-    return sendJson(res, 401, { ok: false, error: "Unauthorized" });
-  }
-
-  let stage = "init";
-  try {
-    const body = parseBody(req);
-    const empresa = toText(body.empresa);
-    const contacto = toText(body.contacto);
-    const contactoEmail = toText(body.contactoEmail);
-    const rfc = toText(body.rfc);
-    const contactoTelefono = toText(body.contactoTelefono);
-    const userCount = Number(body.userCount) > 0 ? Number(body.userCount) : undefined;
-    const escalonDescuento = Math.max(0, Math.min(DISCOUNT_LADDER.length, Math.floor(Number(body.escalonDescuento) || 0)));
-    const descuentoPlanPct = escalonDescuento > 0 ? Number(DISCOUNT_LADDER[escalonDescuento - 1].pct) : 0;
-    const descuentos = { recurrentePct: descuentoPlanPct, instalacionRMPct: 0, instalacionRegionPct: 0 };
-
-    // Validaciones del contrato. contactoEmail es OPCIONAL (mismo contrato que
-    // Chile/Perú/Colombia): sin correo no sale el correo con el PDF y el link
-    // viaja por el chat.
-    if (!empresa || !contacto || !rfc) {
-      return sendJson(res, 400, {
-        ok: false,
-        error: "Faltan campos: empresa, contacto, rfc",
-      });
-    }
-    if (!rfcPareceValido(rfc)) {
-      // Solo advertencia (misma tolerancia que CO con el NIT): el flujo sigue.
-      console.warn(`[create-from-vicky-mx] RFC con formato inusual: '${rfc}' (se acepta igual).`);
-    }
-    if (!Array.isArray(body.items) || body.items.length === 0) {
-      return sendJson(res, 400, { ok: false, error: "items requerido (no vacío)" });
-    }
-    for (let i = 0; i < body.items.length; i++) {
-      const err = validarItem(body.items[i], i);
-      if (err) return sendJson(res, 400, { ok: false, error: err });
-    }
-
-    const config = getAcceptanceConfig(req);
-
-    // ── IDEMPOTENCIA (réplica del fix CL 04-ago, caso Inversiones Automatic) ──
-    // El tool reintenta con el MISMO body; si un intento anterior ya creó los
-    // registros (aunque su respuesta haya muerto después), acá se devuelven
-    // ESOS ids en vez de crear un segundo deal.
-    const idemClave = claveIdempotencia(body);
-    const previoIdem = await getIdempotente(idemClave);
-    if (previoIdem && previoIdem.quoteId) {
-      console.warn(
-        `[create-from-vicky-mx] reintento idempotente: mismo body ya creó quote ${previoIdem.quoteId} / deal ${previoIdem.dealId || "-"} — no se duplica.`,
-      );
-      const expMsIdem = Date.now() + config.validityDays * 24 * 60 * 60 * 1000;
-      const tokenIdem = signAcceptancePayload({
-        quoteId: previoIdem.quoteId, dealId: previoIdem.dealId || "",
-        pais: "mx",
-        iat: Date.now(), exp: expMsIdem,
-        nonce: crypto.randomBytes(8).toString("hex"),
-        v: 1,
-      });
-      const acceptanceUrlIdem = `${config.baseUrl}/quote-acceptance.html?token=${encodeURIComponent(tokenIdem)}`;
-      // El paso que pudo quedar a medias en el intento anterior.
-      await updateRecord(config.quoteModule, previoIdem.quoteId, {
-        [config.quoteAcceptanceUrlField]: acceptanceUrlIdem,
-        [config.quoteStatusField]: "Enviada",
-      }, true).catch(() => {});
-      return sendJson(res, 200, {
-        ok: true,
-        quoteId: previoIdem.quoteId, dealId: previoIdem.dealId || "",
-        accountId: previoIdem.accountId || "", contactId: previoIdem.contactId || "",
-        acceptanceUrl: acceptanceUrlIdem,
-        linkCorto: linkCortoDeCotizacion(previoIdem.quoteId, config.baseUrl),
-        pdfUrl: "", pdfPendiente: true,
-        reuse: { retryIdempotente: true },
-        expiresAt: new Date(expMsIdem).toISOString(),
-      });
-    }
-
-    // La fila de Capacitación online (COBRADA) va SIEMPRE: en Zoho, en el PDF
-    // y en la página de aceptación, así los tres muestran los mismos números.
-    const items = ensureCapacitacion(body.items);
-    // Total de la cotización: netos + IVA 16% de las líneas afectas.
-    const totalMXN = round2(items.reduce((acc, it) => {
-      const subtotal = Number(it.subtotalMXN || 0);
-      return acc + subtotal + (it.afectoIva === true ? subtotal * IVA_RATE_MX : 0);
-    }, 0));
-
-    // Principio (16-jul, igual que CL/CO): LA COTIZACIÓN SIEMPRE SE ENTREGA.
-    // El plumbing CRM es soporte: si falla, se marca CRM_Incompleto y se sigue.
-    // Kill-switch: CRM_STRICT=1 restaura el comportamiento estricto.
-    let crmIncompleto = false;
-    let accountId;
-    let accountReused = false;
-    let contactId;
-    let dealId;
-    try {
-    // LEAD-FIRST: contacto ya convertido → reusar su cuenta/contacto/deal.
-    stage = "find_converted_by_phone";
-    const convertidosPrevios = await findConvertedIdsByPhone(contactoTelefono);
-    if (convertidosPrevios.accountId) { accountId = convertidosPrevios.accountId; accountReused = true; }
-    if (convertidosPrevios.contactId) contactId = convertidosPrevios.contactId;
-    if (convertidosPrevios.dealId) dealId = convertidosPrevios.dealId;
-
-    // Candado cruzado hito↔cotización (mismo fix CL 04-ago): si crm-hitos
-    // acaba de crear un deal para este teléfono (invisible aún para la
-    // búsqueda de Zoho por el lag del índice), se reusa en vez de crear un
-    // gemelo. Conserva su dueño.
-    if (!dealId) {
-      const dealCruzado = await getDealPorFono(contactoTelefono).catch(() => null);
-      if (dealCruzado && dealCruzado.dealId) {
-        dealId = dealCruzado.dealId;
-        console.warn(`[create-from-vicky-mx] candado kv: se reusa deal ${dealId} (origen=${dealCruzado.origen || "?"}) — no se crea gemelo.`);
-      }
-    }
-
-    // ── Account: dedup por RFC antes de crear ──
-    stage = "find_account_by_rfc";
-    accountId = await findAccountIdByRfc(rfc, empresa);
-    accountReused = Boolean(accountId);
-
-    if (!accountId) {
-      stage = "create_account";
-      const createAccountPayload = {
-        Account_Name: empresa,
-        RUT_Empresa: rfc,
-        Phone: contactoTelefono || undefined,
-        Description: `Cuenta creada por Vicky MX (WhatsApp). RFC: ${rfc}`,
-        Industry: VICKY_MX_SECTOR,
-        Territorio: VICKY_MX_TERRITORIO,
-        N_Empleados_dependientes: userCount,
-        Tiene_potencial_de_expansi_n_Regional: VICKY_MX_EXPANSION,
-        Owner: OWNER_MX,
+const PERFIL_MX = {
+  cc: "mx",
+  etiqueta: "create-from-vicky-mx",
+  secretEnv: "VICKY_COTIZADORA_SECRET_MX",
+  territorio: VICKY_MX_TERRITORIO,
+  moneda: "MXN",
+  monedaDeal: VICKY_MX_MONEDA,
+  owners: { interino: OWNER_MX, adoptables: OWNERS_BOT_MX, noHeredables: SDR_MX },
+  documento: {
+    campo: "rfc",
+    nombre: "RFC",
+    // Solo advertencia si el formato no calza (misma tolerancia que CO): el flujo sigue.
+    validar(body, rfc) {
+      if (!rfcPareceValido(rfc)) console.warn(`[create-from-vicky-mx] RFC con formato inusual: '${rfc}' (se acepta igual).`);
+      return { tipoDocumento: "RFC" };
+    },
+    paraGuardar: (rfc) => rfc,
+    paraCotizacion: (rfc) => rfc,
+    variantes: getRfcVariants,
+    compactar: (v) => String(v || "").replace(/[.\s-]/g, "").toUpperCase(),
+    descripcionCuenta: (rfc) => `Cuenta creada por Vicky MX (WhatsApp). RFC: ${rfc}`,
+    nombreDesambiguado: (empresa, rfc) => `${empresa} (${rfc})`,
+    clientePdf: (rfc) => ({ rfc }),
+  },
+  items: ITEMS_MX,
+  deal: {
+    tipoDeCobro: () => "Mensual fijo",
+    nombre: (empresa) => `${empresa} - Cotización Vicky`,
+  },
+  respuestaExtra: ({ descuentoPlanPct }) => ({ descuentoPlanPct }),
+  pdf: { build: buildProposalHtmlMX },
+  correo: {
+    // Reply-to y copia: el dueño humano si lo hay; si firma Vicky, la copia
+    // del país (VICKY_MX_QUOTE_CC, default Yahel). Copias fijas: Lalo (31-jul)
+    // + Rodrigo (03-ago) + las del body.
+    destinatarios({ firmante, body }) {
+      const ccPais = (process.env.VICKY_MX_QUOTE_CC || "ysegura@geovictoria.com").split(",")[0].trim();
+      return {
+        replyToEmail: firmante.esVicky ? ccPais : firmante.email,
+        ccEmail: firmante.esVicky ? ccPais : firmante.email,
+        ccEmails: [
+          ...(process.env.QUOTE_EMAIL_CC_FIJO || "egomez@geovictoria.com,rlewit@geovictoria.com").split(",").map((s) => s.trim()),
+          ...(Array.isArray(body.cc) ? body.cc : []),
+        ].filter(Boolean),
       };
-      try {
-        const accountResult = await createRecord("Accounts", createAccountPayload, true);
-        accountId = toText(accountResult?.id);
-        if (!accountId) throw new Error("No se obtuvo accountId");
-      } catch (createError) {
-        if (!isDuplicateDataError(createError)) throw createError;
-        // Duplicado: puede ser por RFC (carrera con la búsqueda previa) o por
-        // NOMBRE homónimo con RFC distinto. Re-buscamos por RFC y, si no hay
-        // match, creamos la cuenta desambiguada "Empresa (RFC)" (regla CL/CO).
-        stage = "dedupe_account_by_rfc";
-        const existingAccountId = await findAccountIdByRfc(rfc, empresa);
-        if (existingAccountId) {
-          accountId = existingAccountId;
-          accountReused = true;
-        } else {
-          console.warn(
-            `[create-from-vicky-mx] duplicado por nombre con RFC distinto (${rfc}); creando cuenta desambiguada.`,
-          );
-          stage = "create_account_disambiguated";
-          const nombreDesambiguado = `${empresa} (${rfc})`;
-          try {
-            const retryResult = await createRecord(
-              "Accounts",
-              { ...createAccountPayload, Account_Name: nombreDesambiguado },
-              true,
-            );
-            accountId = toText(retryResult?.id);
-            if (!accountId) throw new Error("No se obtuvo accountId (cuenta desambiguada)");
-          } catch (retryError) {
-            if (!isDuplicateDataError(retryError)) throw retryError;
-            // Capa 4: reusar SOLO si el RFC coincide; si no, seguir sin cuenta.
-            stage = "reuse_account_capa4";
-            const compactar = (v) => String(v || "").replace(/[.\s-]/g, "").toUpperCase();
-            const porNombre = await executeCoqlQuery(
-              `select id, RUT_Empresa from Accounts where Account_Name = '${nombreDesambiguado.replace(/'/g, "''")}' limit 5`,
-            ).catch(() => []);
-            const matchRfc = (porNombre || []).find((r) => compactar(r.RUT_Empresa) === compactar(rfc));
-            if (matchRfc) {
-              accountId = toText(matchRfc.id);
-              accountReused = true;
-            } else {
-              accountId = undefined;
-              console.error(`[create-from-vicky-mx] Capa 4: sin salida de dedupe (RFC=${rfc}); cotización SIN cuenta.`);
-            }
-          }
-        }
-      }
-    }
-
-    // ── Contact ──
-    stage = "create_contact";
-    const { firstName, lastName } = splitFullName(contacto);
-    try {
-      const contactResult = await createRecord("Contacts", {
-        First_Name: firstName,
-        Last_Name: lastName,
-        Email: contactoEmail || undefined,
-        Phone: contactoTelefono || undefined,
-        ...(accountId ? { Account_Name: { id: accountId } } : {}),
-        Lead_Source: VICKY_MX_LEAD_SOURCE,
-        Territorio: VICKY_MX_TERRITORIO,
-        Owner: OWNER_MX,
-      }, true);
-      contactId = toText(contactResult?.id);
-      if (!contactId) throw new Error("No se obtuvo contactId");
-    } catch (createError) {
-      if (!isDuplicateDataError(createError)) throw createError;
-      stage = "dedupe_contact_by_email";
-      const existingContactId = contactoEmail ? await findContactIdByEmail(contactoEmail) : "";
-      if (!existingContactId) {
-        throw new Error(
-          `Zoho reportó duplicate data pero no se encontró Contact con Email ${contactoEmail}`,
-        );
-      }
-      contactId = existingContactId;
-    }
-
-    // ── Deal: nace de un LEAD CONVERTIDO (regla de oro global, 23-sep —
-    // hasta hoy México creaba el deal directo, sin lead) ──
-    if (!dealId) {
-      const dealDataMX = {
-        Deal_Name: `${empresa} - Cotización Vicky`,
-        Stage: VICKY_MX_DEAL_STAGE,
-        Pipeline: "Standard (Standard)",
-        Lead_Source: VICKY_MX_LEAD_SOURCE,
-        Description: `Deal creado por Vicky MX para cotización WhatsApp.\nUsuarios: ${userCount || "-"}\nTotal: ${totalMXN} MXN`,
-        // Obligatorios del layout de Deals del org (mismo set que CL/CO: sin
-        // ellos el create devuelve MANDATORY_NOT_FOUND).
-        Territorio: VICKY_MX_TERRITORIO,
-        Tombola: VICKY_MX_TOMBOLA,
-        Monda_del_trato: VICKY_MX_MONEDA,
-        Sector: VICKY_MX_SECTOR,
-        N_Empleados_que_marcan: userCount,
-        Tipo_de_Cobro: "Mensual fijo",
-        Producto_Soluci_n: VICKY_MX_PRODUCTO,
-        Owner: OWNER_MX,
-      };
-      stage = "lead_first";
-      const nacido = await nacerDealDesdeLead({
-        telefono: contactoTelefono, contacto, empresa, email: contactoEmail,
-        territorio: VICKY_MX_TERRITORIO, leadSource: VICKY_MX_LEAD_SOURCE,
-        empleados: userCount, documento: rfc,
-        dealData: dealDataMX, ownerDefault: OWNER_MX,
-        // El SDR de México recibe el lead para calificarlo, no se queda con
-        // la venta (regla CL 10-sep / CO 23-sep).
-        noHeredables: SDR_MX,
-        existingIds: { accountId, contactId }, etiqueta: "create-from-vicky-mx",
-      }).catch(() => null);
-      if (nacido?.dealId) {
-        dealId = nacido.dealId;
-        if (!accountId && nacido.accountId) { accountId = nacido.accountId; accountReused = true; }
-        if (!contactId && nacido.contactId) contactId = nacido.contactId;
-      } else {
-        // Respaldo: deal fresco, MARCADO para revisión (la cotización siempre se entrega).
-        stage = "create_deal";
-        const dealResult = await createRecord("Deals", {
-          ...dealDataMX,
-          ...(accountId ? { Account_Name: { id: accountId } } : {}),
-          ...(contactId ? { Contact_Name: { id: contactId } } : {}),
-          Description: `${dealDataMX.Description}\n⚠️ Nació SIN lead convertido: lead-first falló (revisar).`,
-        }, true);
-        dealId = toText(dealResult?.id);
-        if (!dealId) throw new Error("No se obtuvo dealId");
-        console.error(`[create-from-vicky-mx] deal ${dealId} nació SIN lead convertido (lead-first falló).`);
-      }
-      // Candado cruzado: registrar el deal apenas existe para que crm-hitos lo
-      // reuse en vez de crear un gemelo por hito de conversación.
-      await setDealPorFono(contactoTelefono, dealId, "cotizacion").catch(() => {});
-    }
-    } catch (plumbingError) {
-      if (String(process.env.CRM_STRICT || "") === "1") throw plumbingError;
-      crmIncompleto = true;
-      console.error(
-        `[create-from-vicky-mx] CRM DEGRADADO en stage=${stage}: ${toText(plumbingError?.message || plumbingError).slice(0, 300)}. ` +
-          `La cotización continúa (accountId=${accountId || "∅"}, contactId=${contactId || "∅"}, dealId=${dealId || "∅"}).`,
-      );
-    }
-    if (!accountId || !dealId) crmIncompleto = true;
-
-    // Cierra el lead huérfano del flujo SDR (mismo parche que CO). Best-effort.
-    if (contactId || accountId) {
-      await cerrarLeadHuerfanoMX(contactoTelefono, accountId, contactId).catch(() => {});
-    }
-
-    // ── Cotización con subform (convención MXN en campos UF/CLP) ──
-    stage = "create_quote";
-    const subformItems = buildSubformItemsMX(items);
-    const quoteResult = await createRecord(config.quoteModule, {
-      // Zoho capa Name a 120 chars (caso Anderson 28-ago: razón social EIRL de 137 chars → INVALID_DATA maximum_length): se recorta la empresa, la fecha siempre sobrevive.
-      Name: `Cotización ${String(empresa || "").trim()}`.slice(0, 107) + ` - ${new Date().toISOString().slice(0, 10)}`,
-      Owner: OWNER_MX,
-      ...(dealId ? { [config.quoteDealLookupField]: { id: dealId } } : {}),
-      ...(contactId ? { [config.quoteContactLookupField]: { id: contactId } } : {}),
-      ...(accountId ? { Cuenta_Asociada: { id: accountId } } : {}),
-      CRM_Incompleto: crmIncompleto,
-      [config.quoteDateField]: new Date().toISOString().slice(0, 10),
-      // Etiqueta de canal (28-sep, Lalo "agrega esa etiqueta"): la misma de
-      // Chile. Con ella esta cotización entra al reenvío de correos pendientes,
-      // a la medición de origen de la venta y al alta por chat.
-      Intervenci_n_Humana: "100% Vicky",
-      [config.quoteStatusField]: "Borrador",
-      [config.contactEmailField]: contactoEmail || undefined,
-      [config.contactPhoneField]: contactoTelefono || undefined,
-      [config.companyRutField]: rfc,
-      [config.quoteItemsSubformField]: subformItems,
-      [config.quoteVersionPdfField]: 1,
-      // Descuento del plan, misma forma que create-from-vicky (CL) y PE.
-      ...(escalonDescuento > 0
-        ? {
-            [config.quoteEscalonField]: escalonDescuento,
-            [config.quoteEscalonNegociacionField]: escalonDescuento,
-            [config.quoteDiscountUnlockedField]: true,
-            [config.quoteDiscountPctField]: descuentoPlanPct,
-            [config.quoteDiscountInstRMPctField]: 0,
-            [config.quoteDiscountInstRegionPctField]: 0,
-          }
-        : {}),
-    }, true);
-    const quoteId = toText(quoteResult?.id);
-    if (!quoteId) throw new Error("No se obtuvo quoteId");
-    // Marcador de idempotencia APENAS existen los registros: si el resto del
-    // flujo muere, el reintento devuelve estos ids en vez de duplicar.
-    await setIdempotente(idemClave, { quoteId, dealId, accountId, contactId });
-
-    // ── acceptanceUrl (token firmado con pais:"mx" — así session.js y los
-    // flujos posteriores marcan la sesión como México, igual que CO con "co") ──
-    stage = "build_acceptance_url";
-    const expMs = Date.now() + config.validityDays * 24 * 60 * 60 * 1000;
-    const token = signAcceptancePayload({
-      quoteId, dealId,
-      pais: "mx",
-      iat: Date.now(), exp: expMs,
-      nonce: crypto.randomBytes(8).toString("hex"),
-      v: 1,
+    },
+    html: ({ contacto, empresa, pdfUrl, hayHardware, firmante }) =>
+      buildEmailHtmlMX({ contacto, empresa, pdfUrl, tieneReloj: hayHardware, ejecutivo: firmante }),
+  },
+  // UNA sola nota (plan + equipo en pesos), como Colombia.
+  async creator({ config, quoteId, dealId, doc, userCount, crmIncompleto }) {
+    const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
+    const { ESCALERA_ASISTENCIA_MX } = require("../_shared/escaleras-pais");
+    await emitirCotizacionEnCreator({
+      config,
+      quoteId,
+      dealId,
+      acceptanceData: { companyRut: doc },
+      escalerasPrecio: {
+        plan_asistencia: ESCALERA_ASISTENCIA_MX.map((t) => ({ ...t })),
+        asistencia: ESCALERA_ASISTENCIA_MX.map((t) => ({ ...t })),
+      },
+      userCount: Number(userCount) || 0,
+      crmIncompleto,
+      motivo: "emision-mx",
+      creatorOverrides: { moneda: "MXN", pais: "México" },
     });
-    const acceptanceUrl = `${config.baseUrl}/quote-acceptance.html?token=${encodeURIComponent(token)}`;
-
-    // Alerta interna best-effort si la entrega fue en modo degradado (sin
-    // Cuenta/Deal). El cliente jamás ve nada de esto.
-    if (crmIncompleto) {
-      const notifyUrl = toText(process.env.VICKY_AGENT_NOTIFY_URL);
-      const notifySecret = toText(process.env.VICKY_AGENT_CRON_SECRET);
-      if (notifyUrl && notifySecret) {
-        fetch(notifyUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-cron-secret": notifySecret },
-          body: JSON.stringify({ evento: "crm_incompleto", empresa: empresa, numero: quoteId, monto: "" }),
-        }).catch(() => {});
-      }
-    }
-    stage = "update_quote_acceptance";
-    await updateRecord(config.quoteModule, quoteId, {
-      [config.quoteAcceptanceUrlField]: acceptanceUrl,
-      [config.quoteStatusField]: "Enviada",
-    }, true);
-
-    sendJson(res, 200, {
-      ok: true,
-      quoteId, dealId, accountId, contactId,
-      acceptanceUrl,
-      linkCorto: linkCortoDeCotizacion(quoteId, config.baseUrl),
-      pdfUrl: "",
-      pdfPendiente: true,
-      accountReused,
-      descuentoPlanPct,
-      expiresAt: new Date(expMs).toISOString(),
-    });
-
-    // ── PDF + correo en segundo plano (no bloquea la respuesta al agente) ──
-    waitUntil(
-      (async () => {
-        // Valor del trato al nacer (David 24-sep): misma fórmula del pase de limpieza.
-        await (async () => require("../_shared/valor-deal").estamparValorDeal({ quoteModule: config.quoteModule, quoteId, dealId, empleados: Number(userCount) || 0 }))().catch(() => {});
-        const numeroCotizacion = await getRecordWithFields(config.quoteModule, quoteId, ["Numero_Cotizacion"])
-          .then((r) => toText(r?.Numero_Cotizacion))
-          .catch(() => "");
-        const firmante = await firmanteDeDeal(dealId);
-        const html = buildProposalHtmlMX({
-          cliente: { empresa, contacto, rfc },
-          ejecutivo: firmante,
-          items,
-          acceptanceUrl,
-          cotizacionId: numeroParaPdf(numeroCotizacion, quoteId),
-          validezHasta: new Date(expMs).toISOString(),
-          descuentos,
-          mesesDescuento: MESES_DESCUENTO_PLAN,
-        });
-        const pdfBuffer = await htmlToPdfBuffer(html, { format: "Letter", margin: "0" });
-        const { pdfUrl } = await uploadPdfToSupabase({
-          pdfBuffer,
-          quoteId,
-          empresa,
-        });
-        await updateRecord(config.quoteModule, quoteId, {
-          [config.quotePdfUrlField]: pdfUrl,
-        }, true);
-        // Propaga al puntero de Supabase (principio Lalo 07-ago: el PDF nuevo en TODOS lados)
-        await actualizarPunteroPdf(quoteId, pdfUrl);
-        const tieneReloj = items.some((it) => it && String(it.tipo || "").toLowerCase() === "hardware");
-        // sin correo: el link viaja por el chat (el espejo Creator va igual).
-        if (contactoEmail) await sendQuoteEmailViaZoho({
-          quoteModule: config.quoteModule,
-          quoteId,
-          fromEmail: VICKY_FROM_EMAIL,
-          // Reply-to y copia: el dueño humano si lo hay; si firma Vicky, la
-          // copia del país (VICKY_MX_QUOTE_CC, default Yahel) como hasta hoy.
-          replyToEmail: firmante.esVicky ? (process.env.VICKY_MX_QUOTE_CC || "ysegura@geovictoria.com").split(",")[0].trim() : firmante.email,
-          ccEmail: firmante.esVicky ? (process.env.VICKY_MX_QUOTE_CC || "ysegura@geovictoria.com").split(",")[0].trim() : firmante.email,
-          // Copias fijas: Lalo (31-jul) + Rodrigo (03-ago) + las del body.
-          ccEmails: [
-            ...(process.env.QUOTE_EMAIL_CC_FIJO || "egomez@geovictoria.com,rlewit@geovictoria.com")
-              .split(",")
-              .map((s) => s.trim()),
-            ...(Array.isArray(body.cc) ? body.cc : []),
-          ].filter(Boolean),
-          toEmail: contactoEmail,
-          toName: contacto,
-          subject: `Tu cotización GeoVictoria — ${empresa}`,
-          htmlBody: buildEmailHtmlMX({
-            contacto,
-            empresa,
-            pdfUrl,
-            tieneReloj,
-            ejecutivo: firmante,
-          }),
-        }).catch((mailErr) =>
-          console.error("[create-from-vicky-mx] correo de cotización falló:", mailErr?.message || mailErr),
-        );
-        // ── Cotización en Zoho Creator (24-sep, alta por chat en México) ──
-        // Mismo puente que Chile/Perú/Colombia con moneda MXN, país México y la
-        // escalera mexicana. Va ÚLTIMO y best-effort: link, PDF y correo son la
-        // ruta crítica. UNA sola nota (plan + equipo en pesos), como Colombia.
-        try {
-          const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
-          const { ESCALERA_ASISTENCIA_MX } = require("../_shared/escaleras-pais");
-          await emitirCotizacionEnCreator({
-            config,
-            quoteId,
-            dealId,
-            acceptanceData: { companyRut: rfc },
-            escalerasPrecio: {
-              plan_asistencia: ESCALERA_ASISTENCIA_MX.map((t) => ({ ...t })),
-              asistencia: ESCALERA_ASISTENCIA_MX.map((t) => ({ ...t })),
-            },
-            userCount: Number(userCount) || 0,
-            crmIncompleto,
-            motivo: "emision-mx",
-            creatorOverrides: { moneda: "MXN", pais: "México" },
-          });
-        } catch (creatorErr) {
-          console.error("[create-from-vicky-mx] Creator falló (best-effort):", creatorErr?.message || creatorErr);
-        }
-      })().catch((bgErr) =>
-        console.error(
-          "[create-from-vicky-mx] PDF/correo en segundo plano falló:",
-          bgErr?.message || bgErr,
-        ),
-      ),
-    );
-    return;
-
-  } catch (error) {
-    console.error(`[create-from-vicky-mx] ERROR en stage=${stage}:`, error);
-    return sendJson(res, 500, {
-      ok: false,
-      error: `Falla en stage='${stage}'`,
-      detail: String(error?.message || error).slice(0, 400),
-    });
-  }
+  },
 };
 
-// Se exponen para tests/reuso (misma convención que CL/CO).
+module.exports = crearHandlerEmision(PERFIL_MX);
+module.exports.PERFIL_MX = PERFIL_MX;
 module.exports.buildSubformItemsMX = buildSubformItemsMX;
 module.exports.ensureCapacitacion = ensureCapacitacion;
 module.exports.buildEmailHtmlMX = buildEmailHtmlMX;

@@ -1,0 +1,56 @@
+{
+ "salida": {
+  "status": 200,
+  "json": {
+   "ok": true,
+   "quoteId": "q-previa",
+   "dealId": "d-previo",
+   "accountId": "a-previa",
+   "contactId": "c-previo",
+   "acceptanceUrl": {
+    "base": "https://cotizador.test/quote-acceptance.html",
+    "token": {
+     "quoteId": "q-previa",
+     "dealId": "d-previo",
+     "pais": "pe",
+     "iat": 1790683200000,
+     "exp": 1793275200000,
+     "v": 1
+    }
+   },
+   "linkCorto": "",
+   "pdfUrl": "",
+   "pdfPendiente": true,
+   "reuse": {
+    "retryIdempotente": true
+   },
+   "expiresAt": "2026-10-29T12:00:00.000Z"
+  }
+ },
+ "calls": [
+  {
+   "tipo": "getIdempotente",
+   "clave": "idem:c6b3612e5a008d46"
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "q-previa",
+   "payload": {
+    "URL_Aceptacion_Web": {
+     "base": "https://cotizador.test/quote-acceptance.html",
+     "token": {
+      "quoteId": "q-previa",
+      "dealId": "d-previo",
+      "pais": "pe",
+      "iat": 1790683200000,
+      "exp": 1793275200000,
+      "v": 1
+     }
+    },
+    "Estado_Cotizacion": "Enviada"
+   },
+   "silent": true
+  }
+ ]
+}

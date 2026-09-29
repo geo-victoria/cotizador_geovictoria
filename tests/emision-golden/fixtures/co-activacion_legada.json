@@ -1,0 +1,328 @@
+{
+ "salida": {
+  "status": 200,
+  "json": {
+   "ok": true,
+   "quoteId": "cotizaciones_geovictoria-4",
+   "dealId": "deal-3",
+   "accountId": "accounts-1",
+   "contactId": "contacts-2",
+   "acceptanceUrl": {
+    "base": "https://cotizador.test/quote-acceptance.html",
+    "token": {
+     "quoteId": "cotizaciones_geovictoria-4",
+     "dealId": "deal-3",
+     "pais": "co",
+     "iat": 1790683200000,
+     "exp": 1793275200000,
+     "v": 1
+    }
+   },
+   "linkCorto": "https://cotizador.test/q/4-b0b0427c05",
+   "pdfUrl": "",
+   "pdfPendiente": true,
+   "accountReused": false,
+   "expiresAt": "2026-10-29T12:00:00.000Z"
+  }
+ },
+ "calls": [
+  {
+   "tipo": "getIdempotente",
+   "clave": "idem:89a87c247b9dc091"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/Leads/search?phone=579000000777&converted=both&per_page=3",
+   "method": "GET",
+   "body": null
+  },
+  {
+   "tipo": "getDealPorFono",
+   "fono": "579000000777"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/coql",
+   "method": "POST",
+   "body": {
+    "select_query": "select id, Account_Name from Accounts where RUT_Empresa in ('901.367.959-1','9013679591','901367959-1','901367959','901.367.959') limit 10"
+   }
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Accounts",
+   "payload": {
+    "Account_Name": "PRUEBA VICKY CO SAS",
+    "RUT_Empresa": "901367959",
+    "Phone": "579000000777",
+    "Description": "Cuenta creada por Vicky CO (WhatsApp). NIT: 901.367.959-1",
+    "Industry": "19. Servicios",
+    "Territorio": "Colombia",
+    "N_Empleados_dependientes": 14,
+    "Tiene_potencial_de_expansi_n_Regional": "No",
+    "Owner": {
+     "id": "3525045000484500876"
+    }
+   },
+   "silent": true
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Contacts",
+   "payload": {
+    "First_Name": "Ana",
+    "Last_Name": "Prueba",
+    "Phone": "579000000777",
+    "Account_Name": {
+     "id": "accounts-1"
+    },
+    "Lead_Source": "SEO",
+    "Territorio": "Colombia",
+    "Owner": {
+     "id": "3525045000484500876"
+    }
+   },
+   "silent": true
+  },
+  {
+   "tipo": "nacerDealDesdeLead",
+   "args": {
+    "telefono": "579000000777",
+    "contacto": "Ana Prueba",
+    "empresa": "PRUEBA VICKY CO SAS",
+    "email": "",
+    "territorio": "Colombia",
+    "leadSource": "SEO",
+    "empleados": 14,
+    "documento": "901367959",
+    "ownerDefault": {
+     "id": "3525045000484500876"
+    },
+    "noHeredables": [
+     "3525045000613817111",
+     "3525045000619732095",
+     "3525045000639899035",
+     "3525045000639927045",
+     "3525045000654443071"
+    ],
+    "existingIds": {
+     "accountId": "accounts-1",
+     "contactId": "contacts-2"
+    },
+    "etiqueta": "create-from-vicky-co",
+    "dealData": {
+     "Deal_Name": "PRUEBA VICKY CO SAS - Cotización Vicky",
+     "Stage": "4. Propuesta Enviada / En Negociación",
+     "Pipeline": "Standard (Standard)",
+     "Lead_Source": "SEO",
+     "Amount": 191800,
+     "Description": "Deal creado por Vicky CO para cotización WhatsApp.\nUsuarios: 14\nTotal: 191800 COP",
+     "Territorio": "Colombia",
+     "Tombola": "Mantener propietario",
+     "Monda_del_trato": "COP",
+     "Sector": "19. Servicios",
+     "N_Empleados_que_marcan": 14,
+     "Tipo_de_Cobro": "Por usuario",
+     "Producto_Soluci_n": "Control de Asistencia",
+     "Owner": {
+      "id": "3525045000484500876"
+     }
+    }
+   }
+  },
+  {
+   "tipo": "setDealPorFono",
+   "fono": "579000000777",
+   "dealId": "deal-3",
+   "origen": "cotizacion"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/Leads/search?phone=579000000777&converted=both&per_page=3",
+   "method": "GET",
+   "body": null
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "payload": {
+    "Name": "Cotización PRUEBA VICKY CO SAS - 2026-09-29",
+    "Owner": {
+     "id": "3525045000484500876"
+    },
+    "Deal_Asociado": {
+     "id": "deal-3"
+    },
+    "Contacto_Asociado": {
+     "id": "contacts-2"
+    },
+    "Cuenta_Asociada": {
+     "id": "accounts-1"
+    },
+    "CRM_Incompleto": false,
+    "Fecha_Cotizacion": "2026-09-29",
+    "Intervenci_n_Humana": "100% Vicky",
+    "Estado_Cotizacion": "Borrador",
+    "Telefono_Cliente": "579000000777",
+    "RUT_Cliente": "901.367.959-1",
+    "Detalle_Items_Cotizacion": [
+     {
+      "Nombre_Item": "Plan Asistencia (14 personas)",
+      "Descripcion_Item": "",
+      "Codigo_Item": "plan_asistencia",
+      "Cantidad": 14,
+      "Precio_Unitario_UF": 13700,
+      "Precio_Unitario_CLP": 13700,
+      "Subtotal_UF": 191800,
+      "Subtotal_CLP": 191800,
+      "Modalidad": "Recurrente",
+      "Es_Recurrente": true,
+      "Afecto_IVA": false,
+      "Orden": 1,
+      "Categoria_Item": "Plataforma Asistencia",
+      "Unidad": "Usuario"
+     }
+    ],
+    "Version_PDF": 1
+   },
+   "silent": true
+  },
+  {
+   "tipo": "setIdempotente",
+   "clave": "idem:89a87c247b9dc091",
+   "ids": {
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "accountId": "accounts-1",
+    "contactId": "contacts-2"
+   }
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "payload": {
+    "URL_Aceptacion_Web": {
+     "base": "https://cotizador.test/quote-acceptance.html",
+     "token": {
+      "quoteId": "cotizaciones_geovictoria-4",
+      "dealId": "deal-3",
+      "pais": "co",
+      "iat": 1790683200000,
+      "exp": 1793275200000,
+      "v": 1
+     }
+    },
+    "Estado_Cotizacion": "Enviada"
+   },
+   "silent": true
+  },
+  {
+   "tipo": "estamparValorDeal",
+   "args": {
+    "quoteModule": "Cotizaciones_GeoVictoria",
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "empleados": 14
+   }
+  },
+  {
+   "tipo": "getRecordWithFields",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "fields": [
+    "Numero_Cotizacion"
+   ]
+  },
+  {
+   "tipo": "firmanteDeDeal",
+   "dealId": "deal-3"
+  },
+  {
+   "tipo": "htmlToPdfBuffer",
+   "htmlSha": "59400a3b8c7732a2947dc578216fe902cfe12a0b",
+   "opts": {
+    "format": "Letter",
+    "margin": "0"
+   }
+  },
+  {
+   "tipo": "uploadPdfToSupabase",
+   "quoteId": "cotizaciones_geovictoria-4",
+   "empresa": "PRUEBA VICKY CO SAS"
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "payload": {
+    "PDF_URL": "https://pdf.test/cotizaciones_geovictoria-4.pdf"
+   },
+   "silent": true
+  },
+  {
+   "tipo": "actualizarPunteroPdf",
+   "quoteId": "cotizaciones_geovictoria-4",
+   "pdfUrl": "https://pdf.test/cotizaciones_geovictoria-4.pdf"
+  },
+  {
+   "tipo": "emitirCotizacionEnCreator",
+   "args": {
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "acceptanceData": {
+     "companyRut": "901.367.959-1"
+    },
+    "escalerasPrecio": {
+     "plan_asistencia": [
+      {
+       "desde": 1,
+       "hasta": 10,
+       "modalidad": "fijo",
+       "precioUF": 315000
+      },
+      {
+       "desde": 11,
+       "hasta": 20,
+       "modalidad": "por_usuario",
+       "precioUF": 13700
+      },
+      {
+       "desde": 21,
+       "hasta": 50,
+       "modalidad": "por_usuario",
+       "precioUF": 13700
+      }
+     ],
+     "asistencia": [
+      {
+       "desde": 1,
+       "hasta": 10,
+       "modalidad": "fijo",
+       "precioUF": 315000
+      },
+      {
+       "desde": 11,
+       "hasta": 20,
+       "modalidad": "por_usuario",
+       "precioUF": 13700
+      },
+      {
+       "desde": 21,
+       "hasta": 50,
+       "modalidad": "por_usuario",
+       "precioUF": 13700
+      }
+     ]
+    },
+    "userCount": 14,
+    "crmIncompleto": false,
+    "motivo": "emision-co",
+    "creatorOverrides": {
+     "moneda": "COP",
+     "pais": "Colombia"
+    }
+   }
+  }
+ ]
+}

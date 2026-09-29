@@ -1,0 +1,10 @@
+{
+ "salida": {
+  "status": 400,
+  "json": {
+   "ok": false,
+   "error": "El RUC '20605842050' no es válido (11 dígitos con dígito verificador SUNAT). Pídele al cliente confirmarlo."
+  }
+ },
+ "calls": []
+}

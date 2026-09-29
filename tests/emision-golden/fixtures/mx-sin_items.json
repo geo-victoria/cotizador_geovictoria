@@ -1,0 +1,10 @@
+{
+ "salida": {
+  "status": 400,
+  "json": {
+   "ok": false,
+   "error": "items requerido (no vacío)"
+  }
+ },
+ "calls": []
+}

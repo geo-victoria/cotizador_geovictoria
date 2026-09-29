@@ -1,0 +1,351 @@
+{
+ "salida": {
+  "status": 200,
+  "json": {
+   "ok": true,
+   "quoteId": "cotizaciones_geovictoria-4",
+   "dealId": "deal-3",
+   "accountId": "accounts-1",
+   "contactId": "contacts-2",
+   "acceptanceUrl": {
+    "base": "https://cotizador.test/quote-acceptance.html",
+    "token": {
+     "quoteId": "cotizaciones_geovictoria-4",
+     "dealId": "deal-3",
+     "pais": "pe",
+     "iat": 1790683200000,
+     "exp": 1793275200000,
+     "v": 1
+    }
+   },
+   "linkCorto": "https://cotizador.test/q/4-b0b0427c05",
+   "pdfUrl": "",
+   "pdfPendiente": true,
+   "accountReused": false,
+   "expiresAt": "2026-10-29T12:00:00.000Z"
+  }
+ },
+ "calls": [
+  {
+   "tipo": "getIdempotente",
+   "clave": "idem:c6b3612e5a008d46"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/Leads/search?phone=51900000777&converted=both&per_page=3",
+   "method": "GET",
+   "body": null
+  },
+  {
+   "tipo": "getDealPorFono",
+   "fono": "51900000777"
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/coql",
+   "method": "POST",
+   "body": {
+    "select_query": "select id, Account_Name from Accounts where RUT_Empresa in ('20605842055') limit 10"
+   }
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Accounts",
+   "payload": {
+    "Account_Name": "PRUEBA VICKY PE SAC",
+    "RUT_Empresa": "20605842055",
+    "Phone": "51900000777",
+    "Description": "Cuenta creada por Vicky PE (WhatsApp). RUC: 20605842055",
+    "Industry": "19. Servicios",
+    "Territorio": "Perú",
+    "N_Empleados_dependientes": 16,
+    "Tiene_potencial_de_expansi_n_Regional": "No",
+    "Owner": {
+     "id": "3525045000484500876"
+    }
+   },
+   "silent": true
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Contacts",
+   "payload": {
+    "First_Name": "Ana",
+    "Last_Name": "Prueba",
+    "Phone": "51900000777",
+    "Account_Name": {
+     "id": "accounts-1"
+    },
+    "Lead_Source": "SEO",
+    "Territorio": "Perú",
+    "Owner": {
+     "id": "3525045000484500876"
+    }
+   },
+   "silent": true
+  },
+  {
+   "tipo": "nacerDealDesdeLead",
+   "args": {
+    "telefono": "51900000777",
+    "contacto": "Ana Prueba",
+    "empresa": "PRUEBA VICKY PE SAC",
+    "email": "",
+    "territorio": "Perú",
+    "leadSource": "SEO",
+    "empleados": 16,
+    "documento": "20605842055",
+    "ownerDefault": {
+     "id": "3525045000484500876"
+    },
+    "existingIds": {
+     "accountId": "accounts-1",
+     "contactId": "contacts-2"
+    },
+    "etiqueta": "create-from-vicky-pe",
+    "dealData": {
+     "Deal_Name": "20605842055 - PRUEBA VICKY PE SAC - Cotización Vicky",
+     "Stage": "4. Propuesta Enviada / En Negociación",
+     "Pipeline": "Standard (Standard)",
+     "Lead_Source": "SEO",
+     "Amount": 104,
+     "Description": "Deal creado por Vicky PE para cotización WhatsApp.\nUsuarios: 16\nTotal: 104 PEN",
+     "Territorio": "Perú",
+     "Tombola": "Mantener propietario",
+     "Monda_del_trato": "SOL",
+     "Sector": "19. Servicios",
+     "N_Empleados_que_marcan": 16,
+     "Tipo_de_Cobro": "Mensual fijo",
+     "Producto_Soluci_n": "Control de Asistencia",
+     "Owner": {
+      "id": "3525045000484500876"
+     }
+    }
+   }
+  },
+  {
+   "tipo": "setDealPorFono",
+   "fono": "51900000777",
+   "dealId": "deal-3",
+   "origen": "cotizacion"
+  },
+  {
+   "tipo": "getRecordWithFields",
+   "mod": "Deals",
+   "id": "deal-3",
+   "fields": [
+    "Deal_Name"
+   ]
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Deals",
+   "id": "deal-3",
+   "payload": {
+    "Deal_Name": "20605842055 - EMPRESA - Cotización Vicky"
+   },
+   "silent": false
+  },
+  {
+   "tipo": "zohoApiFetch",
+   "path": "/crm/v3/Leads/search?phone=51900000777&converted=both&per_page=3",
+   "method": "GET",
+   "body": null
+  },
+  {
+   "tipo": "createRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "payload": {
+    "Name": "Cotización PRUEBA VICKY PE SAC - 2026-09-29",
+    "Owner": {
+     "id": "3525045000484500876"
+    },
+    "Deal_Asociado": {
+     "id": "deal-3"
+    },
+    "Contacto_Asociado": {
+     "id": "contacts-2"
+    },
+    "Cuenta_Asociada": {
+     "id": "accounts-1"
+    },
+    "CRM_Incompleto": false,
+    "Fecha_Cotizacion": "2026-09-29",
+    "Intervenci_n_Humana": "100% Vicky",
+    "Estado_Cotizacion": "Borrador",
+    "Telefono_Cliente": "51900000777",
+    "RUT_Cliente": "20605842055",
+    "Detalle_Items_Cotizacion": [
+     {
+      "Nombre_Item": "Plan Asistencia (16 personas)",
+      "Descripcion_Item": "",
+      "Codigo_Item": "plan_asistencia",
+      "Cantidad": 16,
+      "Precio_Unitario_UF": 5.5,
+      "Precio_Unitario_CLP": 5.5,
+      "Subtotal_UF": 88,
+      "Subtotal_CLP": 88,
+      "Modalidad": "Recurrente",
+      "Es_Recurrente": true,
+      "Afecto_IVA": true,
+      "Orden": 1,
+      "Categoria_Item": "Plataforma Asistencia",
+      "Unidad": "Usuario"
+     }
+    ],
+    "Version_PDF": 1
+   },
+   "silent": true
+  },
+  {
+   "tipo": "setIdempotente",
+   "clave": "idem:c6b3612e5a008d46",
+   "ids": {
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "accountId": "accounts-1",
+    "contactId": "contacts-2"
+   }
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "payload": {
+    "URL_Aceptacion_Web": {
+     "base": "https://cotizador.test/quote-acceptance.html",
+     "token": {
+      "quoteId": "cotizaciones_geovictoria-4",
+      "dealId": "deal-3",
+      "pais": "pe",
+      "iat": 1790683200000,
+      "exp": 1793275200000,
+      "v": 1
+     }
+    },
+    "Estado_Cotizacion": "Enviada"
+   },
+   "silent": true
+  },
+  {
+   "tipo": "estamparValorDeal",
+   "args": {
+    "quoteModule": "Cotizaciones_GeoVictoria",
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "empleados": 16
+   }
+  },
+  {
+   "tipo": "getRecordWithFields",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "fields": [
+    "Numero_Cotizacion"
+   ]
+  },
+  {
+   "tipo": "firmanteDeDeal",
+   "dealId": "deal-3"
+  },
+  {
+   "tipo": "htmlToPdfBuffer",
+   "htmlSha": "7b9557bd39789a5be25405680272e0d654ebc1a5",
+   "opts": {
+    "format": "Letter",
+    "margin": "0"
+   }
+  },
+  {
+   "tipo": "uploadPdfToSupabase",
+   "quoteId": "cotizaciones_geovictoria-4",
+   "empresa": "PRUEBA VICKY PE SAC"
+  },
+  {
+   "tipo": "updateRecord",
+   "mod": "Cotizaciones_GeoVictoria",
+   "id": "cotizaciones_geovictoria-4",
+   "payload": {
+    "PDF_URL": "https://pdf.test/cotizaciones_geovictoria-4.pdf"
+   },
+   "silent": true
+  },
+  {
+   "tipo": "actualizarPunteroPdf",
+   "quoteId": "cotizaciones_geovictoria-4",
+   "pdfUrl": "https://pdf.test/cotizaciones_geovictoria-4.pdf"
+  },
+  {
+   "tipo": "emitirCotizacionEnCreator",
+   "args": {
+    "quoteId": "cotizaciones_geovictoria-4",
+    "dealId": "deal-3",
+    "acceptanceData": {
+     "companyRut": "20605842055"
+    },
+    "escalerasPrecio": {
+     "plan_asistencia": [
+      {
+       "desde": 1,
+       "hasta": 10,
+       "modalidad": "fijo",
+       "precioUF": 100
+      },
+      {
+       "desde": 11,
+       "hasta": 50,
+       "modalidad": "por_usuario",
+       "precioUF": 9
+      },
+      {
+       "desde": 51,
+       "hasta": 100,
+       "modalidad": "por_usuario",
+       "precioUF": 5
+      },
+      {
+       "desde": 101,
+       "hasta": 500,
+       "modalidad": "por_usuario",
+       "precioUF": 4.5
+      }
+     ],
+     "asistencia": [
+      {
+       "desde": 1,
+       "hasta": 10,
+       "modalidad": "fijo",
+       "precioUF": 100
+      },
+      {
+       "desde": 11,
+       "hasta": 50,
+       "modalidad": "por_usuario",
+       "precioUF": 9
+      },
+      {
+       "desde": 51,
+       "hasta": 100,
+       "modalidad": "por_usuario",
+       "precioUF": 5
+      },
+      {
+       "desde": 101,
+       "hasta": 500,
+       "modalidad": "por_usuario",
+       "precioUF": 4.5
+      }
+     ]
+    },
+    "userCount": 16,
+    "crmIncompleto": false,
+    "motivo": "emision-pe",
+    "creatorOverrides": {
+     "moneda": "PEN",
+     "pais": "Perú",
+     "tipoCambioFuente": ""
+    }
+   }
+  }
+ ]
+}
