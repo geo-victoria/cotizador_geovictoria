@@ -309,6 +309,27 @@ async function handlerBase(req, res) {
       "Empresa";
     const contactoNombre = toText(quote?.[config.quoteContactLookupField]?.name) || "";
     const contactoEmail = toText(quote?.[config.contactEmailField]);
+    // ── El NOMBRE del registro sigue a la razón social vigente (29-sep, caso
+    // Transportes y Maquinarias JJ / Franco): la cuenta y el PDF ya salían con
+    // la razón social corregida, pero `Name` conservaba la anterior — y la
+    // página de aceptación muestra `Name`, así que el cliente veía el
+    // "contrato" con la empresa vieja después de dos actualizaciones. Si la
+    // razón social de la cuenta difiere de la del nombre, se renombra
+    // conservando la fecha de emisión del sufijo.
+    try {
+      const nombreActual = toText(quote?.Name);
+      const razonEnNombre = nombreActual.replace(/^Cotización\s+/, "").replace(/\s+-\s+\d{4}-\d{2}-\d{2}$/, "").trim();
+      const norm = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+      const fechaSufijo = (nombreActual.match(/(\d{4}-\d{2}-\d{2})$/) || [])[1]
+        || toText(quote?.Created_Time).slice(0, 10)
+        || new Date().toISOString().slice(0, 10);
+      if (empresa && empresa !== "Empresa" && razonEnNombre && norm(razonEnNombre) !== norm(empresa)) {
+        await updateRecord(config.quoteModule, quoteId, { Name: `Cotización ${empresa} - ${fechaSufijo}` }, true);
+        console.log(`[actualizar-cotizacion] ${quoteId}: Name renombrado "${razonEnNombre}" → "${empresa}"`);
+      }
+    } catch (e) {
+      console.warn(`[actualizar-cotizacion] ${quoteId}: no se pudo renombrar Name: ${String(e?.message || e)}`);
+    }
     const descuentos = {
       recurrentePct: Number(quote?.[config.quoteDiscountPctField] || 0),
       instalacionRMPct: Number(quote?.[config.quoteDiscountInstRMPctField] || 0),
