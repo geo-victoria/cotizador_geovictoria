@@ -112,6 +112,33 @@ function mensualVendidoUF(quote, config) {
 
 /** Σ lista de las líneas recurrentes SIN equipos: lo que los hijos
  *  Servicio_Recurrente del espejo deben sumar en `Monto` (28-sep, IDEA SPA). */
+/**
+ * Dotación VENDIDA para juzgar/parchar el espejo (29-sep, TRANSPORTES BORIS
+ * COT1703 → NDV-32376): la cotización de Vicky no lleva ningún campo de
+ * usuarios y el plan de tramo FIJO trae Cantidad 1, así que
+ * `inferCommittedEmployees(quote, null)` daba 0 — el arreglo en sitio corrigió
+ * la tabla pero dejó Cantidad_de_Usuarios en 11 (la formal vieja) cuando la
+ * venta era de 10, y Creator cobró el adicional: 0,605 en vez de 0,55. La
+ * dotación vive en el DEAL (`N_Empleados_que_marcan`, que `actualizar_cotizacion`
+ * sí actualiza), igual que la lee el puente al emitir.
+ */
+const _dealCache = new Map();
+async function dealDeCotizacion(quote, config) {
+  const dealId = texto(quote?.[config.quoteDealLookupField]?.id || quote?.[config.quoteDealLookupField]);
+  if (!/^\d{10,}$/.test(dealId)) return null;
+  if (_dealCache.has(dealId)) return _dealCache.get(dealId);
+  const p = getRecord("Deals", dealId).catch(() => null);
+  _dealCache.set(dealId, p);
+  return p;
+}
+async function empleadosVendidos(quote, config) {
+  const { inferCommittedEmployees } = require("../_shared/ndv-handoff");
+  const sinDeal = inferCommittedEmployees(quote, null, undefined);
+  if (sinDeal > 0) return sinDeal;
+  const deal = await dealDeCotizacion(quote, config);
+  return inferCommittedEmployees(quote, deal, undefined);
+}
+
 function planVendidoUF(quote, config) {
   const items = Array.isArray(quote?.[config.quoteItemsSubformField]) ? quote[config.quoteItemsSubformField] : [];
   const rec = items.filter(
@@ -127,10 +154,9 @@ function planVendidoUF(quote, config) {
  */
 async function verificarEspejoContraVenta(cfg, cotId, quote, config) {
   const { serviciosDelEspejo, verificarPlanEnSitio } = require("../_shared/ndv-espejo-sitio");
-  const { inferCommittedEmployees } = require("../_shared/ndv-handoff");
   const servicios = await serviciosDelEspejo(cfg, cotId);
   const planVendido = planVendidoUF(quote, config);
-  const empleados = inferCommittedEmployees(quote, null, undefined);
+  const empleados = await empleadosVendidos(quote, config);
   const v = verificarPlanEnSitio({ serviciosEspejo: servicios, deseado: { planMensual: planVendido, empleados } });
   return { ...v, planVendido, empleados };
 }
@@ -276,11 +302,7 @@ async function intentarArregloEnSitio(cfg, cotId, quote, config) {
     const { serviciosDelEspejo, bloquesDelEspejo, planEnSitio, aplicarPlanEnSitio } =
       require("../_shared/ndv-espejo-sitio");
     const { buildChargeTables, resolverDescuentos } = require("../_shared/ndv-charge-table");
-    const {
-      resolveServiciosRecurrentesDeFila,
-      inferCommittedEmployees,
-      inferServiciosCreator,
-    } = require("../_shared/ndv-handoff");
+    const { resolveServiciosRecurrentesDeFila, inferServiciosCreator } = require("../_shared/ndv-handoff");
 
     const [serviciosEspejo, bloquesEspejo] = await Promise.all([
       serviciosDelEspejo(cfg, cotId),
@@ -289,7 +311,7 @@ async function intentarArregloEnSitio(cfg, cotId, quote, config) {
     if (!serviciosEspejo.length) return null; // sin hijos legibles: no arriesgar
 
     const servicios = inferServiciosCreator(quote, config);
-    const empleados = inferCommittedEmployees(quote, null, undefined);
+    const empleados = await empleadosVendidos(quote, config);
     const principal = texto(servicios?.serviciosRecurrentes?.[0]) || "Control de Asistencia";
     const tablas = buildChargeTables({
       quote,
