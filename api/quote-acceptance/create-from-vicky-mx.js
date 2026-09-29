@@ -152,7 +152,9 @@ async function findConvertedIdsByPhone(telefono) {
       `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
     );
     if (!res.ok || res.status === 204) return {};
-    const lead = ((await res.json())?.data || []).find(
+    // Solo leads del PAÍS del número (29-sep): la búsqueda de Zoho compara los
+    // últimos dígitos y un chileno y un peruano pueden compartirlos.
+    const lead = leadsDelPaisDeFono(fono, (await res.json())?.data || []).find(
       (l) => l?.["$converted_detail"]?.deal || l?.Converted_Deal?.id || l?.Converted_Account?.id,
     );
     if (!lead) return {};
@@ -189,7 +191,7 @@ const { IVA_RATE_MX } = require("../_shared/quote-pricing");
 const { sendQuoteEmailViaZoho } = require("./create-from-vicky");
 const { linkCortoDeCotizacion } = require("../_shared/codigo-corto");
 const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
-const { nacerDealDesdeLead } = require("../_shared/lead-first");
+const { nacerDealDesdeLead, leadsDelPaisDeFono } = require("../_shared/lead-first");
 
 // waitUntil: corre trabajo en segundo plano DESPUÉS de responder (mismo patrón
 // que CL/CO). Fallback best-effort si el paquete no está disponible.

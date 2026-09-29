@@ -11,7 +11,7 @@ const { repararMojibake } = require("./mojibake");
 const { buildChargeTables } = require("./ndv-charge-table");
 const { construirNotasPdf, resolverEjecutivo } = require("./ndv-notas");
 const { ejecutivoPorOwner } = require("./ejecutivo-cl");
-const { articuloDeHardware } = require("./creator-articulos");
+const { esCodigoHardware } = require("./creator-articulos");
 
 function toNumberOrNull(value) {
   const n = Number.parseInt(toText(value), 10);
@@ -356,7 +356,7 @@ function resolveServiciosRecurrentesDeFila(row) {
  * significa cobro único y la llevan también la instalación y el envío.
  */
 function esFilaDeHardware(row) {
-  if (articuloDeHardware(row?.Codigo_Item)) return true;
+  if (esCodigoHardware(row?.Codigo_Item)) return true;
   return normalizeItemName(row?.Categoria_Item) === "equipos biometricos";
 }
 

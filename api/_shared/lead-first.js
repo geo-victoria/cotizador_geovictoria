@@ -20,6 +20,40 @@ const OWNERS_ROBOT = new Set([
   ...toText(process.env.VICKY_OWNERS_ROBOT).split(",").map((s) => s.trim()).filter(Boolean),
 ]);
 
+// País del celular por prefijo → Territorio de Zoho. Chile y Perú comparten
+// celulares de 9 dígitos que empiezan en 9, así que la búsqueda por teléfono de
+// Zoho (que compara los últimos dígitos) puede traer el lead del OTRO país
+// (29-sep). El lead se acepta si su teléfono calza completo con el buscado, o
+// si su Territorio es el del país del número (o no tiene Territorio).
+const TERRITORIO_POR_PREFIJO = [
+  ["56", "chile"],
+  ["51", "peru"],
+  ["57", "colombia"],
+  ["52", "mexico"],
+];
+function normalizarTerritorio(t) {
+  return toText(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+function territorioDeFono(fono) {
+  const f = toText(fono).replace(/\D/g, "");
+  const hit = TERRITORIO_POR_PREFIJO.find(([p]) => f.startsWith(p));
+  return hit ? hit[1] : "";
+}
+function leadsDelPaisDeFono(fono, leads) {
+  const f = toText(fono).replace(/\D/g, "");
+  const lista = Array.isArray(leads) ? leads : [];
+  if (!f) return lista;
+  const digitos = (v) => toText(v).replace(/\D/g, "");
+  const exactos = lista.filter((l) => [l?.Phone, l?.Mobile].some((v) => digitos(v) === f));
+  if (exactos.length) return exactos;
+  const terr = territorioDeFono(f);
+  if (!terr) return lista;
+  return lista.filter((l) => {
+    const t = normalizarTerritorio(l?.Territorio);
+    return !t || t === terr;
+  });
+}
+
 function estaConvertido(l) {
   return Boolean(
     l?.Converted_Deal?.id || l?.Converted_Account?.id || l?.Converted_Contact?.id || l?.["$converted_detail"]?.deal,
@@ -282,4 +316,4 @@ async function nacerDealDesdeLead({ telefono, contacto, empresa, email, territor
   }
 }
 
-module.exports = { buscarLeadVivoPorFono, crearLeadParaConvertir, convertirLeadEnDeal, recuperarIdsConvertidos, nacerDealDesdeLead, OWNER_VICKY_ID };
+module.exports = { buscarLeadVivoPorFono, crearLeadParaConvertir, convertirLeadEnDeal, recuperarIdsConvertidos, nacerDealDesdeLead, leadsDelPaisDeFono, territorioDeFono, OWNER_VICKY_ID };

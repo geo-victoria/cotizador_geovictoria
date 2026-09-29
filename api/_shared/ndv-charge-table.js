@@ -42,7 +42,7 @@ const {
   getZonaTarifa,
 } = require("./quote-pricing");
 const { PRICING_TIERS, MESES_DESCUENTO_PLAN, mesesDescuentoNormalizados } = require("./proposal-constants");
-const { articuloDeHardware, articuloDeServicio } = require("./creator-articulos");
+const { articuloDeHardware, articuloDeServicio, paisDeMonedaNota } = require("./creator-articulos");
 
 /** Servicios de Creator cuyo registro va al Formulario_de_Equipos, no a un Servicio_Recurrente. */
 const SERVICIOS_ARRIENDO_HARDWARE = new Set([
@@ -436,6 +436,9 @@ function buildChargeTables({
       : leerEscaleras(quote, config);
   const usaUf = normalizar(moneda) === "uf" || !moneda;
   const usaUsd = normalizar(moneda) === "usd";
+  // País de la nota (por su moneda): resuelve los códigos genéricos de equipo
+  // de CO/MX/PE al artículo de Books de ese país (29-sep).
+  const paisNota = paisDeMonedaNota(moneda);
   const descuentos = resolverDescuentos(quote, config);
   // Artículo con precio de lista en USD (Perú): cuando la nota es en USD la
   // línea toma los valores del CATÁLOGO (arriendo US$24 · venta US$90) y no
@@ -500,7 +503,7 @@ function buildChargeTables({
         total: redondear(total),
         descuentoPct: descuentoPctLinea(row, descuentos),
       };
-      const articulo = articuloDeHardware(linea.codigo);
+      const articulo = articuloDeHardware(linea.codigo, paisNota);
       // `codigoCreator` es el prefijo del nombre del artículo ("006.10"), que es
       // lo único que Books reconoce al buscarlo. Nuestro id de catálogo
       // ("senseface_2a") no existe allá.
@@ -534,7 +537,7 @@ function buildChargeTables({
     // el cobro queda registrado en alguna parte.
     if (SERVICIOS_ARRIENDO_HARDWARE.has(servicio)) {
       const codigo = String(row?.codigo || "").trim();
-      const articulo = articuloDeHardware(codigo);
+      const articulo = articuloDeHardware(codigo, paisNota);
       if (articulo) {
         const usd = preciosUsdDe(articulo);
         const factor = usd ? 1 : factorDescuentoLinea(row, descuentos);

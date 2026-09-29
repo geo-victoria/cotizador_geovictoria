@@ -97,7 +97,40 @@ const HARDWARE_A_ARTICULO = {
     modelo: "Senseface 3A — Kit QR (incluye gabinete lector CI 019 y lector Vuquest 3320g 024)",
     valorListaUF: 8,
   },
+  // ── COLOMBIA y MÉXICO (29-sep): el equipo de Vicky es el Senseface 2A y en
+  // Books existe por país (leído el 29-sep). Hasta hoy ninguna nota CO/MX con
+  // equipo llevaba artículo: nacía "INCOMPLETA" y sin orden de venta. Los
+  // valores van en la moneda de la nota (COP / MXN), como el plan; nada de
+  // conversión. Colombia: alquiler $86.000/mes base ($98.000 fuera), compra
+  // $620.000 + IVA. México: renta $350/mes, venta $2.100 + IVA.
+  reloj_co: {
+    item: "218.1 - [COL] EQUIPO FACIAL SENSEFACE 2A WIFI",
+    modelo: "Senseface 2A",
+    valorListaUF: 620000,
+    valorMensual: 86000,
+    moneda: "COP",
+  },
+  reloj_mx: {
+    item: "123.1 - [MEX] Senseface 2A",
+    modelo: "Senseface 2A",
+    valorListaUF: 2100,
+    valorMensual: 350,
+    moneda: "MXN",
+  },
 };
+
+/**
+ * Códigos GENÉRICOS que las emisiones de Colombia y México comparten
+ * ("reloj_arriendo" / "reloj_venta", los ids del subform de ambos países): el
+ * artículo depende del PAÍS de la nota, no del código. `articuloDeHardware`
+ * recibe el país (derivado de la moneda de la nota) y resuelve acá primero.
+ */
+const ARTICULO_GENERICO_POR_PAIS = {
+  co: { reloj_arriendo: "reloj_co", reloj_venta: "reloj_co", reloj: "reloj_co" },
+  mx: { reloj_arriendo: "reloj_mx", reloj_venta: "reloj_mx", reloj_renta: "reloj_mx", reloj: "reloj_mx" },
+  pe: { reloj_arriendo: "reloj_pe", reloj_venta: "reloj_pe", reloj: "reloj_pe" },
+};
+const CODIGOS_HARDWARE_GENERICOS = new Set(["reloj_arriendo", "reloj_venta", "reloj_renta", "reloj"]);
 
 /**
  * Servicios no recurrentes: id del catálogo (+ zona cuando aplica) → artículo.
@@ -157,9 +190,33 @@ function normalizarCodigo(codigoItem) {
   return ALIAS_CODIGO[codigo] || codigo;
 }
 
-/** @returns {{item: string, modelo: string} | null} */
-function articuloDeHardware(codigoItem) {
-  return HARDWARE_A_ARTICULO[normalizarCodigo(codigoItem)] || null;
+/**
+ * @param {string} codigoItem  Codigo_Item de la línea
+ * @param {string} [pais]      "cl" | "pe" | "co" | "mx" — resuelve los códigos
+ *                             genéricos de CO/MX/PE; sin país, solo el catálogo.
+ * @returns {{item: string, modelo: string} | null}
+ */
+function articuloDeHardware(codigoItem, pais) {
+  const codigo = normalizarCodigo(codigoItem);
+  const porPais = ARTICULO_GENERICO_POR_PAIS[String(pais || "").toLowerCase()];
+  if (porPais && porPais[codigo]) return HARDWARE_A_ARTICULO[porPais[codigo]] || null;
+  return HARDWARE_A_ARTICULO[codigo] || null;
+}
+
+/** ¿El código es de un equipo? Incluye los genéricos de CO/MX/PE aunque no se
+ * sepa el país (para clasificar filas, no para elegir artículo). */
+function esCodigoHardware(codigoItem) {
+  const codigo = normalizarCodigo(codigoItem);
+  return Boolean(HARDWARE_A_ARTICULO[codigo]) || CODIGOS_HARDWARE_GENERICOS.has(codigo);
+}
+
+/** País de una nota según su moneda ("UF"→cl, "PEN"/"USD"→pe, "COP"→co, "MXN"→mx). */
+function paisDeMonedaNota(moneda) {
+  const m = String(moneda || "").trim().toUpperCase();
+  if (m === "COP") return "co";
+  if (m === "MXN") return "mx";
+  if (m === "PEN" || m === "SOL" || m === "USD") return "pe";
+  return "cl";
 }
 
 /**
@@ -207,6 +264,8 @@ function articuloDeServicio(codigoItem, zona) {
  */
 const ITEM_ID_BOOKS = {
   "304": "1758661000080530243", // [PER] Reloj Gama Estándar FACIAL LAN WIFI (Senseface 2A, Perú)
+  "218.1": "1758661000073776163", // [COL] EQUIPO FACIAL SENSEFACE 2A WIFI (Colombia, 29-sep)
+  "123.1": "1758661000080555782", // [MEX] Senseface 2A (México, 29-sep)
   "006.10": "1758661000072468396", // Reloj Gama Entrada Facial WIFI/LAN (Senseface 2A, histórico)
   "006.11": "1758661000086449007", // Reloj Gama Media Facial WIFI/LAN (Senseface 4A, reloj estándar CL desde 23-sep)
   "006.9": "1758661000071719207", // Reloj Gama Estándar Facial WIFI/LAN (Senseface 3A, kit QR)
@@ -233,6 +292,8 @@ const ITEM_ID_BOOKS = {
  */
 const SKU_BOOKS = {
   "304": "PER-BIO-SF2A-ZKT-LW-HTF", // [PER] Reloj Gama Estándar FACIAL LAN WIFI
+  "218.1": "COL-BIO-SENSEFACE2A-ZKT-WL-HFT", // [COL] EQUIPO FACIAL SENSEFACE 2A WIFI
+  "123.1": "MEX-BIO-SENSEFACE2A-ZKT-L-RHT.", // [MEX] Senseface 2A (el punto final es parte del SKU en Books)
   "006.10": "CHL-BIO-SF2A-ZKT-WL-FHT", // Reloj Gama Entrada Facial WIFI/LAN (Senseface 2A)
   "006.11": "CHL-BIO-SF4A-ZKT-WL-FHT", // Reloj Gama Media Facial WIFI/LAN (Senseface 4A)
   "012": "CHL-BIO-U4500-HID-USB-HI", // Huellero URU4500
@@ -265,9 +326,14 @@ const BODEGA_PERU = {
   nombre: String(process.env.CREATOR_BODEGA_PE_NOMBRE || "GeoVictoria Perú").trim(),
 };
 
-/** Bodega según el artículo: los [PER] van a la peruana, el resto a Chile. */
+/** Bodega según el artículo: los [PER] van a la peruana; [COL] y [MEX] sin
+ * bodega (Books usa su default, como las notas humanas de esos países); el
+ * resto a Chile. */
 function bodegaDeArticulo(articulo) {
-  return /\[PER\]/i.test(String(articulo || "")) ? BODEGA_PERU : BODEGA_CHILE;
+  const a = String(articulo || "");
+  if (/\[PER\]/i.test(a)) return BODEGA_PERU;
+  if (/\[(COL|MEX)\]/i.test(a)) return { id: "", nombre: "" };
+  return BODEGA_CHILE;
 }
 
 /**
@@ -301,6 +367,8 @@ module.exports = {
   BODEGA_PERU,
   bodegaDeArticulo,
   articuloDeHardware,
+  esCodigoHardware,
+  paisDeMonedaNota,
   articuloDeServicio,
   idBooksDeArticulo,
   valorListaDeArticulo,

@@ -85,7 +85,7 @@ const crypto = require("crypto");
 const { signAcceptancePayload } = require("../_shared/acceptance-token");
 const { actualizarPunteroPdf } = require("../_shared/pointer-sync");
 const { claveIdempotencia, getIdempotente, setIdempotente, getDealPorFono, setDealPorFono, getLeadCandadoPorFono, getKvFlag } = require("../_shared/idempotencia");
-const { nacerDealDesdeLead } = require("../_shared/lead-first");
+const { nacerDealDesdeLead, leadsDelPaisDeFono } = require("../_shared/lead-first");
 const { conEmbudoDeCampanas } = require("../_shared/embudo-zoho");
 const { sendQuoteEmailViaZoho, buildEmailHtml } = require("./create-from-vicky");
 const { createRecord, updateRecord, getRecordWithFields, toText } = require("../_shared/zoho-crm");
@@ -153,7 +153,9 @@ async function findConvertedIdsByPhone(telefono) {
       `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
     );
     if (!res.ok || res.status === 204) return {};
-    const lead = ((await res.json())?.data || []).find(
+    // Solo leads del PAÍS del número (29-sep): la búsqueda de Zoho compara los
+    // últimos dígitos y un chileno y un peruano pueden compartirlos.
+    const lead = leadsDelPaisDeFono(fono, (await res.json())?.data || []).find(
       (l) => l?.["$converted_detail"]?.deal || l?.Converted_Deal?.id || l?.Converted_Account?.id,
     );
     if (!lead) return {};

@@ -58,7 +58,7 @@ const { buildProposalHtmlPE, IGV_PE } = require("../_shared/proposal-html-builde
 const { DISCOUNT_LADDER, MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
 const { emitirCotizacionEnCreator } = require("../_shared/ndv-emitir");
 const { ESCALERA_ASISTENCIA_PE } = require("../_shared/escaleras-pais");
-const { nacerDealDesdeLead } = require("../_shared/lead-first");
+const { nacerDealDesdeLead, leadsDelPaisDeFono } = require("../_shared/lead-first");
 const { nombreTratoConRuc } = require("../_shared/nombre-trato-ruc");
 
 let waitUntil;
@@ -253,7 +253,9 @@ async function findConvertedIdsByPhone(telefono) {
       `/crm/v3/Leads/search?phone=${encodeURIComponent(fono)}&converted=both&per_page=3`,
     );
     if (!res.ok || res.status === 204) return {};
-    const lead = ((await res.json())?.data || []).find(
+    // Solo leads del PAÍS del número (29-sep): la búsqueda de Zoho compara los
+    // últimos dígitos y un chileno y un peruano pueden compartirlos.
+    const lead = leadsDelPaisDeFono(fono, (await res.json())?.data || []).find(
       (l) => l?.["$converted_detail"]?.deal || l?.Converted_Deal?.id || l?.Converted_Account?.id,
     );
     if (!lead) return {};
