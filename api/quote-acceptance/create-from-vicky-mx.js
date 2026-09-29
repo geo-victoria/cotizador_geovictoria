@@ -184,7 +184,8 @@ async function findConvertedIdsByPhone(telefono) {
 
 const { htmlToPdfBuffer } = require("../_shared/pdfshift-client");
 const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
-const { buildProposalHtmlMX, EJEC_MX } = require("../_shared/proposal-html-builder-mx");
+const { buildProposalHtmlMX } = require("../_shared/proposal-html-builder-mx");
+const { firmanteDeDeal, firmaParaPdf } = require("../_shared/ejecutivo-firma");
 const { IVA_RATE_MX } = require("../_shared/quote-pricing");
 // Reuso del envío de correo vía Zoho send_mail del endpoint chileno (misma
 // función que usa el cron backfill-pdf): una sola implementación.
@@ -583,7 +584,15 @@ function buildDocFila(href, label, nota) {
   </td></tr><tr><td style="height:8px;"></td></tr>`;
 }
 
-function buildEmailHtmlMX({ contacto, empresa, pdfUrl, tieneReloj }) {
+function buildEmailHtmlMX({ contacto, empresa, pdfUrl, tieneReloj, ejecutivo }) {
+  // Firmante (29-sep): el dueño humano del trato; con Vicky el bloque dice
+  // "Sigo aquí contigo", como el correo chileno.
+  const EJEC_MX = firmaParaPdf(ejecutivo, "mx");
+  const esVicky = Boolean(EJEC_MX.esVicky);
+  const tituloEjecutivo = esVicky ? "Sigo aquí contigo 💬" : "Te presento a tu ejecutivo 🤝";
+  const textoEjecutivo = esVicky
+    ? `Cualquier duda o ajuste que necesites, <strong>responde este correo o escríbeme por WhatsApp</strong> — sigo acompañándote hasta dejarlo andando. 😊`
+    : `De aquí en adelante, <strong>${EJEC_MX.nombre}</strong> te acompaña en todo el proceso. Cualquier duda o ajuste que necesites, <strong>responde este correo</strong> — está para ayudarte. 😊`;
   const primerNombre = String(contacto || "").trim().split(/\s+/)[0] || "";
   const saludo = primerNombre ? `Hola ${primerNombre} 👋` : "Hola 👋";
   const fichaFila = tieneReloj
@@ -625,8 +634,8 @@ function buildEmailHtmlMX({ contacto, empresa, pdfUrl, tieneReloj }) {
       </table>
     </td></tr>
     <tr><td style="padding:28px 32px 0 32px;">
-      <h3 style="margin:0 0 8px 0;font-size:15px;color:#1a202c;">Te presento a tu ejecutivo 🤝</h3>
-      <p style="margin:0 0 16px 0;font-size:14px;color:#4a5568;line-height:1.6;">De aquí en adelante, <strong>${EJEC_MX.nombre}</strong> te acompaña en todo el proceso. Cualquier duda o ajuste que necesites, <strong>responde este correo</strong> — está para ayudarte. 😊</p>
+      <h3 style="margin:0 0 8px 0;font-size:15px;color:#1a202c;">${tituloEjecutivo}</h3>
+      <p style="margin:0 0 16px 0;font-size:14px;color:#4a5568;line-height:1.6;">${textoEjecutivo}</p>
       <table role="presentation" width="100%" style="background:#f7f9fc;border:1px solid #e2e8f0;border-radius:10px;"><tr><td style="padding:16px 20px;">
         <p style="margin:0 0 4px 0;font-size:14px;color:#1a202c;font-weight:600;">${EJEC_MX.nombre}</p>
         <p style="margin:0 0 8px 0;font-size:13px;color:#718096;">${EJEC_MX.cargo} · GeoVictoria</p>
@@ -1024,8 +1033,10 @@ module.exports = async function handler(req, res) {
         const numeroCotizacion = await getRecordWithFields(config.quoteModule, quoteId, ["Numero_Cotizacion"])
           .then((r) => toText(r?.Numero_Cotizacion))
           .catch(() => "");
+        const firmante = await firmanteDeDeal(dealId);
         const html = buildProposalHtmlMX({
           cliente: { empresa, contacto, rfc },
+          ejecutivo: firmante,
           items,
           acceptanceUrl,
           cotizacionId: numeroParaPdf(numeroCotizacion, quoteId),
@@ -1050,8 +1061,10 @@ module.exports = async function handler(req, res) {
           quoteModule: config.quoteModule,
           quoteId,
           fromEmail: VICKY_FROM_EMAIL,
-          replyToEmail: EJEC_MX.email,
-          ccEmail: EJEC_MX.email,
+          // Reply-to y copia: el dueño humano si lo hay; si firma Vicky, la
+          // copia del país (VICKY_MX_QUOTE_CC, default Yahel) como hasta hoy.
+          replyToEmail: firmante.esVicky ? (process.env.VICKY_MX_QUOTE_CC || "ysegura@geovictoria.com").split(",")[0].trim() : firmante.email,
+          ccEmail: firmante.esVicky ? (process.env.VICKY_MX_QUOTE_CC || "ysegura@geovictoria.com").split(",")[0].trim() : firmante.email,
           // Copias fijas: Lalo (31-jul) + Rodrigo (03-ago) + las del body.
           ccEmails: [
             ...(process.env.QUOTE_EMAIL_CC_FIJO || "egomez@geovictoria.com,rlewit@geovictoria.com")
@@ -1067,6 +1080,7 @@ module.exports = async function handler(req, res) {
             empresa,
             pdfUrl,
             tieneReloj,
+            ejecutivo: firmante,
           }),
         }).catch((mailErr) =>
           console.error("[create-from-vicky-mx] correo de cotización falló:", mailErr?.message || mailErr),

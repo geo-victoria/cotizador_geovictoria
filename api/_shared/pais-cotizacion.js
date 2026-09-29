@@ -183,11 +183,12 @@ function buildSubformItemsPais(pais, items) {
 }
 
 // ── PDF del país ─────────────────────────────────────────────────────────
-function renderHtmlPais(pais, { cliente, items, acceptanceUrl, cotizacionId, validezHasta, version, descuentos, mesesDescuento }) {
+function renderHtmlPais(pais, { cliente, ejecutivo, items, acceptanceUrl, cotizacionId, validezHasta, version, descuentos, mesesDescuento }) {
   if (pais === "pe") {
     const { buildProposalHtmlPE } = require("./proposal-html-builder-pe");
     return buildProposalHtmlPE({
       cliente: { empresa: cliente.empresa, contacto: cliente.contacto, ruc: cliente.documento },
+      ejecutivo,
       items, acceptanceUrl, cotizacionId, validezHasta, version,
       descuentos: descuentos || { recurrentePct: 0 },
       mesesDescuento,
@@ -197,6 +198,7 @@ function renderHtmlPais(pais, { cliente, items, acceptanceUrl, cotizacionId, val
     const { buildProposalHtmlMX } = require("./proposal-html-builder-mx");
     return buildProposalHtmlMX({
       cliente: { empresa: cliente.empresa, contacto: cliente.contacto, rfc: cliente.documento },
+      ejecutivo,
       items, acceptanceUrl, cotizacionId, validezHasta, version,
       descuentos: descuentos || { recurrentePct: 0 },
       mesesDescuento,
@@ -205,6 +207,7 @@ function renderHtmlPais(pais, { cliente, items, acceptanceUrl, cotizacionId, val
   const { buildProposalHtmlCO } = require("./proposal-html-builder-co");
   return buildProposalHtmlCO({
     cliente: { empresa: cliente.empresa, contacto: cliente.contacto, nit: cliente.documento },
+    ejecutivo,
     items, acceptanceUrl, cotizacionId, validezHasta, version,
     descuentos: descuentos || { recurrentePct: 0 },
     mesesDescuento,
@@ -304,12 +307,9 @@ function copiasCorreoPais(pais) {
   return raw.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-function ejecutivoCorreoPais(pais) {
-  if (pais === "mx") return { nombre: "Yahel Segura", email: "ysegura@geovictoria.com" };
-  return pais === "pe"
-    ? { nombre: "Mónica Mendoza", email: "mmendozav@geovictoria.com" }
-    : { nombre: "Alejandro Gordillo", email: "agordillo@geovictoria.com" };
-}
+// (29-sep) `ejecutivoCorreoPais` (Mónica / Gordillo / Yahel fijos) MURIÓ: el
+// correo presenta al dueño real del trato (ejecutivo-firma.firmanteDeCotizacion)
+// o firma Vicky mientras el trato espera con ella, igual que en Chile.
 
 /** Empresa / contacto / documento tributario leídos del quote (sin llamadas extra). */
 function clienteDesdeQuote(quote, config) {
@@ -340,6 +340,5 @@ module.exports = {
   fmtMonto,
   buildMensajeNegociacionPais,
   copiasCorreoPais,
-  ejecutivoCorreoPais,
   clienteDesdeQuote,
 };

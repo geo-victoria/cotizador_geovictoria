@@ -38,7 +38,6 @@ const {
   renderHtmlPais,
   clienteDesdeQuote,
   copiasCorreoPais,
-  ejecutivoCorreoPais,
 } = require("../_shared/pais-cotizacion");
 const { leerMesesDescuento } = require("../_shared/descuento-meses");
 const {
@@ -148,8 +147,11 @@ async function rescatarCotizacionPais(pais, quote, quoteId, config) {
   const acceptanceUrl = toText(quote[config.quoteAcceptanceUrlField]);
   const version = Math.max(1, Number(quote[config.quoteVersionPdfField] || 1));
   const mesesPlan = await leerMesesDescuento(quoteId, quote);
+  const { firmanteDeCotizacion, ejecutivoParaCorreo } = require("../_shared/ejecutivo-firma");
+  const firmante = await firmanteDeCotizacion(quote, config);
   const html = renderHtmlPais(pais, {
     cliente,
+    ejecutivo: firmante,
     items,
     acceptanceUrl,
     cotizacionId: numeroParaPdf(quote.Numero_Cotizacion, quoteId),
@@ -179,7 +181,7 @@ async function rescatarCotizacionPais(pais, quote, quoteId, config) {
         pdfUrl,
         acceptanceUrl,
         tieneReloj: false,
-        ejecutivo: ejecutivoCorreoPais(pais),
+        ejecutivo: ejecutivoParaCorreo(firmante),
       }),
     });
   }

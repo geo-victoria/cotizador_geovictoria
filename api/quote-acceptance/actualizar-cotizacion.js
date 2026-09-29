@@ -40,6 +40,7 @@ const { uploadPdfToSupabase } = require("../_shared/supabase-pdf-upload");
 const { buildProposalHtml } = require("../_shared/proposal-html-builder");
 const { leerMesesDescuento } = require("../_shared/descuento-meses");
 const { ejecutivoPorOwner } = require("../_shared/ejecutivo-cl");
+const { firmanteDeCotizacion, ejecutivoParaCorreo } = require("../_shared/ejecutivo-firma");
 const crypto = require("crypto");
 
 const createFromVicky = require("./create-from-vicky.js");
@@ -73,7 +74,6 @@ const {
   buildSubformItemsPais,
   renderHtmlPais,
   copiasCorreoPais,
-  ejecutivoCorreoPais,
   clienteDesdeQuote,
 } = require("../_shared/pais-cotizacion");
 const { MESES_DESCUENTO_PLAN } = require("../_shared/proposal-constants");
@@ -120,8 +120,11 @@ async function actualizarEnSitioPais({ pais, config, quote, quoteId, items, body
   };
   waitUntil(
     (async () => {
+      // Firmante = dueño humano del trato (o Vicky mientras espera con ella), 29-sep.
+      const firmante = await firmanteDeCotizacion(quote, config);
       const html = renderHtmlPais(pais, {
         cliente,
+        ejecutivo: firmante,
         items: pais === "pe" ? items.filter((it) => !/activaci/i.test(String(it?.tipo || it?.id || ""))) : items,
         acceptanceUrl,
         cotizacionId: numeroParaPdf(toText(quote?.Numero_Cotizacion), quoteId),
@@ -151,7 +154,7 @@ async function actualizarEnSitioPais({ pais, config, quote, quoteId, items, body
             pdfUrl,
             acceptanceUrl,
             tieneReloj: false,
-            ejecutivo: ejecutivoCorreoPais(pais),
+            ejecutivo: ejecutivoParaCorreo(firmante),
           }),
         });
       }

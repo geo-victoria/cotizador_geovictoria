@@ -35,12 +35,9 @@ const ORG_PE = {
 // Ejecutiva comercial PE (meta y pie del PDF). Mónica Mendoza es la única
 // ejecutiva del canal Perú (definición Fase 1, 05-ago; sin tómbola).
 // Parametrizado por env para cambiarla sin deploy; teléfono de su ficha Zoho.
-const EJEC_PE = {
-  nombre: (process.env.VICKY_EJECUTIVO_NOMBRE_PE || "Mónica Mendoza").trim(),
-  cargo: (process.env.VICKY_EJECUTIVO_CARGO_PE || "Ejecutiva Comercial").trim(),
-  email: (process.env.VICKY_EJECUTIVO_EMAIL_PE || "mmendozav@geovictoria.com").trim(),
-  telefono: (process.env.VICKY_EJECUTIVO_TELEFONO_PE || "+51 906 239 544").trim(),
-};
+// Firmante (29-sep, una regla para los 4 países): el DUEÑO HUMANO del trato
+// llega por `ejecutivo`; sin él firma Vicky con la línea de WhatsApp del país.
+const { firmaParaPdf } = require("./ejecutivo-firma");
 
 // IGV peruano: 18 % parejo en todos los conceptos (a diferencia de CO, donde
 // solo el hardware es afecto). El flag afectoIgv viaja por línea igual, por
@@ -111,6 +108,7 @@ function descripcionItemPE(item) {
 
 function buildProposalHtmlPE({
   cliente,
+  ejecutivo,
   items,
   acceptanceUrl,
   cotizacionId,
@@ -121,6 +119,7 @@ function buildProposalHtmlPE({
   descuentos,
   mesesDescuento,
 }) {
+  const EJEC_PE = firmaParaPdf(ejecutivo, "pe");
   cliente = cliente || {};
   const versionNum = Number(version) > 1 ? Number(version) : 1;
   const pctPlan = Math.max(0, Math.min(100, Number(descuentos?.recurrentePct || 0)));

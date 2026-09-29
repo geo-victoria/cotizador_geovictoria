@@ -85,24 +85,9 @@ function rosterTlmkLocal() {
  * QUOTE_NOTIFY_TLMK_ROSTER sigue mandando sobre todo (override sin deploy).
  * Devuelve también la gestora de ventas autónomas por país para la copia
  * del correo de PAGADA. */
-let rosterRemotoCache = { at: 0, data: null };
-async function rosterRemoto() {
-  if (Date.now() - rosterRemotoCache.at < 10 * 60 * 1000 && rosterRemotoCache.data) return rosterRemotoCache.data;
-  const base = toText(process.env.VICKY_AGENT_NOTIFY_URL);
-  const secret = toText(process.env.VICKY_AGENT_CRON_SECRET);
-  if (!base || !secret) return null;
-  try {
-    const origin = new URL(base).origin;
-    const r = await fetch(`${origin}/api/vic-roster-tlmk`, { headers: { "x-cron-secret": secret }, signal: AbortSignal.timeout(6000) });
-    if (!r.ok) return null;
-    const j = await r.json().catch(() => null);
-    if (!j?.ok || !Array.isArray(j.telemarketing)) return null;
-    rosterRemotoCache = { at: Date.now(), data: j };
-    return j;
-  } catch (_e) {
-    return null;
-  }
-}
+// (29-sep) El lector del roster vive en ejecutivo-firma.js: lo comparten este
+// correo y el firmante de PDF/correo de cotización.
+const { rosterRemoto } = require("./ejecutivo-firma");
 async function rosterTlmk() {
   if (toText(process.env.QUOTE_NOTIFY_TLMK_ROSTER)) return rosterTlmkLocal();
   const remoto = await rosterRemoto();

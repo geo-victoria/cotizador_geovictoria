@@ -170,10 +170,16 @@ async function buildClienteParaHtml(quote, config) {
     contacto: contactoFullName || "",
     contactoEmail: toText(quote?.[config.contactEmailField]),
     rutEmpresa: toText(quote?.[config.companyRutField]) || toText(account?.RUT_Empresa),
-    ejecutivo: "Vicky - Equipo Comercial GeoVictoria",
-    ejecutivoEmail: "vicky@geovictoria.com",
-    ejecutivoTelefono: "+56 9 6730 8227",
+    // Firmante = dueño humano del trato o de la cotización; sin él, Vicky
+    // (29-sep; antes firmaba Vicky FIJO aunque el trato ya tuviera dueño).
+    ...(await firmaChile(quote, config)),
   };
+}
+
+async function firmaChile(quote, config) {
+  const { firmanteDeCotizacion, firmaParaPdf } = require("../_shared/ejecutivo-firma");
+  const f = firmaParaPdf(await firmanteDeCotizacion(quote, config), "cl");
+  return { ejecutivo: f.nombre, ejecutivoEmail: f.email, ejecutivoTelefono: f.telefono };
 }
 
 // Convierte el subform de Zoho a la forma que espera buildProposalHtml en
@@ -410,6 +416,7 @@ async function handlerBase(req, res) {
 
     const html = conPerfil ? renderHtmlPais(pais, {
       cliente,
+      ejecutivo: await require("../_shared/ejecutivo-firma").firmanteDeCotizacion(quote, config),
       items,
       acceptanceUrl,
       cotizacionId: numeroParaPdf(quote && quote.Numero_Cotizacion, quoteId),

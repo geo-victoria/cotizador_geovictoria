@@ -1104,8 +1104,13 @@ module.exports = async function handler(req, res) {
         const numeroCotizacion = await getRecordWithFields(config.quoteModule, quoteId, ["Numero_Cotizacion"])
           .then((r) => toText(r?.Numero_Cotizacion))
           .catch(() => "");
+        // Firmante (29-sep, regla de Chile para los 4 países): el dueño humano
+        // del trato si lo hay; mientras el trato espera con Vicky, firma Vicky.
+        const { firmanteDeDeal, ejecutivoParaCorreo } = require("../_shared/ejecutivo-firma");
+        const firmante = await firmanteDeDeal(dealId);
         const html = buildProposalHtmlCO({
           cliente: { empresa, contacto, nit },
+          ejecutivo: firmante,
           items,
           acceptanceUrl,
           cotizacionId: numeroParaPdf(numeroCotizacion, quoteId),
@@ -1147,7 +1152,7 @@ module.exports = async function handler(req, res) {
               // Sin esto el botón "Aceptar y pagar" caía al PDF (mismo bug que PE, 21-sep).
               acceptanceUrl,
               tieneReloj: false,
-              ejecutivo: { nombre: "Alejandro Gordillo", email: "agordillo@geovictoria.com" },
+              ejecutivo: ejecutivoParaCorreo(firmante),
             }),
           }).catch((mailErr) =>
             console.error("[create-from-vicky-co] correo de cotización falló:", mailErr?.message || mailErr),

@@ -221,6 +221,10 @@ module.exports = async function handler(req, res) {
       const versionNuevaPais = Math.max(1, Number(quote?.[config.quoteVersionPdfField] || 1)) + 1;
       const htmlPais = renderHtmlPais(paisQuote, {
         cliente: clientePais,
+        ejecutivo: await resolverEjecutivoCL([
+          toText((await getRecordWithFields("Deals", toText(quote?.[config.quoteDealLookupField]?.id || quote?.Deal_Asociado?.id) || "x", ["Owner"]).catch(() => null))?.Owner?.id),
+          toText(quote?.Owner?.id),
+        ]),
         items: subformAItemsPais(paisQuote, quote, config),
         acceptanceUrl: toText(quote?.[config.quoteAcceptanceUrlField]),
         cotizacionId: numeroParaPdf(quote && quote.Numero_Cotizacion, quoteId),

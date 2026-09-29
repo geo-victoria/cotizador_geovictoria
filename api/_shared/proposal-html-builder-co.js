@@ -54,14 +54,9 @@ const ORG_CO = {
 // equivalente a Anderson Díaz en Chile). Parametrizado por env para poder
 // cambiarlo sin tocar código; el teléfono es el de la ficha de Alejandro
 // en Zoho (decisión Lalo 17-jul, provisorio hasta que él confirme).
-const EJEC_CO = {
-  // Rodrigo 27-jul: siempre el ejecutivo HUMANO — el símil de Eddyluz en
-  // Colombia es Alejandro Gordillo (teléfono de su ficha en Zoho).
-  nombre: (process.env.VICKY_EJECUTIVO_NOMBRE_CO || "Alejandro Gordillo").trim(),
-  cargo: (process.env.VICKY_EJECUTIVO_CARGO_CO || "Ejecutivo Comercial").trim(),
-  email: (process.env.VICKY_EJECUTIVO_EMAIL_CO || "agordillo@geovictoria.com").trim(),
-  telefono: (process.env.VICKY_EJECUTIVO_TELEFONO_CO || "+57 314 267 7765").trim(),
-};
+// Firmante (29-sep, una regla para los 4 países): el DUEÑO HUMANO del trato
+// llega por `ejecutivo`; sin él firma Vicky con la línea de WhatsApp del país.
+const { firmaParaPdf } = require("./ejecutivo-firma");
 
 // IVA (decisión 10-jul refinada): SOLO el hardware (reloj arriendo/venta,
 // afectoIva=true) lleva IVA 19%; el resto son precios finales. Retenciones y
@@ -158,6 +153,7 @@ function descripcionItemCO(item) {
 // ───────────────────────────────────────────────────────────────────────────
 function buildProposalHtmlCO({
   cliente,
+  ejecutivo,
   items,
   acceptanceUrl,
   cotizacionId,
@@ -169,6 +165,7 @@ function buildProposalHtmlCO({
   descuentos,
   mesesDescuento,
 }) {
+  const EJEC_CO = firmaParaPdf(ejecutivo, "co");
   cliente = cliente || {};
   const versionNum = Number(version) > 1 ? Number(version) : 1;
   const pctPlan = Math.max(0, Math.min(100, Number(descuentos?.recurrentePct || 0)));

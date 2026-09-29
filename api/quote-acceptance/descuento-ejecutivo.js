@@ -330,6 +330,7 @@ async function handlerBase(req, res) {
 
     const html = conPerfil ? renderHtmlPais(paisQuote, {
       cliente,
+      ejecutivo: await require("../_shared/ejecutivo-firma").firmanteDeCotizacion(quote, config),
       items,
       acceptanceUrl,
       cotizacionId: numeroParaPdf(quote && quote.Numero_Cotizacion, quoteId),

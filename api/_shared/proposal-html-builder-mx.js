@@ -70,12 +70,9 @@ const TRANSFERENCIA_MX = {
 // cotizaciones de Vicky MX (espejo de Alejandro Gordillo en CO). Parametrizado
 // por env; el TELÉFONO está pendiente de confirmación — si la env no está
 // definida se OMITE del PDF (no se inventa).
-const EJEC_MX = {
-  nombre: (process.env.VICKY_EJECUTIVO_NOMBRE_MX || "Yahel Segura").trim(),
-  cargo: (process.env.VICKY_EJECUTIVO_CARGO_MX || "Ejecutivo Comercial").trim(),
-  email: (process.env.VICKY_EJECUTIVO_EMAIL_MX || "ysegura@geovictoria.com").trim(),
-  telefono: (process.env.VICKY_EJECUTIVO_TELEFONO_MX || "+52 55 3763 6604").trim(),
-};
+// Firmante (29-sep, una regla para los 4 países): el DUEÑO HUMANO del trato
+// llega por `ejecutivo`; sin él firma Vicky con la línea de WhatsApp del país.
+const { firmaParaPdf } = require("./ejecutivo-firma");
 
 // ───────────────────────────────────────────────────────────────────────────
 // Helpers de formato (locales al archivo, como en la variante CO: el formato
@@ -159,6 +156,7 @@ function descripcionItemMX(item) {
 // ───────────────────────────────────────────────────────────────────────────
 function buildProposalHtmlMX({
   cliente,
+  ejecutivo,
   items,
   acceptanceUrl,
   cotizacionId,
@@ -169,6 +167,7 @@ function buildProposalHtmlMX({
   descuentos,
   mesesDescuento,
 }) {
+  const EJEC_MX = firmaParaPdf(ejecutivo, "mx");
   cliente = cliente || {};
   const pctPlan = Math.max(0, Math.min(100, Number(descuentos?.recurrentePct || 0)));
   const mesesDcto = Number.isFinite(Number(mesesDescuento)) && Number(mesesDescuento) > 0 ? Number(mesesDescuento) : 6;
@@ -428,4 +427,4 @@ function buildProposalHtmlMX({
 </body></html>`;
 }
 
-module.exports = { buildProposalHtmlMX, ORG_MX, TRANSFERENCIA_MX, EJEC_MX };
+module.exports = { buildProposalHtmlMX, ORG_MX, TRANSFERENCIA_MX };
