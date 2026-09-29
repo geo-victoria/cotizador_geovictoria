@@ -88,3 +88,10 @@ test("precio negociado fuera de lista (AL GRANO NDV-31165, 0,525 fijo para 2): l
   const t7 = tabla(fija(0.5), 7);
   assert.deepEqual(t7, [{ Modalidad: "Rango Fijo", Desde: 1, Hasta: 10, Valor: 0.5, Valor_Usuario_Adicional: 0.055 }]);
 });
+
+test("fecha de la UF del espejo = la de la emisión de la cotización (NelNav 29-sep)", () => {
+  const { fechaUfDeEmision } = require("../api/_shared/ndv-handoff");
+  assert.equal(fechaUfDeEmision({ UF_Fecha: "2026-09-23" }), "23-09-2026");
+  assert.equal(fechaUfDeEmision({ UF_Fecha_Hora_Captura: "2026-09-23T17:21:45-03:00" }), "23-09-2026");
+  assert.equal(fechaUfDeEmision({}), "");
+});

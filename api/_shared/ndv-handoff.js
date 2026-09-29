@@ -557,6 +557,13 @@ function inferCommittedEmployees(quote, deal, userCountOverride) {
 // La Tabla_de_Cobro se arma en ndv-charge-table.js a partir de TODAS las líneas
 // del subform, en la moneda del registro y con los descuentos ya aplicados.
 
+/** "YYYY-MM-DD" (UF_Fecha de la cotización en Zoho) → "DD-MM-YYYY" de Creator.
+ * Vacío si la cotización no trae la fecha (PE/CO/MX no cotizan en UF). */
+function fechaUfDeEmision(quote) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(toText(quote?.UF_Fecha || quote?.UF_Fecha_Hora_Captura || ""));
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+}
+
 function formatCreatorDate(value) {
   const date = value instanceof Date ? value : new Date(value || Date.now());
   if (Number.isNaN(date.getTime())) return "";
@@ -1028,7 +1035,15 @@ async function buildNdvRecord({
       ? { Servicio_No_Recurrente_Configurado: servicios.servicioNoRecurrenteConfigurado }
       : {}),
     Fecha_de_creaci_n: formatCreatorDate(),
-    fecha_uf_usd: formatCreatorDate(),
+    // FECHA DE LA UF = la de la EMISIÓN de la cotización (`UF_Fecha` en Zoho),
+    // no la del día en que nace o se convierte el espejo (29-sep, NelNav
+    // COT1649 → NDV-32370: la cotización decía UF del 23 y la nota del 26).
+    // Creator re-estampa `fecha_uf_usd` con la fecha del día en cada edición
+    // salvo que `dontUpdateUfDate` sea true (así nacen las notas de la UI:
+    // COT-63441 conservó el 28-09 al convertirse el 29). Sin esto, la nota
+    // cobraba con una UF distinta a la que el cliente vio y aceptó.
+    fecha_uf_usd: fechaUfDeEmision(quote) || formatCreatorDate(),
+    dontUpdateUfDate: true,
     Email_de_Facturacion:
       normalizeEmail(acceptanceData?.billingEmail || quote?.Email_Facturacion || quote?.Email_de_Facturacion) ||
       undefined,
@@ -1619,6 +1634,7 @@ async function runNdvHandoffFromDraft({
 }
 
 module.exports = {
+  fechaUfDeEmision,
   NDV_CANONICAL_SCHEMA_VERSION,
   NDV_CANONICAL_REQUIRED_FIELDS,
   NDV_CANONICAL_ITEM_DICTIONARY,
