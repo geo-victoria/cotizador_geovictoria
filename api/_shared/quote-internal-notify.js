@@ -181,7 +181,10 @@ const NOTIFY_RECIPIENTS_CO = (
 
 const NOTIFY_RECIPIENTS_MX = (
   process.env.QUOTE_NOTIFY_RECIPIENTS_MX ||
-  "egomez@geovictoria.com,ysegura@geovictoria.com,rlewit@geovictoria.com"
+  // Lalo 29-sep: Karen De la Garza es la líder de telemarketing en México (el
+  // rol de Victoria Luna en Chile y de María Fernanda Cely en Colombia). El
+  // propietario del trato se agrega dinámico, así que Yahel ya no va fija.
+  "egomez@geovictoria.com,rlewit@geovictoria.com,kdelagarza@geovictoria.com"
 )
   .split(",")
   .map((s) => s.trim())
