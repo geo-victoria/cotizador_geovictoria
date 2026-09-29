@@ -448,6 +448,36 @@ module.exports = async function handler(req, res) {
   // Alternativa al borrado, que nuestro token no puede hacer (scope DELETE
   // ausente, code 2945). Anular es solo `STATUS = ANULADA` —así se ve
   // NDV-30748— y a diferencia del borrado se puede revertir.
+  // ?fechaUf=<id Creator>&fecha=DD-MM-YYYY&confirmo=1 — fija la fecha de la UF
+  // de un espejo/nota (la de la EMISIÓN de la cotización) y la blinda con
+  // dontUpdateUfDate para que la conversión no la re-estampe (NelNav 29-sep).
+  if (req.query?.fechaUf) {
+    const id = String(req.query.fechaUf).trim();
+    const fecha = String(req.query.fecha || "").trim();
+    if (!/^\d{2}-\d{2}-\d{4}$/.test(fecha)) return sendJson(res, 400, { ok: false, error: "fecha debe ser DD-MM-YYYY", id });
+    const antes = await leerNdv(id).catch(() => ({}));
+    if (String(req.query?.confirmo || "") !== "1") {
+      return sendJson(res, 200, { ok: true, dryRun: true, id, fechaAntes: texto(antes.fecha_uf_usd), fechaNueva: fecha });
+    }
+    const r = await creatorApiFetch(`${reporte}/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { fecha_uf_usd: fecha, dontUpdateUfDate: true, UpdateCheckbox: true } }),
+    });
+    const j = await r.json().catch(() => ({}));
+    const despues = await leerNdv(id).catch(() => ({}));
+    return sendJson(res, 200, {
+      ok: r.ok && texto(despues.fecha_uf_usd) === fecha,
+      status: r.status,
+      id,
+      idNdv: texto(antes.ID_NDV),
+      fechaAntes: texto(antes.fecha_uf_usd),
+      fechaDespues: texto(despues.fecha_uf_usd),
+      dontUpdateUfDate: texto(despues.dontUpdateUfDate),
+      respuesta: JSON.stringify(j).slice(0, 300),
+    });
+  }
+
   if (req.query?.anular) {
     const id = String(req.query.anular).trim();
     if (String(req.query?.confirmo || "") !== "1") {

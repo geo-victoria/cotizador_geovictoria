@@ -1579,6 +1579,12 @@ async function runNdvHandoffFromDraft({
     Cantidad_de_Usuarios: ndvRecord.Cantidad_de_Usuarios,
     Plantilla_Tabla_de_Cobro: ndvRecord.Plantilla_Tabla_de_Cobro,
     Tabla_de_Cobro: ndvRecord.Tabla_de_Cobro,
+    // La fecha de la UF se refuerza por PATCH porque el "on add" de Creator la
+    // re-estampa con la del día al crear (29-sep: el espejo nació con 29-09
+    // aunque el POST llevaba 23-09). Con `dontUpdateUfDate` true la edición la
+    // respeta (misma secuencia que creator-meta usa para las COT atascadas).
+    fecha_uf_usd: ndvRecord.fecha_uf_usd,
+    dontUpdateUfDate: true,
   };
   const draftUpdatePath = buildCreatorUpdatePath(creatorConfig, ndvCreatorId);
   const draftUpdateResp = await creatorApiFetch(draftUpdatePath, {
