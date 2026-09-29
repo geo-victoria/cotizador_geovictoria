@@ -1707,15 +1707,24 @@
         return String(value || "").trim().toLowerCase();
       }
 
-      async function prefillDesdeSii(companyRut) {
+      // Padrón público del país (29-sep): SII en Chile, SUNAT en Perú (dirección
+      // y distrito), RUES en Colombia (actividad CIIU). México no tiene padrón
+      // consultable. Rellena SOLO lo vacío; lo declarado en el chat siempre gana.
+      async function prefillDesdePadron(companyRut, pais) {
         try {
+          var p = String(pais || "cl").toLowerCase();
+          if (p === "mx") return;
           var rut = String(companyRut || "").trim().replace(/\./g, "");
-          if (!/^\d{6,9}-[\dkK]$/.test(rut)) return;
+          var formaOk =
+            p === "pe" ? /^\d{11}$/.test(rut.replace(/\D/g, ""))
+            : p === "co" ? /^\d{9,10}(-?\d)?$/.test(rut.replace(/\s/g, ""))
+            : /^\d{6,9}-[\dkK]$/.test(rut);
+          if (!formaOk) return;
           var vacio = function (el) { return el && !String(el.value || "").trim(); };
           if (!vacio(fields.companyGiro) && !vacio(fields.companyComuna) && !vacio(fields.companyAddress)) return;
           var res = await fetch(
-            "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app/api/vic-sii-ficha?rut=" +
-              encodeURIComponent(rut),
+            "https://geovictoria-whatsapp-agent-git-vicky-v3-geo-victoria.vercel.app/api/vic-sii-ficha?pais=" +
+              encodeURIComponent(p) + "&rut=" + encodeURIComponent(rut),
             { method: "GET" }
           );
           if (!res.ok) return;
@@ -1725,7 +1734,7 @@
           if (vacio(fields.companyComuna) && ficha.comuna) fields.companyComuna.value = ficha.comuna;
           if (vacio(fields.companyAddress) && ficha.direccion) fields.companyAddress.value = ficha.direccion;
         } catch (e) {
-          /* best-effort: sin SII el formulario queda como siempre */
+          /* best-effort: sin padrón el formulario queda como siempre */
         }
       }
 
@@ -2560,13 +2569,15 @@
         var rutInput = document.getElementById("companyRut");
         if (rutInput) rutInput.placeholder = "Ej: 20605842055 (o DNI de 8 dígitos)";
         var comunaLabel = document.querySelector('label[for="companyComuna"]');
-        if (comunaLabel) comunaLabel.textContent = "Distrito / Provincia (opcional)";
+        if (comunaLabel) comunaLabel.textContent = "Distrito / Provincia (opcional — se prellena de SUNAT)";
         var comunaInput = document.getElementById("companyComuna");
         if (comunaInput) comunaInput.placeholder = "Escribe tu distrito (ej. La Molina)";
         var giroLabel = document.querySelector('label[for="companyGiro"]');
         if (giroLabel) giroLabel.textContent = "Actividad económica *";
         var giroInput = document.getElementById("companyGiro");
         if (giroInput) giroInput.placeholder = "Escribe tu actividad económica";
+        var dirLabelPE = document.querySelector('label[for="companyAddress"]');
+        if (dirLabelPE) dirLabelPE.textContent = "Dirección (opcional — se prellena de SUNAT)";
         // "Capacitación inicial" en servicios sin costo: en Perú NO existe.
         document.querySelectorAll("#sectionIncluded .included-table tbody tr").forEach(function (tr) {
           if (/capacitaci/i.test(tr.textContent || "")) tr.remove();
@@ -2625,6 +2636,8 @@
         if (giroLabel) giroLabel.textContent = "Actividad económica *";
         var giroInput = document.getElementById("companyGiro");
         if (giroInput) giroInput.placeholder = "Escribe tu actividad económica";
+        var dirLabelMX = document.querySelector('label[for="companyAddress"]');
+        if (dirLabelMX) dirLabelMX.textContent = "Dirección (opcional)";
         // "Servicios Adicionales sin Costo": la fila "Capacitación inicial"
         // contradice al cobro MX (la capacitación online es un ítem COBRADO de
         // $600 — nunca es de regalo). Se elimina solo esa fila.
@@ -2694,6 +2707,8 @@
         if (giroLabel) giroLabel.textContent = "Actividad económica *";
         var giroInput = document.getElementById("companyGiro");
         if (giroInput) giroInput.placeholder = "Escriba su actividad económica";
+        var dirLabelCO = document.querySelector('label[for="companyAddress"]');
+        if (dirLabelCO) dirLabelCO.textContent = "Dirección (opcional)";
       }
 
       // Formato para UF (regla unificada acordada con Rodrigo):
@@ -3033,7 +3048,7 @@
           // SIEMPRE gana, y si el cliente ya tipeó algo, tampoco se pisa).
           // Best-effort: si el servicio no responde, el formulario queda como
           // siempre. La conversación de Vicky no participa en nada de esto.
-          if (!esCO && !esMX && !esPE) prefillDesdeSii(q.companyRut || "");
+          prefillDesdePadron(q.companyRut || "", data.pais);
           verificationState.maskedEmailHint = maskEmailForHint(fields.contactEmail.value);
           updateVerifyTargetHint(verificationState.maskedEmailHint);
           flowState.acceptedLocked = q.isAcceptedLocked === true;
