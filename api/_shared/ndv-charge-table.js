@@ -507,7 +507,12 @@ function buildChargeTables({
       // `codigoCreator` es el prefijo del nombre del artículo ("006.10"), que es
       // lo único que Books reconoce al buscarlo. Nuestro id de catálogo
       // ("senseface_2a") no existe allá.
-      const codigoDe = (nombre) => String(nombre || "").split(" - ")[0].trim();
+      // El código es el prefijo numérico del nombre; "290.2- [COL] …" (Books lo
+      // escribe con el guion pegado) no tiene " - " y el split devolvía el nombre entero.
+      const codigoDe = (nombre) => {
+        const m = String(nombre || "").match(/^\s*([\d.]+)/);
+        return m ? m[1] : String(nombre || "").split(" - ")[0].trim();
+      };
       if (articulo) {
         const usd = preciosUsdDe(articulo);
         lineasEquipos.push({
@@ -520,7 +525,7 @@ function buildChargeTables({
           codigoCreator: codigoDe(articulo.item),
         });
       } else {
-        const item = articuloDeServicio(linea.codigo, linea.zona);
+        const item = articuloDeServicio(linea.codigo, linea.zona, paisNota);
         if (item) lineasServicios.push({ ...linea, item, codigoCreator: codigoDe(item) });
         else if (nombre) lineasSinArticulo.push(nombre);
       }

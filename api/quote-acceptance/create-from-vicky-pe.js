@@ -397,6 +397,11 @@ function buildSubformItemsPE(items) {
     if (Number(item.descuentoPct) > 0) {
       row.Descuento_Pct = Math.min(100, Number(item.descuentoPct));
     }
+    // Zona tarifaria del punto (base | intermedia | resto, 29-sep): con ella
+    // la nota de venta elige el artículo de servicio del país (instalación
+    // Lima vs provincia, Bogotá vs regiones, envío CDMX vs paquetería).
+    const zonaTarifa = String(item.zonaTarifa || "").trim().toLowerCase();
+    if (/^(base|intermedia|resto)$/.test(zonaTarifa)) row.Zona_Tarifa = zonaTarifa;
     // Ítem OCULTO (anualidad, Lalo 21-sep "igualemos a Chile"): sigue en el
     // subform (viene en 0) para conservar la configuración, pero PDF y
     // aceptación no lo pintan.

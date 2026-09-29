@@ -146,6 +146,29 @@ const SERVICIO_A_ARTICULO = {
 };
 
 /**
+ * Servicios de PE/CO/MX (29-sep): la zona viene del motor único como
+ * base | intermedia | resto (Zona_Tarifa del subform) y cada país tiene sus
+ * artículos de Books ([PER] 390-397 · [COL] 290.x/294.x · [MEX] 190-192, leídos
+ * de Books el 29-sep). `base` = Lima-Callao / Bogotá / CDMX; el resto va al
+ * artículo de provincia/regiones. México tiene UNA instalación para todo el
+ * país y el envío se parte en terrestre (CDMX) y paquetería (resto).
+ */
+const SERVICIO_A_ARTICULO_PAIS = {
+  pe: {
+    instalacion_reloj: { base: "390 - [PER] Instalación Lima-Callao", fuera: "391 - [PER] Instalación Provicia" },
+    envio_reloj: { base: "396 - [PER] Envío Lima-Callao", fuera: "397 - [PER] Envío Provincia" },
+  },
+  co: {
+    instalacion_reloj: { base: "290.1 - [COL] Instalación Asistencia Bogotá", fuera: "290.2- [COL] Instalación Asistencia Regiones" },
+    envio_reloj: { base: "294.1 - [COL] Envío Bogotá", fuera: "294.2 - [COL] Envío Regiones" },
+  },
+  mx: {
+    instalacion_reloj: { base: "192 - [MEX] Instalación de biométrico", fuera: "192 - [MEX] Instalación de biométrico" },
+    envio_reloj: { base: "191 - [MEX] Envío vía terrestre", fuera: "190 - [MEX] Envío por paquetería" },
+  },
+};
+
+/**
  * Alias de código → id de nuestro catálogo.
  *
  * El canal EJECUTIVO no manda ids: la calculadora comercial arma su snapshot
@@ -224,9 +247,21 @@ function paisDeMonedaNota(moneda) {
  * @param {string} [zona]      "RM" | "regiones", solo para instalación
  * @returns {string} valor de picklist, o "" si no hay correspondencia
  */
-function articuloDeServicio(codigoItem, zona) {
+function articuloDeServicio(codigoItem, zona, pais) {
   const crudo = String(codigoItem || "").trim().toLowerCase();
   const codigo = normalizarCodigo(crudo);
+  const p = String(pais || "").trim().toLowerCase();
+  if (p && p !== "cl") {
+    const porPais = SERVICIO_A_ARTICULO_PAIS[p]?.[codigo];
+    if (!porPais) return "";
+    const z = String(zona || "").trim().toLowerCase();
+    if (z === "base") return porPais.base;
+    if (z === "intermedia" || z === "resto") return porPais.fuera;
+    // Sin zona (cotizaciones anteriores al 29-sep): la tarifa mayor, igual que
+    // en Chile — errar cobrando de más y que el ejecutivo lo baje.
+    console.warn(`[creator-articulos] Servicio ${codigo} sin Zona_Tarifa (pais=${p}); se usa el artículo de provincia/regiones.`);
+    return porPais.fuera;
+  }
   const entrada = SERVICIO_A_ARTICULO[codigo];
   if (!entrada) return "";
   if (typeof entrada === "string") return entrada;
@@ -275,6 +310,19 @@ const ITEM_ID_BOOKS = {
   "024": "1758661000006049431", // Lector de Cédula/barras Vuquest 3320g (parte del kit QR)
   "026.1": "1758661000011723057", // Tarjeta ID (delgada)
   "907": "1758661000044939114", // Envío/Despacho Asistencia
+  // Servicios de Perú, Colombia y México (Books, 29-sep)
+  "390": "1758661000054636009", // [PER] Instalación Lima-Callao
+  "391": "1758661000054636027", // [PER] Instalación Provicia (sic, así se llama en Books)
+  "396": "1758661000054636077", // [PER] Envío Lima-Callao
+  "397": "1758661000054636087", // [PER] Envío Provincia
+  "290.1": "1758661000046214676", // [COL] Instalación Asistencia Bogotá
+  "290.2-": "1758661000046214685", // [COL] Instalación Asistencia Regiones (el nombre en Books trae el guion pegado)
+  "290.2": "1758661000046214685",
+  "294.1": "1758661000046214748", // [COL] Envío Bogotá
+  "294.2": "1758661000046214757", // [COL] Envío Regiones
+  "190": "1758661000048975641", // [MEX] Envío por paquetería
+  "191": "1758661000048975650", // [MEX] Envío vía terrestre
+  "192": "1758661000048975672", // [MEX] Instalación de biométrico
   "901": "1758661000038441163", // Instalación RM
   "902": "1758661000038441184", // Instalación Regiones
   "903": "1758661000038441207", // Instalación Regiones extremas
@@ -302,6 +350,18 @@ const SKU_BOOKS = {
   "026.1": "CHL-ACC-IDCTN-ZKT", // Tarjeta ID (delgada)
   "907": "CHL-SSTT-ENV-ASCOM", // Envío/Despacho Asistencia
   "901": "CHL-SSTT-INST-ASCOM-RMET", // Instalación RM
+  "390": "PER-SSTT-INST-ASCOM-LIM",
+  "391": "PER-SSTT-INST-ASCOM-PRO",
+  "396": "PER-SSTT-ENV-ASCOM-LIM",
+  "397": "PER-SSTT-ENV-ASCOM-PRO",
+  "290.1": "COL-SS-INST-ASCOM-BGT",
+  "290.2-": "COL-SS-INST-ASCOM-REG",
+  "290.2": "COL-SS-INST-ASCOM-REG",
+  "294.1": "COL-SS-ENV-ASCOM-BGT",
+  "294.2": "COL-SS-ENV-ASCOM-REG",
+  "190": "MEX-SSTT-ENV-ASCOM-EST",
+  "191": "MEX-SSTT-ENV-ASCOM-CDMX",
+  "192": "MEX-SSTT-INST-ASCOM-RPMX",
 };
 
 /** @returns {string} SKU de Books del artículo, o "" si no está mapeado */
@@ -362,6 +422,7 @@ function valorListaDeArticulo(articulo) {
 module.exports = {
   HARDWARE_A_ARTICULO,
   SERVICIO_A_ARTICULO,
+  SERVICIO_A_ARTICULO_PAIS,
   ITEM_ID_BOOKS,
   BODEGA_CHILE,
   BODEGA_PERU,

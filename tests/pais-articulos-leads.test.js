@@ -48,3 +48,33 @@ test("un celular chileno no adopta el lead peruano con los mismos 9 dígitos", (
   assert.equal(territorioDeFono("57300000000"), "colombia");
   assert.equal(territorioDeFono("52155000000"), "mexico");
 });
+
+test("la instalación y el envío resuelven al artículo de servicio del país según la zona del punto (29-sep)", () => {
+  const { articuloDeServicio } = require("../api/_shared/creator-articulos");
+  assert.equal(articuloDeServicio("instalacion_reloj", "base", "pe"), "390 - [PER] Instalación Lima-Callao");
+  assert.equal(articuloDeServicio("instalacion_reloj", "resto", "pe"), "391 - [PER] Instalación Provicia");
+  assert.equal(articuloDeServicio("envio_reloj", "intermedia", "pe"), "397 - [PER] Envío Provincia");
+  assert.equal(articuloDeServicio("instalacion_reloj", "base", "co"), "290.1 - [COL] Instalación Asistencia Bogotá");
+  assert.equal(articuloDeServicio("envio_reloj", "resto", "co"), "294.2 - [COL] Envío Regiones");
+  assert.equal(articuloDeServicio("instalacion_reloj", "resto", "mx"), "192 - [MEX] Instalación de biométrico");
+  assert.equal(articuloDeServicio("envio_reloj", "base", "mx"), "191 - [MEX] Envío vía terrestre");
+  // Sin zona (cotizaciones anteriores): la tarifa mayor del país, nunca el artículo chileno.
+  assert.equal(articuloDeServicio("instalacion_reloj", "", "pe"), "391 - [PER] Instalación Provicia");
+  // Chile sigue igual.
+  assert.equal(articuloDeServicio("instalacion_reloj", "RM", "cl"), "901 - [CHI] Instalación RM");
+  assert.equal(articuloDeServicio("instalacion_reloj", "RM"), "901 - [CHI] Instalación RM");
+  // Todos los artículos nuevos tienen id y SKU de Books.
+  for (const a of ["390 - [PER] Instalación Lima-Callao", "391 - [PER] Instalación Provicia", "396 - x", "397 - x", "290.1 - x", "290.2- [COL] Instalación Asistencia Regiones", "294.1 - x", "294.2 - x", "190 - x", "191 - x", "192 - x"]) {
+    assert.ok(idBooksDeArticulo(a), `sin id Books: ${a}`);
+    assert.ok(skuDeArticulo(a), `sin SKU: ${a}`);
+  }
+  assert.equal(bodegaDeArticulo("390 - [PER] Instalación Lima-Callao").nombre.includes("Per"), true);
+});
+
+test("getZonaTarifa entiende las zonas del motor único además de RM/regiones", () => {
+  const { getZonaTarifa } = require("../api/_shared/quote-pricing");
+  assert.equal(getZonaTarifa({ zonaTarifa: "RM" }), "RM");
+  assert.equal(getZonaTarifa({ zonaTarifa: "base" }), "base");
+  assert.equal(getZonaTarifa({ zonaTarifa: "Resto" }), "resto");
+  assert.equal(getZonaTarifa({ zonaTarifa: "" }), null);
+});

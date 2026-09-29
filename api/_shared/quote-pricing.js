@@ -52,6 +52,9 @@ function getZonaTarifa(row) {
   const raw = String(row?.zonaTarifa || "").toLowerCase().trim();
   if (raw === "rm") return "RM";
   if (raw === "regiones" || raw === "region") return "regiones";
+  // Zonas del motor único (PE/CO/MX, 29-sep): se devuelven tal cual para que
+  // creator-articulos elija el artículo del país.
+  if (raw === "base" || raw === "intermedia" || raw === "resto") return raw;
   return null;
 }
 
