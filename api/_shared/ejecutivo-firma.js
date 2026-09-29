@@ -120,15 +120,29 @@ async function resolverFirmante(ownerIds, opts = {}) {
   }
   const roster = opts.roster !== undefined ? opts.roster : await rosterRemoto();
   const personas = personasDe(roster);
+  const buscarZoho = opts.buscarZoho || usuarioZoho;
   for (const id of ids) {
     const p = personas.find((x) => toText(x.zohoId) === id);
     if (p) {
       const f = fichaDesdePersona(p);
+      // La ficha operativa no siempre trae teléfono: se completa desde la
+      // ficha de usuario de Zoho (best-effort) para que el PDF no salga sin él.
+      if (!f.telefono) {
+        try {
+          const u = await buscarZoho(id);
+          const tel = toText(u?.phone || u?.mobile);
+          if (tel) {
+            f.telefono = tel;
+            f.whatsapp = tel.replace(/\D/g, "");
+          }
+        } catch (_e) {
+          /* best-effort */
+        }
+      }
       FIRMAS_POR_ID.set(id, f);
       return f;
     }
   }
-  const buscarZoho = opts.buscarZoho || usuarioZoho;
   for (const id of ids) {
     try {
       const u = await buscarZoho(id);

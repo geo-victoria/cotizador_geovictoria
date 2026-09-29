@@ -109,6 +109,28 @@ async function buscarLeadVivoPorFono(telefono) {
   };
 }
 
+/**
+ * ¿La cuenta que nazca del convert debe llamarse como la razón social de la
+ * emisión? Sí cuando hay razón social real y difiere de Lead.Company (que trae
+ * lo que el cliente tipeó, o un placeholder). Comparación sin tildes, puntos,
+ * comas ni forma jurídica pegada, para no renombrar "X SPA" por "X S.P.A.".
+ */
+function debeRenombrarCompany(empresa, companyLead) {
+  const norm = (v) =>
+    toText(v)
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[.,'"\-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const e = norm(empresa);
+  if (!e || /^por identificar/.test(e) || e === "-") return false;
+  const c = norm(companyLead);
+  if (!c) return true;
+  return e !== c;
+}
+
 function partirNombre(nombreCompleto) {
   const clean = toText(nombreCompleto).replace(/\s+/g, " ").trim();
   if (!clean) return { firstName: "Prospecto", lastName: "WhatsApp" };
@@ -286,6 +308,29 @@ async function nacerDealDesdeLead({ telefono, contacto, empresa, email, territor
   // 10-sep, CO 23-sep): recibieron el lead para calificarlo, no para
   // quedarse con la venta; el deal nace con el interino y lo sortea la
   // tómbola al traspasar.
+  // NOMBRE DE LA CUENTA (29-sep, casos Salumería Tonino 09-sep y Chester Beer
+  // 22-sep): al convertir, Zoho nombra la cuenta con Lead.Company — lo que el
+  // cliente escribió en el formulario o el chat ("M", "Chester Beer Brewing
+  // Company") — mientras cotización, trato e implementación usan la razón
+  // social del padrón. Si la emisión trae razón social y la cuenta va a NACER
+  // en este convert, el lead se renombra antes; una cuenta ya existente no se
+  // toca, y sin razón social el lead queda como está.
+  if (lead && !existingIds?.accountId && debeRenombrarCompany(empresa, lead.company)) {
+    try {
+      const put = await zohoApiFetch(`/crm/v3/Leads`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: [{ id: leadId, Company: toText(empresa), ...(toText(documento) ? { RUT_Empresa: toText(documento) } : {}) }],
+          trigger: ["blueprint"],
+          skip_feature_execution: [{ name: "assignment_rules" }],
+        }),
+      });
+      console.warn(`[${tag}] lead ${leadId}: Company "${lead.company}" → "${toText(empresa)}" antes de convertir (${put.status})`);
+    } catch (e) {
+      console.warn(`[${tag}] lead ${leadId}: no se pudo renombrar Company (${toText(e?.message || e).slice(0, 120)})`);
+    }
+  }
   const heredable = lead?.humano && lead.ownerId && !(noHeredables && noHeredables.has(lead.ownerId));
   const ownerHeredado = heredable ? lead.ownerId : "";
   const data = {
@@ -316,4 +361,4 @@ async function nacerDealDesdeLead({ telefono, contacto, empresa, email, territor
   }
 }
 
-module.exports = { buscarLeadVivoPorFono, crearLeadParaConvertir, convertirLeadEnDeal, recuperarIdsConvertidos, nacerDealDesdeLead, leadsDelPaisDeFono, territorioDeFono, OWNER_VICKY_ID };
+module.exports = { debeRenombrarCompany, buscarLeadVivoPorFono, crearLeadParaConvertir, convertirLeadEnDeal, recuperarIdsConvertidos, nacerDealDesdeLead, leadsDelPaisDeFono, territorioDeFono, OWNER_VICKY_ID };

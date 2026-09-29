@@ -78,3 +78,16 @@ test("getZonaTarifa entiende las zonas del motor único además de RM/regiones",
   assert.equal(getZonaTarifa({ zonaTarifa: "Resto" }), "resto");
   assert.equal(getZonaTarifa({ zonaTarifa: "" }), null);
 });
+
+test("la cuenta que nace del convert se llama como la razón social de la emisión, no como lo que tipeó el cliente", () => {
+  const { debeRenombrarCompany } = require("../api/_shared/lead-first");
+  assert.equal(debeRenombrarCompany("Cerveceria Derek Way EIRL", "Chester Beer Brewing Company"), true);
+  assert.equal(debeRenombrarCompany("SALUMERIA TONINO SPA", "M"), true);
+  assert.equal(debeRenombrarCompany("SALUMERIA TONINO SPA", ""), true);
+  // Misma empresa con otra grafía: no se toca.
+  assert.equal(debeRenombrarCompany("Salumería Tonino S.P.A.", "SALUMERIA TONINO SPA"), false);
+  // Sin razón social real no se renombra nada.
+  assert.equal(debeRenombrarCompany("", "Chester Beer"), false);
+  assert.equal(debeRenombrarCompany("Por identificar (WhatsApp +56911111111)", "Chester Beer"), false);
+  assert.equal(debeRenombrarCompany("-", "Chester Beer"), false);
+});
