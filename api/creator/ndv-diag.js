@@ -478,6 +478,48 @@ module.exports = async function handler(req, res) {
     });
   }
 
+  // ?editar=<id Creator>&reporte=<SERVICES_ALL_DATA|ALL_DATA>&campos=<json>&confirmo=1
+  // Edición PUNTUAL con lista blanca (30-sep, anualidad de Soleio COT1680): el
+  // puente arma siempre el plan MENSUAL, y una anualidad se registra en
+  // Creator como la NDV-26462 humana — periodo adelantado anual en el bloque
+  // de servicio. Sin confirmo=1 solo muestra antes/después propuesto.
+  if (req.query?.editar) {
+    const id = String(req.query.editar).trim();
+    const PERMITIDOS = new Set([
+      "Periodicidad_de_Servicio", "Periodo_Adelantado", "MESES_PERIODO_ADELANTADO", "tarifa_anualidad",
+      "Valor_Usuarios_Adicionales", "Cantidad_de_Usuarios", "Cantidad_de_Usuarios_PDF", "Modalidad_de_Tarifa",
+      "Descuento_Ejecutivo", "Cantidad_de_Meses_de_descuento", "Monto", "Total_servicio_adelantado",
+      "Total_servicio_recurrente", "ServiceConfigurationJson", "Hito_de_Facturaci_n", "Tabla_de_Cobro",
+      "MESES_PERIODO", "TOTAL_SERVICIOS_ADELANTADOS", "TOTAL_SERVICIOS_MENSUALES",
+    ]);
+    let campos = {};
+    try { campos = JSON.parse(String(req.query.campos || "{}")); } catch (_) { campos = null; }
+    if (!campos || typeof campos !== "object" || !Object.keys(campos).length) {
+      return sendJson(res, 400, { ok: false, error: "campos debe ser un JSON con al menos un campo" });
+    }
+    const fuera = Object.keys(campos).filter((k) => !PERMITIDOS.has(k));
+    if (fuera.length) return sendJson(res, 400, { ok: false, error: "campos fuera de la lista blanca", fuera });
+    const repEditar = `${base}/report/${encodeURIComponent(String(req.query?.reporte || config.reportLinkName).trim())}`;
+    const leer = async () => {
+      const r = await creatorApiFetch(`${repEditar}/${encodeURIComponent(id)}`, { method: "GET" }).catch(() => null);
+      const j = r ? await r.json().catch(() => ({})) : {};
+      return j?.data || {};
+    };
+    const antes = await leer();
+    const tomar = (o) => Object.fromEntries(Object.keys(campos).map((k) => [k, o?.[k] ?? null]));
+    if (String(req.query?.confirmo || "") !== "1") {
+      return sendJson(res, 200, { ok: true, dryRun: true, id, reporte: repEditar, antes: tomar(antes), propuesto: campos });
+    }
+    const r = await creatorApiFetch(`${repEditar}/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { ...campos, UpdateCheckbox: true } }),
+    });
+    const j = await r.json().catch(() => ({}));
+    const despues = await leer();
+    return sendJson(res, 200, { ok: r.ok, status: r.status, id, reporte: repEditar, antes: tomar(antes), despues: tomar(despues), respuesta: JSON.stringify(j).slice(0, 600) });
+  }
+
   if (req.query?.anular) {
     const id = String(req.query.anular).trim();
     if (String(req.query?.confirmo || "") !== "1") {
