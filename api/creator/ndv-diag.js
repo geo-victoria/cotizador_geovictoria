@@ -138,7 +138,7 @@ module.exports = async function handler(req, res) {
   // ── Campos de un formulario ──────────────────────────────────────────────
   // Para verificar el NOMBRE DE ENLACE real de un campo recién creado: en
   // Deluge se referencia por ese nombre, no por la etiqueta visible.
-  if (req.query?.campos) {
+  if (req.query?.campos && !req.query?.editar) {
     const form = String(req.query.campos).trim();
     const r = await creatorApiFetch(`/creator/v2.1/meta/${owner}/${app}/form/${encodeURIComponent(form)}/fields`, {
       method: "GET",
@@ -478,7 +478,7 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  // ?editar=<id Creator>&reporte=<SERVICES_ALL_DATA|ALL_DATA>&campos=<json>&confirmo=1
+  // ?editar=<id Creator>&reporte=<SERVICES_ALL_DATA|ALL_DATA>&set=<json>&confirmo=1
   // Edición PUNTUAL con lista blanca (30-sep, anualidad de Soleio COT1680): el
   // puente arma siempre el plan MENSUAL, y una anualidad se registra en
   // Creator como la NDV-26462 humana — periodo adelantado anual en el bloque
@@ -493,9 +493,9 @@ module.exports = async function handler(req, res) {
       "MESES_PERIODO", "TOTAL_SERVICIOS_ADELANTADOS", "TOTAL_SERVICIOS_MENSUALES",
     ]);
     let campos = {};
-    try { campos = JSON.parse(String(req.query.campos || "{}")); } catch (_) { campos = null; }
+    try { campos = JSON.parse(String(req.query.set || "{}")); } catch (_) { campos = null; }
     if (!campos || typeof campos !== "object" || !Object.keys(campos).length) {
-      return sendJson(res, 400, { ok: false, error: "campos debe ser un JSON con al menos un campo" });
+      return sendJson(res, 400, { ok: false, error: "set debe ser un JSON con al menos un campo" });
     }
     const fuera = Object.keys(campos).filter((k) => !PERMITIDOS.has(k));
     if (fuera.length) return sendJson(res, 400, { ok: false, error: "campos fuera de la lista blanca", fuera });
