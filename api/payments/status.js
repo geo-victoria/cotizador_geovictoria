@@ -122,7 +122,14 @@ async function buildTransferInfo(quote, pais = "cl", quoteModule = "") {
   let whatsappPhone = normalizeWhatsappPhone(fichaPago(pais).whatsappVicky());
   // Nombre del ejecutivo para el texto ("tu ejecutivo X recibe el aviso").
   const ejecutivoNombre = dueno ? toText(dueno.name).split(" ")[0] : "";
-  if (RECEIPT_TO_OWNER && dueno && dueno.id) {
+  // WHATSAPP DEL COMPROBANTE POR ORIGEN (Lalo 30-sep, caso Rojas Cohen COT1560):
+  // la venta que el ejecutivo cotizó DESDE CERO manda el comprobante al
+  // WhatsApp del EJECUTIVO (el onboarding es suyo y el agente ya no le abre el
+  // alta por chat a esa venta); lo que inició Vicky sigue yendo a Vicky, que lo
+  // registra solo. Sin teléfono en la ficha del dueño, Vicky (el botón jamás
+  // desaparece). TRANSFER_RECEIPT_TO_OWNER=1 sigue forzando al dueño siempre.
+  const alDueno = RECEIPT_TO_OWNER || Boolean(correoEjecutivo);
+  if (alDueno && dueno && dueno.id) {
     const fono = normalizeWhatsappPhone(await telefonoUsuario(dueno.id).catch(() => ""));
     if (fono) {
       executiveName = ejecutivoNombre || "tu ejecutivo";
