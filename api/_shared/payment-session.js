@@ -74,8 +74,14 @@ async function resolvePaymentSession(req, token) {
       quote?.[acceptanceConfig.quoteDealLookupField]
   );
   const tokenDealId = toText(payload?.dealId);
+  // El token va FIRMADO con el quoteId: esa es la identidad. El trato es un
+  // dato de conveniencia y puede cambiar DESPUÉS de emitido el link (30-sep,
+  // Dzine COT1503: la cotización se reapuntó al trato correcto el 29-sep y la
+  // clienta no pudo pagar — 42 × 500 "no corresponde a esta cotizacion"
+  // mientras el ejecutivo la esperaba). Se registra y sigue; manda el trato
+  // que la cotización tiene HOY.
   if (tokenDealId && quoteDealId && tokenDealId !== quoteDealId) {
-    throw new Error("El token de pago no corresponde a esta cotizacion.");
+    console.warn(`[payment-session] token con trato ${tokenDealId} y cotizacion ${quoteId} hoy en ${quoteDealId}: se usa el de la cotizacion`);
   }
 
   // País de la cotización: define credenciales de MP (app del país, su
