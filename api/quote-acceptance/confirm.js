@@ -222,6 +222,14 @@ async function triggerNdvIfEnabled(config, payload) {
     return { status: "skipped", reason: "already_linked" };
   }
 
+  // Canal ejecutivo = manual (Lalo 01-oct): la aceptación no crea nada en Creator.
+  {
+    const { creacionAutomaticaPermitida } = require("../_shared/origen-venta");
+    if (!(await creacionAutomaticaPermitida({ quoteModule: config.quoteModule, quote: payload.quoteRow, quoteId: payload.quoteId, motivo: "confirm-ndv" }))) {
+      return { status: "skipped", reason: "canal_ejecutivo_manual" };
+    }
+  }
+
   try {
     const ndvResult = await runNdvHandoff({
       config,

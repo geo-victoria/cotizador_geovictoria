@@ -50,6 +50,15 @@ async function emitirCotizacionEnCreator({
     return { status: "skipped", ndvId: "", error: "" };
   }
 
+  // Canal ejecutivo = manual (Lalo 01-oct): ni espejo al emitir ni red de
+  // seguridad en la aceptación/pago. Ver creacionAutomaticaPermitida.
+  {
+    const { creacionAutomaticaPermitida } = require("./origen-venta");
+    if (!(await creacionAutomaticaPermitida({ quoteModule: config.quoteModule, quoteId, motivo: `ndv-emitir:${motivo}` }))) {
+      return { status: "skipped", ndvId: "", error: "canal_ejecutivo_manual" };
+    }
+  }
+
   // Sin Deal no hay Cuenta ni dueño que resolver, y el handoff exige ambos. El
   // caso degradado lo recoge la aceptación, cuando reconcile-crm ya corrió.
   if (!dealId || crmIncompleto) {

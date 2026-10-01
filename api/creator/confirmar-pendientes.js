@@ -55,8 +55,15 @@ module.exports = async function handler(req, res) {
   // Sin PDF no se puede confirmar; esas se dejan para cuando Creator termine de
   // generarlo. Y solo se tocan las nacidas de una conversión nuestra, que son
   // las que tienen cotización de origen.
+  // Y SOLO las que convirtió NUESTRA integración (Lalo 01-oct, canal ejecutivo
+  // = manual): una nota que un ejecutivo convirtió a mano también tiene
+  // cotización de origen, y confirmarla acá le crearía el pedido en Books
+  // antes de que el equipo termine. Usuario de la integración por env
+  // CREATOR_USUARIO_INTEGRACION (default zoho_info24610).
+  const usuarioIntegracion = String(process.env.CREATOR_USUARIO_INTEGRACION || "zoho_info24610").trim();
   const candidatas = filas
     .filter((f) => texto(f.PDF_STRING) && texto(f.Cotizacion_Origen))
+    .filter((f) => texto(f.Added_User) === usuarioIntegracion)
     .slice(0, limite);
 
   const resultados = [];

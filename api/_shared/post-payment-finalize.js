@@ -112,13 +112,22 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
   // función, se crea ahora. Si ya existe, no se toca — la conversión a Nota de
   // Venta es el paso humano del ejecutivo.
   const ndvYaExiste = quoteHasNdvReference(config, quote);
+  // Canal ejecutivo = manual (Lalo 01-oct): el pago no crea ni convierte nada
+  // en Creator. Ver creacionAutomaticaPermitida (origen-venta.js).
+  const { creacionAutomaticaPermitida } = require("./origen-venta");
+  const creatorAuto = await creacionAutomaticaPermitida({
+    quoteModule: config.quoteModule,
+    quote,
+    quoteId,
+    motivo: "finalize-ndv",
+  });
   if (ndvYaExiste) {
     console.log(`[finalize] cotización ${quoteId} ya está en Creator; no se recrea.`);
   }
 
   const [handoffResult, ndvResultRaw] = await Promise.all([
     runOnboardingHandoff({ config, quoteId, dealId: resolvedDealId, acceptanceData }),
-    config.ndvHandoffEnabled && !ndvYaExiste
+    config.ndvHandoffEnabled && !ndvYaExiste && creatorAuto
       ? runNdvHandoff({ config, quoteId, dealId: resolvedDealId, acceptanceData }).catch((err) => ({
           _error: toText(err?.message || err),
         }))
@@ -138,8 +147,8 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
   // (marcarEstadoPagada === true en maybeFinalizeQuote / status.js).
 
   // NDV best-effort: no debe bloquear la entrega del onboarding tras un pago OK.
-  let ndv = { status: "skipped", reason: ndvYaExiste ? "already_linked" : "disabled" };
-  if (config.ndvHandoffEnabled && !ndvYaExiste) {
+  let ndv = { status: "skipped", reason: ndvYaExiste ? "already_linked" : creatorAuto ? "disabled" : "canal_ejecutivo_manual" };
+  if (config.ndvHandoffEnabled && !ndvYaExiste && creatorAuto) {
     if (ndvResultRaw?._error) {
       console.warn(`[finalize] NDV handoff error: ${ndvResultRaw._error}`);
       ndv = { status: "error", error: ndvResultRaw._error };
@@ -185,7 +194,9 @@ async function finalizeAfterPayment({ config, quoteId, dealId }) {
   // EQUIPO edita la Cotización en Creator y la convierte a mano cuando está
   // buena. Reencender sin deploy: env NDV_CONVERTIR_POST_PAGO=1.
   let notaDeVenta = { status: "skipped" };
-  if (config.ndvHandoffEnabled && String(process.env.NDV_CONVERTIR_POST_PAGO || "0") === "1") {
+  if (!creatorAuto) {
+    notaDeVenta = { status: "skipped", reason: "canal_ejecutivo_manual" };
+  } else if (config.ndvHandoffEnabled && String(process.env.NDV_CONVERTIR_POST_PAGO || "0") === "1") {
     const cotCreatorId = toText(ndv?.ndvId) || toText(quote?.[config.quoteNvdIdTextField]);
     if (!cotCreatorId) {
       notaDeVenta = { status: "skipped", reason: "sin cotización en Creator" };

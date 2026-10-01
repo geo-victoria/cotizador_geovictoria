@@ -95,4 +95,28 @@ async function origenDeVenta({ quoteModule, quote, quoteId }) {
   return r;
 }
 
-module.exports = { origenDeVenta };
+/**
+ * CANAL EJECUTIVO = TODO MANUAL (Lalo 01-oct, casos Dominus NDV-32574 y Gabriel
+ * Fernández NDV-32583): para una venta que NO es de Vicky (cotizadora "desde
+ * cero") el sistema no crea nada solo en Creator — ni la cotización espejo al
+ * emitir ni la nota de venta al aceptar o pagar. Lo hace el equipo a mano.
+ * Lo automático queda solo para el canal Vicky (incluye reemisiones y caso C,
+ * por la misma regla de origen que el correo de PAGADA).
+ * Reencender sin deploy: env CANAL_EJECUTIVO_AUTOMATICO=1.
+ * Si el origen no se puede leer, se trata como ejecutivo (manual): crear de más
+ * es lo que dolió; no crear se arregla a mano.
+ */
+async function creacionAutomaticaPermitida({ quoteModule, quote, quoteId, motivo = "" }) {
+  if (String(process.env.CANAL_EJECUTIVO_AUTOMATICO || "") === "1") return true;
+  try {
+    const o = await origenDeVenta({ quoteModule, quote, quoteId });
+    if (o.deVicky) return true;
+    console.log(`[origen-venta] ${motivo || "automatizacion"} omitida: canal ejecutivo (${o.motivo}) quote=${toText(quoteId || quote?.id)}`);
+    return false;
+  } catch (e) {
+    console.warn(`[origen-venta] origen ilegible (${e.message}); ${motivo} omitida quote=${toText(quoteId || quote?.id)}`);
+    return false;
+  }
+}
+
+module.exports = { origenDeVenta, creacionAutomaticaPermitida };
