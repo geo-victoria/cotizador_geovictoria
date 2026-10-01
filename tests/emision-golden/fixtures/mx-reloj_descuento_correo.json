@@ -325,15 +325,15 @@
     "quoteModule": "Cotizaciones_GeoVictoria",
     "quoteId": "cotizaciones_geovictoria-4",
     "fromEmail": "vicky@geovictoria.com",
+    "toEmail": "cliente@prueba.test",
+    "toName": "Ana Prueba",
+    "subject": "Tu cotización GeoVictoria — PRUEBA VICKY MX SA DE CV",
     "replyToEmail": "ysegura@geovictoria.com",
     "ccEmail": "ysegura@geovictoria.com",
     "ccEmails": [
      "egomez@geovictoria.com",
      "rlewit@geovictoria.com"
     ],
-    "toEmail": "cliente@prueba.test",
-    "toName": "Ana Prueba",
-    "subject": "Tu cotización GeoVictoria — PRUEBA VICKY MX SA DE CV",
     "htmlBody": "<!DOCTYPE html>\n<html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Tu cotización GeoVictoria</title></head>\n<body style=\"margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;color:#2d3748;\">\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f6f9;padding:24px 0;\"><tr><td align=\"center\">\n  <table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 2px 14px rgba(13,71,161,0.08);\">\n    <tr><td style=\"background:linear-gradient(135deg,#0d47a1 0%,#1a73e8 100%);padding:28px 32px;\">\n      <table role=\"presentation\" width=\"100%\"><tr><td style=\"color:#ffffff;font-size:22px;font-weight:700;\">GeoVictoria</td><td align=\"right\" style=\"color:#bbdefb;font-size:12px;\">Control de Asistencia</td></tr></table>\n    </td></tr>\n    <tr><td style=\"padding:36px 32px 8px 32px;\">\n      <p style=\"margin:0 0 6px 0;font-size:14px;color:#1a73e8;font-weight:600;\">Hola Ana 👋</p>\n      <h1 style=\"margin:0 0 12px 0;font-size:24px;line-height:1.3;color:#1a202c;\">Tu cotización para <span style=\"color:#0d47a1;\">PRUEBA VICKY MX SA DE CV</span> está lista</h1>\n      <p style=\"margin:0;font-size:15px;line-height:1.6;color:#4a5568;\">Preparé tu propuesta de Control de Asistencia. Ábrela en el PDF y, desde ahí mismo, puedes aceptarla en línea cuando quieras.</p>\n    </td></tr>\n    <tr><td align=\"center\" style=\"padding:28px 32px 8px 32px;\">\n      <a href=\"https://pdf.test/cotizaciones_geovictoria-4.pdf\" style=\"display:inline-block;background:#1a73e8;color:#ffffff;padding:14px 30px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;\">📄 Ver tu cotización (PDF)</a>\n      <p style=\"margin:12px 0 0 0;font-size:12px;color:#a0aec0;\">Dentro del PDF encuentras el botón para aceptarla en línea.</p>\n    </td></tr>\n    <tr><td style=\"padding:28px 32px 0 32px;\">\n      <h3 style=\"margin:0 0 14px 0;font-size:15px;color:#1a202c;\">Cómo seguimos 🚀</h3>\n      <table role=\"presentation\" width=\"100%\">\n        <tr><td width=\"32\" valign=\"top\" style=\"font-size:15px;font-weight:700;color:#1a73e8;\">1.</td><td style=\"font-size:14px;color:#4a5568;line-height:1.55;padding-bottom:10px;\">Abres el PDF y revisas tu cotización.</td></tr>\n        <tr><td width=\"32\" valign=\"top\" style=\"font-size:15px;font-weight:700;color:#1a73e8;\">2.</td><td style=\"font-size:14px;color:#4a5568;line-height:1.55;padding-bottom:10px;\">Desde el mismo PDF la aceptas en línea y coordinamos el pago inicial.</td></tr>\n        <tr><td width=\"32\" valign=\"top\" style=\"font-size:15px;font-weight:700;color:#1a73e8;\">3.</td><td style=\"font-size:14px;color:#4a5568;line-height:1.55;\">Iniciamos tu onboarding y activamos tu servicio en 24 horas hábiles.</td></tr>\n      </table>\n    </td></tr>\n    <tr><td style=\"padding:28px 32px 0 32px;\">\n      <h3 style=\"margin:0 0 12px 0;font-size:15px;color:#1a202c;\">Documentos para ti 📎</h3>\n      <table role=\"presentation\" width=\"100%\">\n        <tr><td style=\"padding:11px 16px;background:#f7f9fc;border:1px solid #e2e8f0;border-radius:8px;\">\n    <a href=\"https://cotizacion.geovictoria.com/pdf/assets/ficha-reloj-senseface.pdf\" style=\"color:#1a73e8;text-decoration:none;font-size:14px;font-weight:600;\">🕐 Ficha Técnica del Reloj Checador</a> <span style=\"color:#a0aec0;font-size:12px;\">(tu cotización lleva reloj)</span>\n  </td></tr><tr><td style=\"height:8px;\"></td></tr>\n        <tr><td style=\"padding:11px 16px;background:#f7f9fc;border:1px solid #e2e8f0;border-radius:8px;\">\n    <a href=\"https://cotizacion.geovictoria.com/pdf/assets/presentacion-comercial.pdf\" style=\"color:#1a73e8;text-decoration:none;font-size:14px;font-weight:600;\">📊 Presentación Comercial GeoVictoria</a>\n  </td></tr><tr><td style=\"height:8px;\"></td></tr>\n      </table>\n    </td></tr>\n    <tr><td style=\"padding:28px 32px 0 32px;\">\n      <h3 style=\"margin:0 0 8px 0;font-size:15px;color:#1a202c;\">Sigo aquí contigo 💬</h3>\n      <p style=\"margin:0 0 16px 0;font-size:14px;color:#4a5568;line-height:1.6;\">Cualquier duda o ajuste que necesites, <strong>responde este correo o escríbeme por WhatsApp</strong> — sigo acompañándote hasta dejarlo andando. 😊</p>\n      <table role=\"presentation\" width=\"100%\" style=\"background:#f7f9fc;border:1px solid #e2e8f0;border-radius:10px;\"><tr><td style=\"padding:16px 20px;\">\n        <p style=\"margin:0 0 4px 0;font-size:14px;color:#1a202c;font-weight:600;\">Vicky — Equipo Comercial</p>\n        <p style=\"margin:0 0 8px 0;font-size:13px;color:#718096;\">Asistente Comercial · GeoVictoria</p>\n        <p style=\"margin:0;font-size:13px;color:#718096;\">✉️ <a href=\"mailto:vicky@geovictoria.com\" style=\"color:#1a73e8;text-decoration:none;\">vicky@geovictoria.com</a> &nbsp;·&nbsp; 📱 +52 1 56 5977 8486</p>\n      </td></tr></table>\n    </td></tr>\n    <tr><td style=\"padding:28px 32px 30px 32px;\">\n      <p style=\"margin:0;font-size:11px;color:#a0aec0;line-height:1.5;\">GeoVictoria — Especialistas en Control de Asistencia y Accesos, presentes en 40+ países.<br><a href=\"https://geovictoria.com\" style=\"color:#a0aec0;\">geovictoria.com</a></p>\n    </td></tr>\n  </table>\n  <p style=\"font-size:11px;color:#b8c0cc;margin:16px 0 0 0;\">Este es un correo automático de tu cotización. Si no la solicitaste, ignóralo.</p>\n</td></tr></table>\n</body></html>"
    }
   },
@@ -349,15 +349,21 @@
      "plan_asistencia": [
       {
        "desde": 1,
-       "hasta": 15,
+       "hasta": 2,
        "modalidad": "fijo",
-       "precioUF": 1200
+       "precioUF": 229
       },
       {
-       "desde": 16,
+       "desde": 3,
+       "hasta": 10,
+       "modalidad": "fijo",
+       "precioUF": 499
+      },
+      {
+       "desde": 11,
        "hasta": 20,
        "modalidad": "por_usuario",
-       "precioUF": 83
+       "precioUF": 49
       },
       {
        "desde": 21,
@@ -375,15 +381,21 @@
      "asistencia": [
       {
        "desde": 1,
-       "hasta": 15,
+       "hasta": 2,
        "modalidad": "fijo",
-       "precioUF": 1200
+       "precioUF": 229
       },
       {
-       "desde": 16,
+       "desde": 3,
+       "hasta": 10,
+       "modalidad": "fijo",
+       "precioUF": 499
+      },
+      {
+       "desde": 11,
        "hasta": 20,
        "modalidad": "por_usuario",
-       "precioUF": 83
+       "precioUF": 49
       },
       {
        "desde": 21,

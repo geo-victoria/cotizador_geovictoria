@@ -22,7 +22,7 @@ test("tabla de cobro en PEN: tramos peruanos en soles, sin extender con la escal
   const config = { quoteItemsSubformField: "Detalle_Items_Cotizacion" };
   const quote = {
     Detalle_Items_Cotizacion: [
-      { Nombre_Item: "Control de Asistencia", Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 100, Precio_Unitario_CLP: 100, Subtotal_UF: 100, Subtotal_CLP: 100, Modalidad: "Único", Es_Recurrente: true },
+      { Nombre_Item: "Control de Asistencia", Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 65, Precio_Unitario_CLP: 65, Subtotal_UF: 65, Subtotal_CLP: 65, Modalidad: "Único", Es_Recurrente: true },
     ],
   };
   const r = buildChargeTables({
@@ -31,13 +31,14 @@ test("tabla de cobro en PEN: tramos peruanos en soles, sin extender con la escal
     escalerasEnMemoria: escalerasDefaultPorMoneda("PEN"),
   });
   const filas = r.porServicio["Control de Asistencia"];
-  assert.ok(Array.isArray(filas) && filas.length === 4, `esperaba 4 tramos PE, hay ${filas && filas.length}`);
-  assert.equal(filas[0].Valor, 100); // 1-10 fijo (Lalo 25-sep)
-  assert.equal(filas[1].Valor, 9);
-  assert.equal(filas[1].Hasta, 50);
-  assert.equal(filas[2].Valor, 5);
-  assert.equal(filas[3].Valor, 4.5);
-  assert.equal(filas[3].Hasta, 500);
+  assert.ok(Array.isArray(filas) && filas.length === 6, `esperaba 6 tramos PE, hay ${filas && filas.length}`);
+  assert.equal(filas[0].Valor, 29); // 1-2 fijo (lista 01-oct)
+  assert.equal(filas[1].Valor, 65); // 3-10 fijo
+  assert.equal(filas[2].Valor, 6); // 11-20 por persona
+  assert.equal(filas[2].Hasta, 20);
+  assert.equal(filas[3].Valor, 9);
+  assert.equal(filas[5].Valor, 4.5);
+  assert.equal(filas[5].Hasta, 500);
   assert.equal(r.diagnostico.moneda, "PEN");
   assert.equal(r.diagnostico.fallback, false);
 });
@@ -45,31 +46,39 @@ test("tabla de cobro en PEN: tramos peruanos en soles, sin extender con la escal
 test("México (24-sep): la nota de venta lleva la escalera en pesos mexicanos", () => {
   const { escalerasDefaultPorMoneda, monedaYPais } = require("../api/_shared/escaleras-pais");
   const e = escalerasDefaultPorMoneda("MXN");
-  assert.deepEqual(e.plan_asistencia[0], { desde: 1, hasta: 15, modalidad: "fijo", precioUF: 1200 });
-  assert.equal(e.plan_asistencia[1].precioUF, 83);
+  assert.deepEqual(e.plan_asistencia[0], { desde: 1, hasta: 2, modalidad: "fijo", precioUF: 229 });
+  assert.equal(e.plan_asistencia[1].precioUF, 499);
+  assert.deepEqual(e.plan_asistencia[2], { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 49 });
   assert.deepEqual(monedaYPais({ deal: { Territorio: "México" } }).moneda, "MXN");
 });
 
-test("Colombia (28-sep): 1-20 fijo $315.000, 21+ $13.700/usuario; la tabla anterior solo para cotizaciones que ya la mostraron", () => {
+test("Colombia (01-oct): 1-2 $35.000 · 3-10 $77.000 · 11-20 $7.700/usuario; la tabla anterior solo para cotizaciones que ya la mostraron", () => {
   const { escaleraCOPara, escalerasDefaultPorMoneda } = require("../api/_shared/escaleras-pais");
   const vigente = escalerasDefaultPorMoneda("COP").plan_asistencia;
-  assert.deepEqual(vigente[0], { desde: 1, hasta: 20, modalidad: "fijo", precioUF: 315000 });
-  assert.deepEqual(vigente[1], { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 13700 });
+  assert.deepEqual(vigente[0], { desde: 1, hasta: 2, modalidad: "fijo", precioUF: 35000 });
+  assert.deepEqual(vigente[1], { desde: 3, hasta: 10, modalidad: "fijo", precioUF: 77000 });
+  assert.deepEqual(vigente[2], { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 7700 });
+  assert.deepEqual(vigente[3], { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 13700 });
+  // 15 × $7.700 (lista vigente) NO es la tabla legada.
+  assert.equal(escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 15, Precio_Unitario_UF: 7700 }])[2].precioUF, 7700);
   // COT1742 (20 × $13.700): conserva la tabla con la que se cotizó.
   const legado = escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 20, Precio_Unitario_UF: 13700 }]);
   assert.equal(legado[0].hasta, 10);
   assert.equal(legado[1].modalidad, "por_usuario");
   // Plan fijo nuevo (cantidad 1) → vigente.
-  assert.equal(escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 315000 }])[0].hasta, 20);
+  assert.equal(escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 77000 }])[1].precioUF, 77000);
 });
 
 test("la NDV fuera de Chile cobra el precio de la cotización, no la lista (COT1735 S/55 vs lista S/100)", () => {
   const { alinearEscaleraConCotizacion, ESCALERA_ASISTENCIA_PE } = require("../api/_shared/escaleras-pais");
+  // Precio honrado (S/55) → se ajusta el tramo fijo de lista más cercano (3-10, S/65).
   const fijo = alinearEscaleraConCotizacion(ESCALERA_ASISTENCIA_PE, [{ Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 55, Subtotal_UF: 55 }]);
-  assert.equal(fijo[0].precioUF, 55);
-  assert.equal(fijo[1].precioUF, ESCALERA_ASISTENCIA_PE[1].precioUF);
-  const porU = alinearEscaleraConCotizacion(ESCALERA_ASISTENCIA_PE, [{ Codigo_Item: "plan_asistencia", Cantidad: 15, Precio_Unitario_UF: 7, Subtotal_UF: 105 }]);
-  assert.equal(porU[1].precioUF, 7);
+  assert.equal(fijo[1].precioUF, 55);
+  assert.equal(fijo[0].precioUF, ESCALERA_ASISTENCIA_PE[0].precioUF);
+  // Precio de lista de un tramo fijo → la tabla queda tal cual (dos fijos desde el 01-oct).
+  assert.deepEqual(alinearEscaleraConCotizacion(ESCALERA_ASISTENCIA_PE, [{ Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 29, Subtotal_UF: 29 }]), ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t })));
+  const porU = alinearEscaleraConCotizacion(ESCALERA_ASISTENCIA_PE, [{ Codigo_Item: "plan_asistencia", Cantidad: 15, Precio_Unitario_UF: 5, Subtotal_UF: 75 }]);
+  assert.equal(porU[2].precioUF, 5);
   assert.equal(porU[0].precioUF, ESCALERA_ASISTENCIA_PE[0].precioUF);
   assert.deepEqual(alinearEscaleraConCotizacion(ESCALERA_ASISTENCIA_PE, []), ESCALERA_ASISTENCIA_PE.map((t) => ({ ...t })));
 });

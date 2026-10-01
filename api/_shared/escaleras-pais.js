@@ -15,9 +15,12 @@
 
 /** Escalera de asistencia PE en soles, en la forma que lee ndv-charge-table. */
 const ESCALERA_ASISTENCIA_PE = Object.freeze([
-  // Lalo 25-sep: 1-10 S/100 fijo · 11-20 S/9 por persona (21-50 igual).
-  { desde: 1, hasta: 10, modalidad: "fijo", precioUF: 100 },
-  { desde: 11, hasta: 50, modalidad: "por_usuario", precioUF: 9 },
+  // Lista del 01-oct (Rodrigo, VB Lalo): 1-2 S/29 fijo · 3-10 S/65 fijo ·
+  // 11-20 S/6 por persona (21-50 S/9, fuera del rango de Vicky).
+  { desde: 1, hasta: 2, modalidad: "fijo", precioUF: 29 },
+  { desde: 3, hasta: 10, modalidad: "fijo", precioUF: 65 },
+  { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 6 },
+  { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 9 },
   { desde: 51, hasta: 100, modalidad: "por_usuario", precioUF: 5 },
   { desde: 101, hasta: 500, modalidad: "por_usuario", precioUF: 4.5 },
 ]);
@@ -30,7 +33,11 @@ const ESCALERA_ASISTENCIA_PE = Object.freeze([
  * solo para las cotizaciones que ya salieron con ella (Lalo: "no le cambiemos
  * los precios a los que ya dimos precios"). */
 const ESCALERA_ASISTENCIA_CO = Object.freeze([
-  { desde: 1, hasta: 20, modalidad: "fijo", precioUF: 315000 },
+  // Lista del 01-oct (aprobada por Rodrigo, VB Lalo): 1-2 $35.000 fijo ·
+  // 3-10 $77.000 fijo · 11-20 $7.700 por persona.
+  { desde: 1, hasta: 2, modalidad: "fijo", precioUF: 35000 },
+  { desde: 3, hasta: 10, modalidad: "fijo", precioUF: 77000 },
+  { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 7700 },
   { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 13700 },
 ]);
 
@@ -53,7 +60,9 @@ function cotizacionCOConTablaLegado(rows) {
     if (codigo !== "plan_asistencia" && codigo !== "asistencia") continue;
     const cant = Number(r?.Cantidad ?? r?.cantidad ?? 0);
     const unit = Number(r?.Precio_Unitario_UF ?? r?.precioUnitarioCOP ?? 0);
-    if (cant >= 11 && cant <= 20 && unit > 0 && unit < 315000) return true;
+    // Desde el 01-oct la tabla vigente TAMBIÉN cobra por usuario de 11 a 20, a
+    // $7.700: la legada se reconoce por su precio ($13.700, por sobre el vigente).
+    if (cant >= 11 && cant <= 20 && unit > 7700) return true;
   }
   return false;
 }
@@ -67,8 +76,11 @@ function escaleraCOPara(rows) {
  * del agente, precio de Karen 24-sep: 1-15 $1,200 fijo · 16-20 $83 por usuario;
  * 21-30 $79 y 31-50 $75 quedan fuera del rango de Vicky, solo tabla de cobro). */
 const ESCALERA_ASISTENCIA_MX = Object.freeze([
-  { desde: 1, hasta: 15, modalidad: "fijo", precioUF: 1200 },
-  { desde: 16, hasta: 20, modalidad: "por_usuario", precioUF: 83 },
+  // Lista del 01-oct (Rodrigo, VB Lalo): 1-2 $229 fijo · 3-10 $499 fijo ·
+  // 11-20 $49 por persona.
+  { desde: 1, hasta: 2, modalidad: "fijo", precioUF: 229 },
+  { desde: 3, hasta: 10, modalidad: "fijo", precioUF: 499 },
+  { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 49 },
   { desde: 21, hasta: 30, modalidad: "por_usuario", precioUF: 79 },
   { desde: 31, hasta: 50, modalidad: "por_usuario", precioUF: 75 },
 ]);
@@ -162,8 +174,14 @@ function alinearEscaleraConCotizacion(escalera, rows) {
   const sub = Number(plan.Subtotal_UF ?? plan.subtotal ?? 0) || unit * cant;
   if (!(cant > 0) || !(unit > 0)) return filas;
   if (cant === 1) {
-    const i = filas.findIndex((t) => t.modalidad === "fijo");
-    if (i >= 0 && sub > 0 && Number(filas[i].precioUF) !== sub) filas[i].precioUF = sub;
+    // Desde el 01-oct hay DOS tramos fijos (1-2 y 3-10): si el subtotal ya es el
+    // de uno de ellos, la tabla calza tal cual; si no (precio honrado), se
+    // ajusta el tramo fijo de lista más cercano a lo que el cliente pagó.
+    const fijos = filas.map((t, i) => ({ t, i })).filter((x) => x.t.modalidad === "fijo");
+    if (!fijos.length || !(sub > 0)) return filas;
+    if (fijos.some((x) => Number(x.t.precioUF) === sub)) return filas;
+    const cerca = fijos.reduce((a, b) => (Math.abs(Number(b.t.precioUF) - sub) < Math.abs(Number(a.t.precioUF) - sub) ? b : a));
+    filas[cerca.i].precioUF = sub;
     return filas;
   }
   const j = filas.findIndex((t) => t.modalidad === "por_usuario" && cant >= t.desde && cant <= t.hasta);

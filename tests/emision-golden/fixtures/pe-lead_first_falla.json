@@ -316,12 +316,24 @@
      "plan_asistencia": [
       {
        "desde": 1,
+       "hasta": 2,
+       "modalidad": "fijo",
+       "precioUF": 29
+      },
+      {
+       "desde": 3,
        "hasta": 10,
        "modalidad": "fijo",
-       "precioUF": 100
+       "precioUF": 65
       },
       {
        "desde": 11,
+       "hasta": 20,
+       "modalidad": "por_usuario",
+       "precioUF": 6
+      },
+      {
+       "desde": 21,
        "hasta": 50,
        "modalidad": "por_usuario",
        "precioUF": 9
@@ -342,12 +354,24 @@
      "asistencia": [
       {
        "desde": 1,
+       "hasta": 2,
+       "modalidad": "fijo",
+       "precioUF": 29
+      },
+      {
+       "desde": 3,
        "hasta": 10,
        "modalidad": "fijo",
-       "precioUF": 100
+       "precioUF": 65
       },
       {
        "desde": 11,
+       "hasta": 20,
+       "modalidad": "por_usuario",
+       "precioUF": 6
+      },
+      {
+       "desde": 21,
        "hasta": 50,
        "modalidad": "por_usuario",
        "precioUF": 9

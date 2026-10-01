@@ -242,15 +242,21 @@
      "plan_asistencia": [
       {
        "desde": 1,
-       "hasta": 15,
+       "hasta": 2,
        "modalidad": "fijo",
-       "precioUF": 1200
+       "precioUF": 229
       },
       {
-       "desde": 16,
+       "desde": 3,
+       "hasta": 10,
+       "modalidad": "fijo",
+       "precioUF": 499
+      },
+      {
+       "desde": 11,
        "hasta": 20,
        "modalidad": "por_usuario",
-       "precioUF": 83
+       "precioUF": 49
       },
       {
        "desde": 21,
@@ -268,15 +274,21 @@
      "asistencia": [
       {
        "desde": 1,
-       "hasta": 15,
+       "hasta": 2,
        "modalidad": "fijo",
-       "precioUF": 1200
+       "precioUF": 229
       },
       {
-       "desde": 16,
+       "desde": 3,
+       "hasta": 10,
+       "modalidad": "fijo",
+       "precioUF": 499
+      },
+      {
+       "desde": 11,
        "hasta": 20,
        "modalidad": "por_usuario",
-       "precioUF": 83
+       "precioUF": 49
       },
       {
        "desde": 21,
