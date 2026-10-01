@@ -4,7 +4,7 @@
   "private": true,
   "description": "API serverless del cotizador GeoVictoria (Vercel).",
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "dependencies": {
     "@sparticuz/chromium": "131.0.0",
