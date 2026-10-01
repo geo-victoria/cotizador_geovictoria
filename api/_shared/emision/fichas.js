@@ -45,9 +45,10 @@ const SDR_CL_IDS = [
   "3525045000583802005", // Aleydis Araque
   "3525045000594735052", // Aracelli Sepúlveda
 ];
+// 01-oct: Priscila Quispe pasó a telemarketing (como Mónica) — su lead SÍ
+// hereda el deal; SDR de Perú queda solo Ana Fiori.
 const SDR_PE_IDS = [
   "3525045000299130001", // Ana Fiori
-  "3525045000576828001", // Priscila Quispe
 ];
 // SDR de Colombia (create-from-vicky-co.js SDR_CO, Lalo 23-sep).
 const SDR_CO_IDS = [
