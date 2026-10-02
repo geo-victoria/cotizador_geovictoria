@@ -139,6 +139,15 @@ function esCotizacionMX(acceptanceUrl) {
   return paisEnToken(acceptanceUrl) === "mx";
 }
 
+// CANAL EJECUTIVO SIN CORREO (Lalo 11-ago, "no envíes nadaaa"): las
+// cotizaciones del editor/cotizadora las entrega el ejecutivo a mano. El
+// rescate regenera su PDF pero JAMÁS le escribe al cliente. Caso 02-oct: con
+// Chromium caído un día entero, ~20 cotizaciones quedaron sin PDF — la mitad
+// de ejecutivos — y el rescate les habría mandado correo a sus clientes.
+function correoAlClientePermitido(quote) {
+  return toText(quote && quote.Intervenci_n_Humana) === "100% Vicky";
+}
+
 // Regenera el PDF de una cotización + reenvía el correo. Espejo del trabajo en
 // segundo plano de create-from-vicky, pero a partir del estado actual en Zoho.
 async function rescatarCotizacionPais(pais, quote, quoteId, config) {
@@ -164,7 +173,7 @@ async function rescatarCotizacionPais(pais, quote, quoteId, config) {
   const { pdfUrl } = await uploadPdfToSupabase({ pdfBuffer, quoteId, empresa: cliente.empresa });
   await updateRecord(config.quoteModule, quoteId, { [config.quotePdfUrlField]: pdfUrl }, true);
   await actualizarPunteroPdf(quoteId, pdfUrl);
-  if (cliente.contactoEmail) {
+  if (cliente.contactoEmail && correoAlClientePermitido(quote)) {
     const cc = copiasCorreoPais(pais);
     await sendQuoteEmailViaZoho({
       quoteModule: config.quoteModule,
@@ -185,7 +194,7 @@ async function rescatarCotizacionPais(pais, quote, quoteId, config) {
       }),
     });
   }
-  return { pdfUrl, pais, correo: Boolean(cliente.contactoEmail) };
+  return { pdfUrl, pais, correo: Boolean(cliente.contactoEmail) && correoAlClientePermitido(quote) };
 }
 
 async function rescatarCotizacion(quoteId, config) {
@@ -238,6 +247,7 @@ async function rescatarCotizacion(quoteId, config) {
   await actualizarPunteroPdf(quoteId, pdfUrl);
 
   const tieneReloj = items.some((it) => it && it.tipo === "hardware");
+  if (!correoAlClientePermitido(quote)) return { pdfUrl, correo: false };
   await sendQuoteEmailViaZoho({
     quoteModule: config.quoteModule,
     quoteId,
@@ -255,7 +265,7 @@ async function rescatarCotizacion(quoteId, config) {
     }),
   });
 
-  return { pdfUrl };
+  return { pdfUrl, correo: true };
 }
 
 module.exports = async function handler(req, res) {
@@ -289,8 +299,8 @@ module.exports = async function handler(req, res) {
           resultados.push({ quoteId, ok: true, skipped: out.skipped });
         } else {
           rescatadas++;
-          resultados.push({ quoteId, ok: true, pdfUrl: out.pdfUrl });
-          console.log(`[backfill-pdf] rescatada cotización ${quoteId} → PDF regenerado y correo reenviado.`);
+          resultados.push({ quoteId, ok: true, pdfUrl: out.pdfUrl, correo: Boolean(out.correo) });
+          console.log(`[backfill-pdf] rescatada cotización ${quoteId} → PDF regenerado${out.correo ? " y correo reenviado" : " (sin correo al cliente)"}.`);
         }
       } catch (err) {
         resultados.push({ quoteId, ok: false, error: String(err?.message || err).slice(0, 200) });
