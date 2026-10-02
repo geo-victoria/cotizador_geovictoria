@@ -33,8 +33,17 @@ const ESCALERA_ASISTENCIA_PE = Object.freeze([
  * solo para las cotizaciones que ya salieron con ella (Lalo: "no le cambiemos
  * los precios a los que ya dimos precios"). */
 const ESCALERA_ASISTENCIA_CO = Object.freeze([
-  // Lista del 01-oct (aprobada por Rodrigo, VB Lalo): 1-2 $35.000 fijo ·
-  // 3-10 $77.000 fijo · 11-20 $7.700 por persona.
+  // Lista del 02-oct (Rodrigo, "precio intermedio" a prueba por 2 semanas):
+  // 1-2 $59.000 fijo · 3-10 $99.000 fijo · 11-20 $9.000 por persona.
+  { desde: 1, hasta: 2, modalidad: "fijo", precioUF: 59000 },
+  { desde: 3, hasta: 10, modalidad: "fijo", precioUF: 99000 },
+  { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 9000 },
+  { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 13700 },
+]);
+
+/** Lista del 01-oct (vigente un día): las cotizaciones emitidas con ella
+ * conservan su tabla de cobro. */
+const ESCALERA_ASISTENCIA_CO_01OCT = Object.freeze([
   { desde: 1, hasta: 2, modalidad: "fijo", precioUF: 35000 },
   { desde: 3, hasta: 10, modalidad: "fijo", precioUF: 77000 },
   { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 7700 },
@@ -49,27 +58,36 @@ const ESCALERA_ASISTENCIA_CO_LEGADO = Object.freeze([
 ]);
 
 /**
- * ¿La cotización CO salió con la tabla anterior? Sí cuando la fila del plan
- * cobra POR USUARIO con 11 a 20 personas (con la tabla vigente ese tramo es un
- * fijo de cantidad 1). Así la nota de venta de una cotización vieja imprime la
- * tabla que el cliente aceptó y no una que no calza con su precio.
+ * ¿Con qué lista salió la cotización CO? Se reconoce por el PRECIO de la fila
+ * del plan, así la nota de venta imprime la tabla que el cliente aceptó:
+ *  · "legado": $13.700 por persona de 11 a 20 (o el fijo de $315.000);
+ *  · "01oct": fijos de $35.000 / $77.000 o $7.700 por persona;
+ *  · "vigente": la lista del 02-oct ($59.000 / $99.000 / $9.000).
  */
-function cotizacionCOConTablaLegado(rows) {
+function listaCOde(rows) {
   for (const r of Array.isArray(rows) ? rows : []) {
     const codigo = String(r?.Codigo_Item || r?.id || "").toLowerCase();
     if (codigo !== "plan_asistencia" && codigo !== "asistencia") continue;
     const cant = Number(r?.Cantidad ?? r?.cantidad ?? 0);
     const unit = Number(r?.Precio_Unitario_UF ?? r?.precioUnitarioCOP ?? 0);
-    // Desde el 01-oct la tabla vigente TAMBIÉN cobra por usuario de 11 a 20, a
-    // $7.700: la legada se reconoce por su precio ($13.700, por sobre el vigente).
-    if (cant >= 11 && cant <= 20 && unit > 7700) return true;
+    if (unit >= 13700 && cant >= 11 && cant <= 20) return "legado";
+    if (unit === 315000) return "legado";
+    if (unit === 7700 || unit === 35000 || unit === 77000) return "01oct";
   }
-  return false;
+  return "vigente";
 }
 
-/** Escalera CO que corresponde a una cotización (vigente o anterior). */
+/** Compatibilidad: true cuando la cotización salió con la tabla anterior al 01-oct. */
+function cotizacionCOConTablaLegado(rows) {
+  return listaCOde(rows) === "legado";
+}
+
+/** Escalera CO que corresponde a una cotización (vigente o una lista anterior). */
 function escaleraCOPara(rows) {
-  return (cotizacionCOConTablaLegado(rows) ? ESCALERA_ASISTENCIA_CO_LEGADO : ESCALERA_ASISTENCIA_CO).map((t) => ({ ...t }));
+  const lista = listaCOde(rows);
+  const base =
+    lista === "legado" ? ESCALERA_ASISTENCIA_CO_LEGADO : lista === "01oct" ? ESCALERA_ASISTENCIA_CO_01OCT : ESCALERA_ASISTENCIA_CO;
+  return base.map((t) => ({ ...t }));
 }
 
 /** Escalera de asistencia MX en pesos mexicanos (espejo de lib/paises/mx/catalogo.ts
@@ -189,4 +207,4 @@ function alinearEscaleraConCotizacion(escalera, rows) {
   return filas;
 }
 
-module.exports = { alinearEscaleraConCotizacion, ESCALERA_ASISTENCIA_PE, ESCALERA_ASISTENCIA_CO, ESCALERA_ASISTENCIA_CO_LEGADO, ESCALERA_ASISTENCIA_MX, cotizacionCOConTablaLegado, escaleraCOPara, monedaYPais, escalerasDefaultPorMoneda };
+module.exports = { alinearEscaleraConCotizacion, ESCALERA_ASISTENCIA_PE, ESCALERA_ASISTENCIA_CO, ESCALERA_ASISTENCIA_CO_01OCT, ESCALERA_ASISTENCIA_CO_LEGADO, listaCOde, ESCALERA_ASISTENCIA_MX, cotizacionCOConTablaLegado, escaleraCOPara, monedaYPais, escalerasDefaultPorMoneda };

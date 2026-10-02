@@ -52,21 +52,23 @@ test("México (24-sep): la nota de venta lleva la escalera en pesos mexicanos", 
   assert.deepEqual(monedaYPais({ deal: { Territorio: "México" } }).moneda, "MXN");
 });
 
-test("Colombia (01-oct): 1-2 $35.000 · 3-10 $77.000 · 11-20 $7.700/usuario; la tabla anterior solo para cotizaciones que ya la mostraron", () => {
+test("Colombia (02-oct): 1-2 $59.000 · 3-10 $99.000 · 11-20 $9.000/usuario; las listas anteriores para las cotizaciones que ya salieron con ellas", () => {
   const { escaleraCOPara, escalerasDefaultPorMoneda } = require("../api/_shared/escaleras-pais");
   const vigente = escalerasDefaultPorMoneda("COP").plan_asistencia;
-  assert.deepEqual(vigente[0], { desde: 1, hasta: 2, modalidad: "fijo", precioUF: 35000 });
-  assert.deepEqual(vigente[1], { desde: 3, hasta: 10, modalidad: "fijo", precioUF: 77000 });
-  assert.deepEqual(vigente[2], { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 7700 });
+  assert.deepEqual(vigente[0], { desde: 1, hasta: 2, modalidad: "fijo", precioUF: 59000 });
+  assert.deepEqual(vigente[1], { desde: 3, hasta: 10, modalidad: "fijo", precioUF: 99000 });
+  assert.deepEqual(vigente[2], { desde: 11, hasta: 20, modalidad: "por_usuario", precioUF: 9000 });
   assert.deepEqual(vigente[3], { desde: 21, hasta: 50, modalidad: "por_usuario", precioUF: 13700 });
-  // 15 × $7.700 (lista vigente) NO es la tabla legada.
+  // Lista vigente: 15 × $9.000 y plan fijo $99.000.
+  assert.equal(escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 15, Precio_Unitario_UF: 9000 }])[2].precioUF, 9000);
+  assert.equal(escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 99000 }])[1].precioUF, 99000);
+  // Lista del 01-oct: conserva su tabla.
   assert.equal(escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 15, Precio_Unitario_UF: 7700 }])[2].precioUF, 7700);
+  assert.equal(escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 77000 }])[1].precioUF, 77000);
   // COT1742 (20 × $13.700): conserva la tabla con la que se cotizó.
   const legado = escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 20, Precio_Unitario_UF: 13700 }]);
   assert.equal(legado[0].hasta, 10);
   assert.equal(legado[1].modalidad, "por_usuario");
-  // Plan fijo nuevo (cantidad 1) → vigente.
-  assert.equal(escaleraCOPara([{ Codigo_Item: "plan_asistencia", Cantidad: 1, Precio_Unitario_UF: 77000 }])[1].precioUF, 77000);
 });
 
 test("la NDV fuera de Chile cobra el precio de la cotización, no la lista (COT1735 S/55 vs lista S/100)", () => {
