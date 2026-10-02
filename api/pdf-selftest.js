@@ -4,6 +4,9 @@
 export default async function handler(req, res) {
   const out = { ok: false, node: process.version, steps: {} };
   try {
+    out.awsExecutionEnv = process.env.AWS_EXECUTION_ENV || null;
+    require("./_shared/chromium-runtime").prepararEntornoChromium();
+    out.awsExecutionEnvAjustado = process.env.AWS_EXECUTION_ENV || null;
     const chromium = require("@sparticuz/chromium");
     out.steps.requireChromium = true;
     const puppeteer = require("puppeteer-core");

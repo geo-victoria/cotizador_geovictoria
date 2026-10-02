@@ -24,6 +24,8 @@ function marginToObject(margin) {
 // ── Render con Chromium (sin costo por PDF) ───────────────────────────────
 async function renderWithChromium(html, options = {}) {
   // require perezoso: solo se carga si efectivamente usamos Chromium.
+  // Antes del require: Node 24 es AL2023 (ver chromium-runtime.js).
+  require("./chromium-runtime").prepararEntornoChromium();
   const chromium = require("@sparticuz/chromium");
   const puppeteer = require("puppeteer-core");
   const path = require("path");
