@@ -7,6 +7,7 @@ const {
   isTestLaneQuote,
 } = require("../_shared/mercadopago-config");
 const { paisDeToken } = require("../_shared/pais-pago");
+const { rfcParaFacturar } = require("../_shared/rfc-mx");
 const { runOnboardingHandoff } = require("../_shared/onboarding-handoff");
 const {
   runNdvHandoff,
@@ -59,6 +60,30 @@ async function parseBody(req) {
     return JSON.parse(raw);
   } catch (_error) {
     return {};
+  }
+}
+
+// Constancia de situación fiscal (MX) → Attachments de la cotización.
+// Solo PDF o imagen y hasta ~4 MB (el body de la función no da para más).
+async function adjuntarConstanciaFiscal(config, quoteId, archivo) {
+  const { zohoApiFetch } = require("../_shared/zoho-auth");
+  const tipo = toText(archivo.tipo).toLowerCase();
+  if (!/^(application\/pdf|image\/(png|jpe?g|webp|heic))$/.test(tipo)) {
+    throw new Error(`tipo no permitido: ${tipo || "vacío"}`);
+  }
+  const bytes = Buffer.from(String(archivo.base64).replace(/^data:[^,]*,/, ""), "base64");
+  if (!bytes.length || bytes.length > 4 * 1024 * 1024) throw new Error(`tamaño fuera de rango: ${bytes.length}`);
+  const ext = tipo === "application/pdf" ? "pdf" : tipo.split("/")[1].replace("jpeg", "jpg");
+  const nombre = `constancia-situacion-fiscal-${quoteId}.${ext}`;
+  const form = new FormData();
+  form.append("file", new Blob([bytes], { type: tipo }), nombre);
+  const r = await zohoApiFetch(
+    `/crm/v3/${encodeURIComponent(config.quoteModule)}/${encodeURIComponent(quoteId)}/Attachments`,
+    { method: "POST", body: form },
+  );
+  const j = await r.json().catch(() => ({}));
+  if (!(r.ok && j?.data?.[0]?.status === "success")) {
+    throw new Error(`Zoho ${r.status}: ${JSON.stringify(j).slice(0, 200)}`);
   }
 }
 
@@ -515,6 +540,16 @@ export default async function handler(req, res) {
       });
       return;
     }
+    // MÉXICO (02-oct): la formal puede nacer con el RFC genérico del SAT; el
+    // RFC REAL se exige acá, al aceptar, que es donde se juntan los datos de
+    // facturación (junto con la constancia de situación fiscal).
+    if (esMx && !alreadyAccepted && !rfcParaFacturar(acceptanceData.companyRut)) {
+      sendJson(res, 400, {
+        success: false,
+        error: "Ingresa el RFC con el que facturamos (12 o 13 caracteres, tal como aparece en tu constancia de situación fiscal).",
+      });
+      return;
+    }
 
     if (!isValidEmail(billingEmailFromForm)) {
       sendJson(res, 400, {
@@ -597,6 +632,15 @@ export default async function handler(req, res) {
         updateMap[config.quoteEmailVerifiedAtField] = acceptedAtIso;
       }
       await updateRecordBestEffort(config.quoteModule, payload.quoteId, updateMap, true);
+
+      // CONSTANCIA DE SITUACIÓN FISCAL (México, 02-oct): el archivo que el
+      // cliente adjunta al aceptar queda en la cotización (related list
+      // Attachments, no requiere ZohoFiles). Best-effort: jamás frena el pago.
+      if (esMx && acceptanceData?.constanciaFiscal?.base64) {
+        await adjuntarConstanciaFiscal(config, payload.quoteId, acceptanceData.constanciaFiscal).catch((e) =>
+          console.warn("[confirm] constancia fiscal no se pudo adjuntar:", toText(e?.message || e).slice(0, 200)),
+        );
+      }
 
       // Notificación interna al equipo (best-effort, no bloquea la aceptación).
       // Solo en la PRIMERA aceptación (estamos dentro de !alreadyAccepted).

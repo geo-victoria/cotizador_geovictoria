@@ -20,6 +20,7 @@ const {
   redondeoCentavos,
   OWNER_VICKY_ID,
 } = require("../_shared/emision-pais");
+const { RFC_GENERICO_MX, esRfcGenerico } = require("../_shared/rfc-mx");
 
 // ── Tarifario MX (fuente de verdad del doc de tropicalización) ──
 // El agente manda los items ya calculados; esta tabla queda acá como
@@ -270,6 +271,9 @@ const PERFIL_MX = {
   documento: {
     campo: "rfc",
     nombre: "RFC",
+    // Sin RFC en el chat la formal nace con el genérico del SAT y el RFC real
+    // (con su constancia de situación fiscal) se pide al ACEPTAR (02-oct).
+    generico: RFC_GENERICO_MX,
     // Solo advertencia si el formato no calza (misma tolerancia que CO): el flujo sigue.
     validar(body, rfc) {
       if (!rfcPareceValido(rfc)) console.warn(`[create-from-vicky-mx] RFC con formato inusual: '${rfc}' (se acepta igual).`);
@@ -279,9 +283,12 @@ const PERFIL_MX = {
     paraCotizacion: (rfc) => rfc,
     variantes: getRfcVariants,
     compactar: (v) => String(v || "").replace(/[.\s-]/g, "").toUpperCase(),
-    descripcionCuenta: (rfc) => `Cuenta creada por Vicky MX (WhatsApp). RFC: ${rfc}`,
+    descripcionCuenta: (rfc, _tipo, generico) =>
+      generico
+        ? "Cuenta creada por Vicky MX (WhatsApp). RFC pendiente: se pide con la constancia de situación fiscal al aceptar."
+        : `Cuenta creada por Vicky MX (WhatsApp). RFC: ${rfc}`,
     nombreDesambiguado: (empresa, rfc) => `${empresa} (${rfc})`,
-    clientePdf: (rfc) => ({ rfc }),
+    clientePdf: (rfc) => ({ rfc: esRfcGenerico(rfc) ? "Se solicita al aceptar" : rfc }),
   },
   items: ITEMS_MX,
   deal: {

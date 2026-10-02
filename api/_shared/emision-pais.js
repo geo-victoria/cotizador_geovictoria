@@ -408,7 +408,15 @@ function crearHandlerEmision(perfil) {
       const empresa = toText(body.empresa);
       const contacto = toText(body.contacto);
       const contactoEmail = toText(body.contactoEmail);
-      const doc = toText(body[P.documento.campo]);
+      // DOCUMENTO GENÉRICO (02-oct, México): el perfil puede declarar un
+      // documento de "público en general" (RFC XAXX010101000) para cotizar SIN
+      // el documento real; ese documento se pide al ACEPTAR. Con el genérico
+      // no se deduplica cuenta por documento ni se escribe en la cuenta/lead
+      // (si no, todos los clientes sin RFC caerían en la misma cuenta).
+      const docDelBody = toText(body[P.documento.campo]);
+      const doc = docDelBody || toText(P.documento.generico);
+      const docEsGenerico = Boolean(P.documento.generico) && Boolean(doc) &&
+        P.documento.compactar(doc) === P.documento.compactar(P.documento.generico);
       const contactoTelefono = toText(body.contactoTelefono);
       const userCount = Number(body.userCount) > 0 ? Number(body.userCount) : undefined;
       // DESCUENTO = CHILE (Lalo 17-sep PE / 21-sep CO / 24-sep MX): el agente
@@ -486,7 +494,7 @@ function crearHandlerEmision(perfil) {
       let accountReused = false;
       let contactId;
       let dealId;
-      const docGuardar = P.documento.paraGuardar(doc);
+      const docGuardar = docEsGenerico ? "" : P.documento.paraGuardar(doc);
       try {
         // LEAD-FIRST: contacto ya convertido → reusar su cuenta/contacto/deal.
         stage = "find_converted_by_phone";
@@ -509,7 +517,7 @@ function crearHandlerEmision(perfil) {
         // ── Account: dedup por documento antes de crear ──
         if (!accountId) {
           stage = "find_account_by_documento";
-          accountId = await findAccountIdByDocumento(P, doc, empresa);
+          accountId = docEsGenerico ? null : await findAccountIdByDocumento(P, doc, empresa);
           accountReused = Boolean(accountId);
         }
 
@@ -517,9 +525,9 @@ function crearHandlerEmision(perfil) {
           stage = "create_account";
           const createAccountPayload = {
             Account_Name: empresa,
-            RUT_Empresa: docGuardar,
+            RUT_Empresa: docGuardar || undefined,
             Phone: contactoTelefono || undefined,
-            Description: P.documento.descripcionCuenta(doc, tipoDocumento),
+            Description: P.documento.descripcionCuenta(doc, tipoDocumento, docEsGenerico),
             Industry: DEFAULTS.sector(),
             Territorio: P.territorio,
             N_Empleados_dependientes: userCount,
@@ -536,14 +544,18 @@ function crearHandlerEmision(perfil) {
             // NOMBRE homónimo con documento distinto → cuenta desambiguada
             // "Empresa (doc)": son empresas distintas, no la misma.
             stage = "dedupe_account_by_documento";
-            const existingAccountId = await findAccountIdByDocumento(P, doc, empresa);
+            const existingAccountId = docEsGenerico ? null : await findAccountIdByDocumento(P, doc, empresa);
             if (existingAccountId) {
               accountId = existingAccountId;
               accountReused = true;
             } else {
               console.warn(`[${etiqueta}] duplicado por nombre con ${P.documento.nombre} distinto (${doc}); creando cuenta desambiguada.`);
               stage = "create_account_disambiguated";
-              const nombreDesambiguado = P.documento.nombreDesambiguado(empresa, doc);
+              // Sin documento real se desambigua con el teléfono (el genérico
+              // es el mismo para todos y volvería a chocar).
+              const nombreDesambiguado = docEsGenerico
+                ? `${empresa} (${contactoTelefono || "sin documento"})`
+                : P.documento.nombreDesambiguado(empresa, doc);
               try {
                 const retryResult = await createRecord(
                   "Accounts",
@@ -561,7 +573,7 @@ function crearHandlerEmision(perfil) {
                   etiqueta,
                   `select id, RUT_Empresa from Accounts where Account_Name = '${nombreDesambiguado.replace(/'/g, "''")}' limit 5`,
                 ).catch(() => []);
-                const match = (porNombre || []).find((r) => compactar(r.RUT_Empresa) === compactar(doc));
+                const match = docEsGenerico ? null : (porNombre || []).find((r) => compactar(r.RUT_Empresa) === compactar(doc));
                 if (match) {
                   accountId = toText(match.id);
                   accountReused = true;

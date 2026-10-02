@@ -1277,6 +1277,13 @@
               <label for="companyAddress">Dirección (opcional — se prellena del SII)</label>
               <input id="companyAddress" type="text" />
             </div>
+            <!-- MÉXICO (02-oct): la cotización nace sin RFC; al aceptar se pide
+                 el RFC real y la Constancia de Situación Fiscal del SAT. -->
+            <div class="full" id="constanciaFiscalWrap" style="display:none">
+              <label for="constanciaFiscal">Constancia de Situación Fiscal (PDF o foto) *</label>
+              <input id="constanciaFiscal" type="file" accept="application/pdf,image/png,image/jpeg,image/webp" />
+              <small id="constanciaFiscalHint" style="display:block;margin-top:4px;color:#64748b">La descargas del portal del SAT. Con ella emitimos tu factura (CFDI) con tus datos exactos.</small>
+            </div>
           </div>
 
           <button id="confirmBtn" class="btn">Aceptar cotización y continuar</button>
@@ -2588,7 +2595,42 @@
       // Mismo patrón que applyCountryCO: retoques puntuales sobre el DOM
       // estático, sin tocar el flujo chileno. Tuteo (como CL), MXN, IVA 16%,
       // términos espejo del PDF MX (proposal-html-builder-mx.js).
+      // Constancia de situación fiscal (México): se lee a base64 al elegirla.
+      var constanciaFiscalData = null;
+      var paisEsMX = false;
+      var RFC_GENERICO_RE = /^X[AE]XX010101000$/i;
+      function rfcValidoParaFacturar(v) {
+        var c = String(v || "").replace(/[.\s_-]/g, "").toUpperCase();
+        return /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(c) && !RFC_GENERICO_RE.test(c);
+      }
+      function prepararConstanciaFiscal() {
+        var wrap = document.getElementById("constanciaFiscalWrap");
+        var input = document.getElementById("constanciaFiscal");
+        if (!wrap || !input) return;
+        wrap.style.display = "";
+        input.addEventListener("change", function () {
+          constanciaFiscalData = null;
+          var f = input.files && input.files[0];
+          var hint = document.getElementById("constanciaFiscalHint");
+          if (!f) return;
+          if (f.size > 3 * 1024 * 1024) {
+            if (hint) hint.textContent = "El archivo pesa más de 3 MB: súbelo en PDF o como foto más liviana.";
+            input.value = "";
+            return;
+          }
+          var reader = new FileReader();
+          reader.onload = function () {
+            var res = String(reader.result || "");
+            constanciaFiscalData = { nombre: f.name, tipo: f.type || "application/pdf", base64: res.replace(/^data:[^,]*,/, "") };
+            if (hint) hint.textContent = "Listo: " + f.name;
+          };
+          reader.readAsDataURL(f);
+        });
+      }
+
       function applyCountryMX() {
+        paisEsMX = true;
+        prepararConstanciaFiscal();
         // Tabla de tramos de asistencia chilena (UF): fuera.
         var pricingSection = document.getElementById("sectionPricing");
         if (pricingSection) pricingSection.style.display = "none";
@@ -2878,6 +2920,14 @@
             return { ok: false, field: key };
           }
         }
+        if (paisEsMX) {
+          if (!rfcValidoParaFacturar(fields.companyRut.value)) {
+            return { ok: false, field: "companyRut", msg: "Ingresa el RFC con el que facturamos (12 o 13 caracteres, como aparece en tu constancia de situación fiscal)." };
+          }
+          if (!constanciaFiscalData) {
+            return { ok: false, field: "constanciaFiscal", msg: "Adjunta tu Constancia de Situación Fiscal (PDF o foto) para emitir tu factura." };
+          }
+        }
         if (!emailLooksValid(fields.contactEmail.value)) {
           return { ok: false, field: "contactEmail" };
         }
@@ -3027,7 +3077,9 @@
           // es readonly (y oculto en el modal), quedaba vacío y validateRequired
           // bloqueaba el pago sin salida posible para el cliente.
           fields.contactEmail.value = q.contactEmail || q.billingEmail || "";
-          fields.companyRut.value = q.companyRut || "";
+          // El RFC genérico del SAT (cotización sin RFC, México) no se
+          // prellena: el cliente escribe el suyo.
+          fields.companyRut.value = /^X[AE]XX010101000$/i.test(String(q.companyRut || "").trim()) ? "" : (q.companyRut || "");
           fields.companyGiro.value = q.companyGiro || "";
           fields.companyComuna.value = q.companyComuna || "";
           fields.companyAddress.value = q.companyAddress || "";
@@ -3735,7 +3787,7 @@
             // el cliente debe poder completarlos aquí mismo.
             const check = validateRequired({ requireVerification: false });
             if (!check.ok) {
-              setMessage("Completa los datos de facturación que faltan para continuar al pago.", "error");
+              setMessage(check.msg || "Completa los datos de facturación que faltan para continuar al pago.", "error");
               return;
             }
             const btnPagar = document.getElementById("confirmBtn");
@@ -3762,6 +3814,7 @@
                     companyComuna: fields.companyComuna.value.trim(),
                     companyAddress: fields.companyAddress.value.trim(),
                     personaNatural: esFlujoNatural() || undefined,
+                    constanciaFiscal: paisEsMX && constanciaFiscalData ? constanciaFiscalData : undefined,
                   },
                 }),
               });
@@ -3791,7 +3844,7 @@
         }
         const check = validateRequired({ requireVerification: false });
         if (!check.ok) {
-          setMessage("Completa todos los datos obligatorios y acepta términos para continuar.", "error");
+          setMessage(check.msg || "Completa todos los datos obligatorios y acepta términos para continuar.", "error");
           updateJourneyState();
           return;
         }
@@ -3839,6 +3892,7 @@
                 companyComuna: fields.companyComuna.value.trim(),
                 companyAddress: fields.companyAddress.value.trim(),
                 personaNatural: esFlujoNatural() || undefined,
+                constanciaFiscal: paisEsMX && constanciaFiscalData ? constanciaFiscalData : undefined,
               },
             }),
           });
